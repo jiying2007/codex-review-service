@@ -24,7 +24,7 @@ function readBody(req, maxBytes) {
       if (bytes > maxBytes) {
         rejected = true;
         reject(Object.assign(new Error('Webhook body too large'), { status: 413 }));
-        req.destroy();
+        req.resume();
         return;
       }
       chunks.push(chunk);
@@ -38,9 +38,7 @@ function createHttpServer({ config, store, service, logger = console }) {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      if (req.method === 'GET' && url.pathname === '/health/live') {
-        return json(res, 200, { status: 'ok' });
-      }
+      if (req.method === 'GET' && url.pathname === '/health/live') return json(res, 200, { status: 'ok' });
       if (req.method === 'GET' && url.pathname === '/health/ready') {
         let gitlabOk = false;
         try {
@@ -62,9 +60,7 @@ function createHttpServer({ config, store, service, logger = console }) {
         res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'no-store' });
         return res.end(body);
       }
-      if (req.method !== 'POST' || url.pathname !== '/webhooks/gitlab') {
-        return json(res, 404, { error: 'not_found' });
-      }
+      if (req.method !== 'POST' || url.pathname !== '/webhooks/gitlab') return json(res, 404, { error: 'not_found' });
 
       const rawBody = await readBody(req, config.webhookMaxBodyBytes);
       const verification = verifyWebhook(req.headers, rawBody, config);
@@ -103,7 +99,7 @@ function createHttpServer({ config, store, service, logger = console }) {
       return json(res, 202, { status: event.shouldReview ? 'queued' : 'ignored' });
     } catch (error) {
       logger.error({ event: 'http_error', code: error.code || 'EHTTP', status: error.status || 500 });
-      if (!res.headersSent) return json(res, error.status || 500, { error: 'internal_error' });
+      if (!res.headersSent) return json(res, error.status || 500, { error: error.status === 413 ? 'payload_too_large' : 'internal_error' });
       res.destroy();
     }
   });
