@@ -8,29 +8,46 @@ function safeEqual(a, b) {
   return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
 }
 
+function verifySignedWebhook(headers, rawBody, config, webhookId, nowMs) {
+  const timestamp = String(headers['webhook-timestamp'] || '').trim();
+  const signatures = String(headers['webhook-signature'] || '').trim();
+  if (!timestamp || !signatures) return { ok: false, reason: 'missing_signature' };
+  const seconds = Number(timestamp);
+  if (!Number.isFinite(seconds)) return { ok: false, reason: 'invalid_timestamp' };
+  if (Math.abs(nowMs - seconds * 1000) > config.webhookMaxSkewSeconds * 1000) {
+    return { ok: false, reason: 'stale_timestamp' };
+  }
+  let rawKey;
+  try {
+    const encoded = config.webhookSigningToken.replace(/^whsec_/, '');
+    rawKey = Buffer.from(encoded, 'base64');
+    if (!rawKey.length) throw new Error('empty key');
+  } catch {
+    return { ok: false, reason: 'invalid_signing_token' };
+  }
+  const message = `${webhookId}.${timestamp}.${rawBody}`;
+  const digest = crypto.createHmac('sha256', rawKey).update(message).digest('base64');
+  const expected = `v1,${digest}`;
+  const matched = signatures.split(/\s+/).some(signature => safeEqual(expected, signature));
+  return matched ? { ok: true, webhookId, mode: 'hmac' } : { ok: false, reason: 'bad_signature' };
+}
+
 function verifyWebhook(headers, rawBody, config, nowMs = Date.now()) {
-  const webhookId = String(headers['webhook-id'] || headers['x-gitlab-event-uuid'] || '').trim();
+  const webhookId = String(
+    headers['webhook-id'] || headers['idempotency-key'] || headers['x-gitlab-event-uuid'] || ''
+  ).trim();
   if (!webhookId) return { ok: false, reason: 'missing_webhook_id' };
 
-  if (config.webhookSigningToken) {
-    const timestamp = String(headers['webhook-timestamp'] || '').trim();
-    const signature = String(headers['webhook-signature'] || '').trim();
-    if (!timestamp || !signature) return { ok: false, reason: 'missing_signature' };
-    const seconds = Number(timestamp);
-    if (!Number.isFinite(seconds)) return { ok: false, reason: 'invalid_timestamp' };
-    if (Math.abs(nowMs - seconds * 1000) > config.webhookMaxSkewSeconds * 1000) {
-      return { ok: false, reason: 'stale_timestamp' };
-    }
-    const signed = `${webhookId}.${timestamp}.${rawBody}`;
-    const expected = crypto.createHmac('sha256', config.webhookSigningToken).update(signed).digest('hex');
-    const normalized = signature.replace(/^sha256=/i, '');
-    if (!safeEqual(expected, normalized)) return { ok: false, reason: 'bad_signature' };
-    return { ok: true, webhookId, mode: 'hmac' };
+  if (config.webhookSigningToken && headers['webhook-signature']) {
+    return verifySignedWebhook(headers, rawBody, config, webhookId, nowMs);
   }
-
-  const token = String(headers['x-gitlab-token'] || '').trim();
-  if (!safeEqual(token, config.webhookSecretToken)) return { ok: false, reason: 'bad_secret' };
-  return { ok: true, webhookId, mode: 'secret' };
+  if (config.webhookSecretToken) {
+    const token = String(headers['x-gitlab-token'] || '').trim();
+    return safeEqual(token, config.webhookSecretToken)
+      ? { ok: true, webhookId, mode: 'secret' }
+      : { ok: false, reason: 'bad_secret' };
+  }
+  return { ok: false, reason: 'missing_signature' };
 }
 
 function normalizeEvent(payload, headers, config) {
@@ -46,7 +63,7 @@ function normalizeEvent(payload, headers, config) {
     const allowed = (action === 'open' && config.triggerOnOpen) ||
       (action === 'reopen' && config.triggerOnReopen) ||
       (action === 'update' && config.triggerOnPush && Boolean(headSha));
-    return { event, kind: 'merge_request', projectId, iid, action, headSha, baseSha, shouldReview: allowed };
+    return { event, kind: 'merge_request', projectId, iid, action, headSha, baseSha, shouldReview: Boolean(projectId && iid && allowed) };
   }
 
   if (payload.object_kind === 'note' && payload.merge_request) {
@@ -54,8 +71,8 @@ function normalizeEvent(payload, headers, config) {
     const note = String(payload.object_attributes?.note || '').trim();
     const iid = Number(payload.merge_request?.iid || 0) || null;
     const command = /^\/codex\s+review\s*$/i.test(note);
-    const self = config.botUsername && author.toLowerCase() === config.botUsername.toLowerCase();
-    return { event, kind: 'note', projectId, iid, author, command, shouldReview: command && !self };
+    const self = Boolean(config.botUsername) && author.toLowerCase() === config.botUsername.toLowerCase();
+    return { event, kind: 'note', projectId, iid, author, command, shouldReview: Boolean(projectId && iid && command && !self) };
   }
 
   return { event, kind: 'ignored', projectId, iid: null, shouldReview: false };
