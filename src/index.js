@@ -5,6 +5,7 @@ const { Store } = require('./db');
 const { GitLabClient } = require('./gitlab');
 const { ReviewService } = require('./service');
 const { createHttpServer } = require('./http');
+const { probeCodexCapabilities } = require('./codex');
 
 function log(level, value) {
   const record = typeof value === 'object' && value ? value : { message: String(value) };
@@ -18,6 +19,8 @@ async function main() {
     warn: value => log('warn', value),
     error: value => log('error', value)
   };
+  const capability = await probeCodexCapabilities(config);
+  logger.info({ event: 'codex_ready', version: capability.version });
   const store = new Store(config.dbPath);
   const recovered = store.recoverInterruptedJobs();
   if (recovered) logger.info({ event: 'jobs_recovered', count: recovered });
