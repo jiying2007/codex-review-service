@@ -103,6 +103,10 @@ class Store {
       .run(new Date().toISOString(), webhookId);
   }
 
+  forgetWebhook(webhookId) {
+    this.db.prepare('DELETE FROM webhook_events WHERE webhook_id=? AND processed_at IS NULL').run(webhookId);
+  }
+
   enqueue({ projectId, mrIid, baseSha = '', headSha, trigger }) {
     const now = new Date().toISOString();
     return this.withTransaction(() => {
