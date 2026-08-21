@@ -12,6 +12,8 @@ The controller may hold:
 
 Those values are never intentionally copied into the Codex child-process environment. Codex receives only a small runtime allowlist plus `CODEX_HOME` and, when explicitly configured, `OPENAI_API_KEY`.
 
+Before the service starts accepting traffic, it verifies that the configured Codex CLI exposes the safety and structured-output capabilities required by the service. User config and repository rules are ignored for review execution, approval is disabled, the sandbox is read-only, and unnecessary shell/app/agent/network-related features are explicitly disabled.
+
 ## Untrusted repository data
 
 Merge request titles, descriptions, filenames, diffs, source comments, strings, generated text, and webhook payload fields are untrusted input. They cannot change service policy or grant Codex additional capabilities.
@@ -38,6 +40,8 @@ Webhook delivery IDs are persisted with a unique constraint. A delivery that fai
 
 A review is bound to a specific MR HEAD SHA. Before publishing any result, the service re-fetches the merge request and verifies that HEAD is unchanged. A new HEAD aborts an active old review and supersedes queued/running jobs for older HEADs.
 
+Interrupted running jobs are returned to the persistent queue after service restart. Transient review failures have a bounded retry count; known CLI capability and invalid-output failures are not retried indefinitely.
+
 ## Coverage safety
 
 A merge request is never marked pass if its diff coverage is incomplete. Files reported by GitLab as `too_large` or `collapsed`, unavailable diffs, or files skipped because the configured diff-byte budget was exhausted cause the review verdict to become `incomplete` and the external commit status to fail.
@@ -60,7 +64,7 @@ Do not add persistent logs containing source diffs, prompts, raw Codex output, G
 
 ## Deployment
 
-Run the service as a dedicated non-login Unix account. Keep `/etc/codex-review-service.env` mode `0600`. The included systemd unit enables `NoNewPrivileges`, a read-only system filesystem, kernel/control-group protections, a private temporary directory, and a narrow writable data directory.
+Run the service as a dedicated non-login Unix account. Keep `/etc/codex-review-service.env` mode `0600`. The included systemd unit enables `NoNewPrivileges`, a read-only system filesystem, kernel/control-group protections, and a private temporary directory. Writes are restricted to `/var/lib/codex-review` plus the dedicated `/home/codex-review/.codex` auth directory; the latter must remain writable when Codex managed authentication refreshes tokens.
 
 Terminate TLS at a trusted internal reverse proxy and restrict network access to the webhook endpoint to the GitLab instance or trusted ingress whenever possible.
 
