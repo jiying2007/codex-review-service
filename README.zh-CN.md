@@ -12,12 +12,14 @@
 - SQLite WAL 持久化 Webhook、任务、审核运行和 findings。
 - `webhook-id` 防重投，同一自动审核 HEAD 防重复执行。
 - 新 HEAD 到来时 supersede/取消旧审核，并在发布前再次验证当前 HEAD。
+- 服务重启后自动恢复中断任务，并对瞬态失败执行有上限重试。
 - 使用 `GET /merge_requests/:iid/diffs`，不依赖已废弃的 `/changes` API。
 - 对 finding 的文件和 post-change 行号做确定性校验，只允许落在本次变更附近。
 - MR 总结评论使用 marker 做 upsert，不重复刷屏。
 - finding 使用稳定 fingerprint；跨 HEAD 复用已有 discussion，问题消失后可自动 resolve。
 - 写入 GitLab external commit status，可作为 Merge Gate。
 - diff 被 GitLab 截断、`too_large`、`collapsed` 或超过本地预算时判定 `incomplete`，绝不误报 Pass。
+- 服务启动前预检 Codex CLI 版本和所需安全参数能力。
 - Codex 在临时空目录、read-only sandbox 中运行，子进程环境不会包含 GitLab API Token/Webhook Secret。
 
 ## 架构
@@ -54,8 +56,8 @@ Codex Review Service
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
-sudo mkdir -p /opt/codex-review-service /var/lib/codex-review
-sudo chown -R codex-review:codex-review /var/lib/codex-review
+sudo mkdir -p /opt/codex-review-service /var/lib/codex-review /home/codex-review/.codex
+sudo chown -R codex-review:codex-review /var/lib/codex-review /home/codex-review/.codex
 
 git clone https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
 cd /opt/codex-review-service
@@ -126,7 +128,7 @@ GitLab 开启 **Pipelines must succeed** 后，可把该 external status 纳入�
 
 GitLab API Token 只属于 Review Service Controller。Codex 子进程采用环境白名单，仅保留基础运行变量、`CODEX_HOME` 和可选 `OPENAI_API_KEY`，不会继承 GitLab API Token、Webhook Signing Token、Secret Token 等服务秘密。
 
-MR 标题、描述、diff、文件名和源码文本全部视为不可信数据。Codex 只接收有大小上限的文本 diff，在新的临时空目录使用 `--sandbox read-only` 运行，不需要 checkout 被审核仓库。
+MR 标题、描述、diff、文件名和源码文本全部视为不可信数据。Codex 只接收有大小上限的文本 diff，在新的临时空目录使用 `--sandbox read-only` 运行，不需要 checkout 被审核仓库。systemd 只允许写入服务数据目录以及专用 Codex Auth 目录；后者用于 managed auth token 刷新。
 
 完整说明见 [SECURITY.md](SECURITY.md)。
 
@@ -138,7 +140,7 @@ GET /health/ready
 GET /metrics
 ```
 
-`/health/ready` 会检查 GitLab 可达性、worker 状态和队列深度。`/metrics` 当前输出 Prometheus 文本格式的 queue depth。
+服务在监听端口前会完成 Codex CLI capability preflight；之后 `/health/ready` 检查 GitLab 可达性、worker 状态和队列深度，`/metrics` 输出 Prometheus 文本格式的 queue depth。
 
 ## 配置
 
@@ -148,6 +150,7 @@ GET /metrics
 - `MAX_FINDINGS`
 - `MIN_CONFIDENCE`
 - `REVIEW_TIMEOUT_SECONDS`
+- `MAX_JOB_ATTEMPTS`
 - `AUTO_RESOLVE_OBSOLETE`
 - `TRIGGER_ON_OPEN`
 - `TRIGGER_ON_PUSH`
