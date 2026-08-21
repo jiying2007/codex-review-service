@@ -23,8 +23,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 LockPersonality=true
 RestrictSUIDSGID=true
-ReadWritePaths=/var/lib/codex-review
-ReadOnlyPaths=/home/codex-review/.codex
+ReadWritePaths=/var/lib/codex-review /home/codex-review/.codex
 
 [Install]
 WantedBy=multi-user.target
