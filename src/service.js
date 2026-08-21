@@ -3,6 +3,8 @@
 const { buildSnapshot, buildPrompt, validateReview, formatSummary } = require('./review');
 const { runCodex } = require('./codex');
 
+const NON_RETRYABLE_ERRORS = new Set(['ECODEXVERSION', 'ECODEXOUTPUT']);
+
 class ReviewService {
   constructor({ config, store, gitlab, logger = console }) {
     this.config = config;
@@ -59,16 +61,21 @@ class ReviewService {
 
       const runId = this.store.saveRun(job.id, review, Date.now() - started);
       await this.publish(job, snapshot, review, runId);
-      const status = review.verdict === 'block' ? 'blocked' : review.verdict;
-      this.store.finishJob(job.id, status);
+      this.store.finishJob(job.id, review.verdict === 'block' ? 'blocked' : review.verdict);
     } catch (error) {
       if (error.code === 'ESUPERSEDED' || controller.signal.aborted) {
         this.store.finishJob(job.id, 'superseded');
         return;
       }
-      this.logger.error({ event: 'review_failed', jobId: job.id, projectId: job.project_id, mrIid: job.mr_iid, head: job.head_sha.slice(0, 12), code: error.code || 'EUNKNOWN' });
-      this.store.finishJob(job.id, 'failed', error.code || 'EUNKNOWN');
-      try { await this.gitlab.setCommitStatus(job.project_id, job.head_sha, 'failed', 'Codex review service failed'); } catch {}
+      const code = error.code || 'EUNKNOWN';
+      const retry = job.attempt < this.config.maxJobAttempts && !NON_RETRYABLE_ERRORS.has(code) && !this.stopping;
+      this.logger.error({ event: retry ? 'review_retry' : 'review_failed', jobId: job.id, projectId: job.project_id, mrIid: job.mr_iid, head: job.head_sha.slice(0, 12), attempt: job.attempt, code });
+      if (retry) {
+        this.store.retryJob(job.id, code);
+      } else {
+        this.store.finishJob(job.id, 'failed', code);
+        try { await this.gitlab.setCommitStatus(job.project_id, job.head_sha, 'failed', 'Codex review service failed'); } catch {}
+      }
     } finally {
       if (this.active.get(key)?.controller === controller) this.active.delete(key);
     }
@@ -76,12 +83,9 @@ class ReviewService {
 
   async publish(job, snapshot, review, runId) {
     await this.gitlab.upsertSummary(job.project_id, job.mr_iid, formatSummary(review, snapshot));
-
     const previous = this.store.latestFindings(job.project_id, job.mr_iid, job.id);
     const previousByFingerprint = new Map();
-    for (const old of previous) {
-      if (!previousByFingerprint.has(old.fingerprint)) previousByFingerprint.set(old.fingerprint, old);
-    }
+    for (const old of previous) if (!previousByFingerprint.has(old.fingerprint)) previousByFingerprint.set(old.fingerprint, old);
     const currentFingerprints = new Set(review.findings.map(f => f.fingerprint));
 
     if (this.config.autoResolveObsolete) {
@@ -92,8 +96,7 @@ class ReviewService {
       }
     }
 
-    const rows = this.store.findingsForRun(runId);
-    for (const row of rows) {
+    for (const row of this.store.findingsForRun(runId)) {
       const prior = previousByFingerprint.get(row.fingerprint);
       if (prior?.discussion_id) {
         this.store.setDiscussionId(row.id, prior.discussion_id);
@@ -102,9 +105,7 @@ class ReviewService {
       const finding = review.findings.find(f => f.fingerprint === row.fingerprint);
       const file = snapshot.files.find(f => f.path === finding.file);
       try {
-        const discussion = await this.gitlab.createDiscussion(
-          job.project_id, job.mr_iid, finding, snapshot.diffRefs, file.old_path, file.new_path
-        );
+        const discussion = await this.gitlab.createDiscussion(job.project_id, job.mr_iid, finding, snapshot.diffRefs, file.old_path, file.new_path);
         this.store.setDiscussionId(row.id, discussion.id);
       } catch (error) {
         this.logger.warn?.({ event: 'inline_comment_failed', jobId: job.id, finding: finding.fingerprint.slice(0, 12), status: error.status || null });
@@ -134,4 +135,4 @@ class ReviewService {
   }
 }
 
-module.exports = { ReviewService };
+module.exports = { ReviewService, NON_RETRYABLE_ERRORS };
