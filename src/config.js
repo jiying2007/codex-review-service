@@ -12,6 +12,16 @@ function intEnv(name, fallback, min, max) {
   return value;
 }
 
+function numberEnv(name, fallback, min, max) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${name} must be a number between ${min} and ${max}`);
+  }
+  return value;
+}
+
 function boolEnv(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined || raw === '') return fallback;
@@ -54,9 +64,10 @@ function loadConfig() {
     codexModel: String(process.env.CODEX_MODEL || '').trim(),
     codexHome: String(process.env.CODEX_HOME || '').trim(),
     reviewTimeoutSeconds: intEnv('REVIEW_TIMEOUT_SECONDS', 180, 30, 900),
+    maxJobAttempts: intEnv('MAX_JOB_ATTEMPTS', 3, 1, 10),
     maxDiffBytes: intEnv('MAX_DIFF_BYTES', 1024 * 1024, 4096, 4 * 1024 * 1024),
     maxFindings: intEnv('MAX_FINDINGS', 40, 1, 100),
-    minConfidence: Number(process.env.MIN_CONFIDENCE || 0.7),
+    minConfidence: numberEnv('MIN_CONFIDENCE', 0.7, 0, 1),
     pollIntervalMs: intEnv('WORKER_POLL_INTERVAL_MS', 1000, 100, 60000),
     statusName: String(process.env.GITLAB_STATUS_NAME || 'codex-review').trim() || 'codex-review',
     autoResolveObsolete: boolEnv('AUTO_RESOLVE_OBSOLETE', true),
@@ -66,4 +77,4 @@ function loadConfig() {
   };
 }
 
-module.exports = { loadConfig };
+module.exports = { loadConfig, intEnv, numberEnv, boolEnv };
