@@ -12,12 +12,14 @@ Persistent, self-hosted Codex code review service for GitLab Self-Managed merge 
 - Persists webhook deliveries, jobs, runs, and findings in SQLite WAL.
 - Deduplicates webhook retries and repeated reviews of the same MR HEAD.
 - Cancels/supersedes stale reviews when a new HEAD arrives.
+- Recovers interrupted jobs after service restart and applies bounded retries to transient failures.
 - Uses GitLab's merge request diffs API rather than the deprecated `/changes` endpoint.
 - Validates findings against changed files and changed post-change lines.
 - Upserts one MR summary note and creates inline diff discussions.
 - Resolves obsolete prior discussions when a finding disappears.
 - Publishes an external commit status named `codex-review`.
 - Treats incomplete diff coverage as a failed gate instead of a false pass.
+- Preflights required Codex CLI safety capabilities before the service starts.
 - Runs Codex in an empty temporary directory with a read-only sandbox and a filtered environment that does not contain GitLab credentials.
 
 ## Architecture
@@ -54,8 +56,8 @@ Codex Review Service
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
-sudo mkdir -p /opt/codex-review-service /var/lib/codex-review
-sudo chown -R codex-review:codex-review /var/lib/codex-review
+sudo mkdir -p /opt/codex-review-service /var/lib/codex-review /home/codex-review/.codex
+sudo chown -R codex-review:codex-review /var/lib/codex-review /home/codex-review/.codex
 
 git clone https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
 cd /opt/codex-review-service
@@ -108,7 +110,7 @@ To use it as a merge gate, configure GitLab so pipelines must succeed before mer
 
 The GitLab API token belongs only to the service controller. Codex receives a filtered environment containing only basic runtime variables, `CODEX_HOME`, and optionally `OPENAI_API_KEY`; GitLab API/webhook credentials are intentionally excluded.
 
-Repository-derived data is treated as untrusted. Codex receives only the MR title/description and bounded textual diffs. It runs in a fresh temporary directory with `--sandbox read-only` and `--skip-git-repo-check`, so it does not need a repository checkout.
+Repository-derived data is treated as untrusted. Codex receives only the MR title/description and bounded textual diffs. It runs in a fresh temporary directory with `--sandbox read-only` and `--skip-git-repo-check`, so it does not need a repository checkout. The included systemd unit allows writes only to the service data directory and the dedicated Codex auth directory, which is required for managed-auth token refresh.
 
 See [SECURITY.md](SECURITY.md).
 
@@ -120,7 +122,7 @@ GET /health/ready
 GET /metrics
 ```
 
-`/health/ready` checks GitLab reachability and worker state. `/metrics` currently exposes queue depth in Prometheus text format.
+The service performs a Codex CLI capability preflight before listening. `/health/ready` then checks GitLab reachability and worker state. `/metrics` currently exposes queue depth in Prometheus text format.
 
 ## Configuration
 
@@ -130,6 +132,7 @@ See [.env.example](.env.example). Important controls include:
 - `MAX_FINDINGS`
 - `MIN_CONFIDENCE`
 - `REVIEW_TIMEOUT_SECONDS`
+- `MAX_JOB_ATTEMPTS`
 - `AUTO_RESOLVE_OBSOLETE`
 - `TRIGGER_ON_OPEN`
 - `TRIGGER_ON_PUSH`
