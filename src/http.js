@@ -17,22 +17,24 @@ function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let bytes = 0;
+    let rejected = false;
     req.on('data', chunk => {
+      if (rejected) return;
       bytes += chunk.length;
       if (bytes > maxBytes) {
-        const error = Object.assign(new Error('Webhook body too large'), { status: 413 });
-        reject(error);
+        rejected = true;
+        reject(Object.assign(new Error('Webhook body too large'), { status: 413 }));
         req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    req.on('end', () => { if (!rejected) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', error => { if (!rejected) reject(error); });
   });
 }
 
-function createHttpServer({ config, store, service, gitlab, logger = console }) {
+function createHttpServer({ config, store, service, logger = console }) {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -83,10 +85,15 @@ function createHttpServer({ config, store, service, gitlab, logger = console }) 
       });
       if (!fresh) return json(res, 200, { status: 'duplicate' });
 
-      if (event.shouldReview) {
-        await service.enqueue(event.projectId, event.iid, event.kind === 'note' ? 'command' : event.action);
+      try {
+        if (event.shouldReview) {
+          await service.enqueue(event.projectId, event.iid, event.kind === 'note' ? 'command' : event.action);
+        }
+        store.markWebhookProcessed(verification.webhookId);
+      } catch (error) {
+        store.forgetWebhook(verification.webhookId);
+        throw error;
       }
-      store.markWebhookProcessed(verification.webhookId);
       return json(res, 202, { status: event.shouldReview ? 'queued' : 'ignored' });
     } catch (error) {
       logger.error({ event: 'http_error', code: error.code || 'EHTTP', status: error.status || 500 });
