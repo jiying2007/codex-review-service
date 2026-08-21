@@ -1,0 +1,30 @@
+[Unit]
+Description=Codex Review Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=codex-review
+Group=codex-review
+WorkingDirectory=/opt/codex-review-service
+EnvironmentFile=/etc/codex-review-service.env
+ExecStart=/usr/bin/node /opt/codex-review-service/src/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/codex-review
+ReadOnlyPaths=/home/codex-review/.codex
+
+[Install]
+WantedBy=multi-user.target
