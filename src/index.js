@@ -19,9 +19,11 @@ async function main() {
     error: value => log('error', value)
   };
   const store = new Store(config.dbPath);
+  const recovered = store.recoverInterruptedJobs();
+  if (recovered) logger.info({ event: 'jobs_recovered', count: recovered });
   const gitlab = new GitLabClient(config);
   const service = new ReviewService({ config, store, gitlab, logger });
-  const server = createHttpServer({ config, store, service, gitlab, logger });
+  const server = createHttpServer({ config, store, service, logger });
 
   const worker = service.workerLoop().catch(error => {
     logger.error({ event: 'worker_crashed', code: error.code || 'EWORKER' });
