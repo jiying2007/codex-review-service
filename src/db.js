@@ -1,14 +1,27 @@
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
 class Store {
   constructor(dbPath) {
-    fs.mkdirSync(require('node:path').dirname(dbPath), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;');
     this.migrate();
+  }
+
+  withTransaction(fn) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const value = fn();
+      this.db.exec('COMMIT');
+      return value;
+    } catch (error) {
+      try { this.db.exec('ROLLBACK'); } catch {}
+      throw error;
+    }
   }
 
   migrate() {
@@ -76,7 +89,7 @@ class Store {
   recordWebhook({ webhookId, eventType, projectId = null, mrIid = null }) {
     const now = new Date().toISOString();
     try {
-      this.db.prepare(`INSERT INTO webhook_events(webhook_id,event_type,project_id,mr_iid,received_at) VALUES(?,?,?,?,?)`)
+      this.db.prepare('INSERT INTO webhook_events(webhook_id,event_type,project_id,mr_iid,received_at) VALUES(?,?,?,?,?)')
         .run(webhookId, eventType, projectId, mrIid, now);
       return true;
     } catch (error) {
@@ -92,7 +105,7 @@ class Store {
 
   enqueue({ projectId, mrIid, baseSha = '', headSha, trigger }) {
     const now = new Date().toISOString();
-    const tx = this.db.transaction(() => {
+    return this.withTransaction(() => {
       this.db.prepare(`UPDATE review_jobs SET status='superseded', finished_at=?
         WHERE project_id=? AND mr_iid=? AND head_sha<>? AND status IN ('queued','running')`)
         .run(now, projectId, mrIid, headSha);
@@ -106,21 +119,17 @@ class Store {
         throw error;
       }
     });
-    return tx();
   }
 
   claimNext() {
-    const tx = this.db.transaction(() => {
+    return this.withTransaction(() => {
       const row = this.db.prepare("SELECT * FROM review_jobs WHERE status='queued' ORDER BY id LIMIT 1").get();
       if (!row) return null;
       const result = this.db.prepare("UPDATE review_jobs SET status='running', started_at=?, attempt=attempt+1 WHERE id=? AND status='queued'")
         .run(new Date().toISOString(), row.id);
       return result.changes === 1 ? this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(row.id) : null;
     });
-    return tx();
   }
-
-  getJob(id) { return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id); }
 
   finishJob(id, status, errorCode = null) {
     this.db.prepare('UPDATE review_jobs SET status=?, error_code=?, finished_at=? WHERE id=?')
@@ -129,7 +138,7 @@ class Store {
 
   saveRun(jobId, review, durationMs) {
     const now = new Date().toISOString();
-    const tx = this.db.transaction(() => {
+    return this.withTransaction(() => {
       const run = this.db.prepare(`INSERT INTO review_runs(job_id,verdict,summary,coverage_complete,finding_count,codex_version,duration_ms,created_at)
         VALUES(?,?,?,?,?,?,?,?)`)
         .run(jobId, review.verdict, review.summary, review.coverageComplete ? 1 : 0,
@@ -143,7 +152,10 @@ class Store {
       }
       return runId;
     });
-    return tx();
+  }
+
+  findingsForRun(runId) {
+    return this.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId);
   }
 
   latestFindings(projectId, mrIid, beforeJobId) {
@@ -155,6 +167,10 @@ class Store {
 
   setDiscussionId(findingId, discussionId) {
     this.db.prepare('UPDATE review_findings SET discussion_id=? WHERE id=?').run(discussionId, findingId);
+  }
+
+  queueDepth() {
+    return Number(this.db.prepare("SELECT COUNT(*) AS count FROM review_jobs WHERE status='queued'").get().count);
   }
 
   close() { this.db.close(); }
