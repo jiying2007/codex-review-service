@@ -15,7 +15,7 @@ class ReviewService {
 
   key(projectId, iid) { return `${projectId}:${iid}`; }
 
-  async enqueue(projectId, iid, trigger) {
+  async enqueue(projectId, iid, trigger, dedupeKey) {
     const mr = await this.gitlab.getMergeRequest(projectId, iid);
     if (mr.state !== 'opened') return null;
     const headSha = String(mr.diff_refs?.head_sha || mr.sha || '').trim();
@@ -23,7 +23,10 @@ class ReviewService {
     if (!headSha) throw new Error('Merge request does not expose a head SHA');
     const active = this.active.get(this.key(projectId, iid));
     if (active && active.headSha !== headSha) active.controller.abort();
-    return this.store.enqueue({ projectId, mrIid: iid, baseSha, headSha, trigger });
+    return this.store.enqueue({
+      projectId, mrIid: iid, baseSha, headSha, trigger,
+      dedupeKey: dedupeKey || `head:${headSha}`
+    });
   }
 
   async processJob(job) {
@@ -74,13 +77,15 @@ class ReviewService {
   async publish(job, snapshot, review, runId) {
     await this.gitlab.upsertSummary(job.project_id, job.mr_iid, formatSummary(review, snapshot));
 
+    const previous = this.store.latestFindings(job.project_id, job.mr_iid, job.id);
+    const previousByFingerprint = new Map();
+    for (const old of previous) {
+      if (!previousByFingerprint.has(old.fingerprint)) previousByFingerprint.set(old.fingerprint, old);
+    }
     const currentFingerprints = new Set(review.findings.map(f => f.fingerprint));
+
     if (this.config.autoResolveObsolete) {
-      const previous = this.store.latestFindings(job.project_id, job.mr_iid, job.id);
-      const seen = new Set();
-      for (const old of previous) {
-        if (seen.has(old.fingerprint)) continue;
-        seen.add(old.fingerprint);
+      for (const old of previousByFingerprint.values()) {
         if (old.discussion_id && !currentFingerprints.has(old.fingerprint)) {
           try { await this.gitlab.resolveDiscussion(job.project_id, job.mr_iid, old.discussion_id); } catch {}
         }
@@ -89,6 +94,11 @@ class ReviewService {
 
     const rows = this.store.findingsForRun(runId);
     for (const row of rows) {
+      const prior = previousByFingerprint.get(row.fingerprint);
+      if (prior?.discussion_id) {
+        this.store.setDiscussionId(row.id, prior.discussion_id);
+        continue;
+      }
       const finding = review.findings.find(f => f.fingerprint === row.fingerprint);
       const file = snapshot.files.find(f => f.path === finding.file);
       try {
