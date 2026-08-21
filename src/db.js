@@ -35,7 +35,6 @@ class Store {
         received_at TEXT NOT NULL,
         processed_at TEXT
       );
-
       CREATE TABLE IF NOT EXISTS review_jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER NOT NULL,
@@ -52,10 +51,8 @@ class Store {
         finished_at TEXT,
         UNIQUE(project_id, mr_iid, dedupe_key)
       );
-
       CREATE INDEX IF NOT EXISTS idx_review_jobs_status ON review_jobs(status, id);
       CREATE INDEX IF NOT EXISTS idx_review_jobs_mr ON review_jobs(project_id, mr_iid, id);
-
       CREATE TABLE IF NOT EXISTS review_runs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         job_id INTEGER NOT NULL REFERENCES review_jobs(id) ON DELETE CASCADE,
@@ -67,7 +64,6 @@ class Store {
         duration_ms INTEGER NOT NULL,
         created_at TEXT NOT NULL
       );
-
       CREATE TABLE IF NOT EXISTS review_findings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id INTEGER NOT NULL REFERENCES review_runs(id) ON DELETE CASCADE,
@@ -88,10 +84,9 @@ class Store {
   }
 
   recordWebhook({ webhookId, eventType, projectId = null, mrIid = null }) {
-    const now = new Date().toISOString();
     try {
       this.db.prepare('INSERT INTO webhook_events(webhook_id,event_type,project_id,mr_iid,received_at) VALUES(?,?,?,?,?)')
-        .run(webhookId, eventType, projectId, mrIid, now);
+        .run(webhookId, eventType, projectId, mrIid, new Date().toISOString());
       return true;
     } catch (error) {
       if (String(error.message).includes('UNIQUE constraint failed')) return false;
@@ -100,8 +95,7 @@ class Store {
   }
 
   markWebhookProcessed(webhookId) {
-    this.db.prepare('UPDATE webhook_events SET processed_at=? WHERE webhook_id=?')
-      .run(new Date().toISOString(), webhookId);
+    this.db.prepare('UPDATE webhook_events SET processed_at=? WHERE webhook_id=?').run(new Date().toISOString(), webhookId);
   }
 
   forgetWebhook(webhookId) {
@@ -126,6 +120,10 @@ class Store {
     });
   }
 
+  recoverInterruptedJobs() {
+    return this.db.prepare("UPDATE review_jobs SET status='queued', started_at=NULL, error_code='ESERVICERESTART' WHERE status='running'").run().changes;
+  }
+
   claimNext() {
     return this.withTransaction(() => {
       const row = this.db.prepare("SELECT * FROM review_jobs WHERE status='queued' ORDER BY id LIMIT 1").get();
@@ -136,18 +134,22 @@ class Store {
     });
   }
 
+  retryJob(id, errorCode) {
+    this.db.prepare("UPDATE review_jobs SET status='queued', error_code=?, started_at=NULL WHERE id=? AND status='running'")
+      .run(errorCode, id);
+  }
+
   finishJob(id, status, errorCode = null) {
     this.db.prepare('UPDATE review_jobs SET status=?, error_code=?, finished_at=? WHERE id=?')
       .run(status, errorCode, new Date().toISOString(), id);
   }
 
   saveRun(jobId, review, durationMs) {
-    const now = new Date().toISOString();
     return this.withTransaction(() => {
       const run = this.db.prepare(`INSERT INTO review_runs(job_id,verdict,summary,coverage_complete,finding_count,codex_version,duration_ms,created_at)
         VALUES(?,?,?,?,?,?,?,?)`)
         .run(jobId, review.verdict, review.summary, review.coverageComplete ? 1 : 0,
-          review.findings.length, review.codexVersion || null, durationMs, now);
+          review.findings.length, review.codexVersion || null, durationMs, new Date().toISOString());
       const runId = Number(run.lastInsertRowid);
       const insert = this.db.prepare(`INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence)
         VALUES(?,?,?,?,?,?,?,?,?,?,?)`);
