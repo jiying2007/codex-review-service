@@ -6,6 +6,11 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { outputSchema } = require('./review');
 
+const REQUIRED_TOP_FLAGS = Object.freeze(['--ask-for-approval']);
+const REQUIRED_EXEC_FLAGS = Object.freeze([
+  '--json', '--ephemeral', '--skip-git-repo-check', '--ignore-user-config',
+  '--ignore-rules', '--sandbox', '--output-schema', '--config'
+]);
 const SAFE_CONFIG_OVERRIDES = Object.freeze([
   'web_search="disabled"',
   'features.shell_tool=false',
@@ -19,6 +24,8 @@ const SAFE_CONFIG_OVERRIDES = Object.freeze([
   'features.memories=false',
   'features.skill_mcp_dependency_install=false'
 ]);
+
+let capabilityCache = null;
 
 function filteredEnv(config) {
   const env = {};
@@ -48,6 +55,65 @@ function buildCodexArgs(schemaPath, model) {
   return args;
 }
 
+function capture(command, args, config, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: filteredEnv(config),
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ stdout, stderr });
+      else {
+        const error = new Error(`Codex capability probe exited with code ${code}`);
+        error.code = 'ECODEXCAPABILITY';
+        error.stderr = stderr.slice(0, 1000);
+        reject(error);
+      }
+    });
+  });
+}
+
+async function probeCodexCapabilities(config, force = false) {
+  const cacheKey = `${config.codexPath}\n${config.codexModel || ''}`;
+  if (!force && capabilityCache?.key === cacheKey) return capabilityCache.value;
+  let versionResult;
+  let top;
+  let exec;
+  try {
+    [versionResult, top, exec] = await Promise.all([
+      capture(config.codexPath, ['--version'], config),
+      capture(config.codexPath, ['--help'], config),
+      capture(config.codexPath, ['exec', '--help'], config)
+    ]);
+  } catch (error) {
+    if (!error.code || error.code === 'ENOENT') error.code = 'ECODEXCAPABILITY';
+    throw error;
+  }
+  const topHelp = `${top.stdout}\n${top.stderr}`;
+  const execHelp = `${exec.stdout}\n${exec.stderr}`;
+  const missing = [
+    ...REQUIRED_TOP_FLAGS.filter(flag => !topHelp.includes(flag)).map(flag => `top-level ${flag}`),
+    ...REQUIRED_EXEC_FLAGS.filter(flag => !execHelp.includes(flag)).map(flag => `exec ${flag}`)
+  ];
+  if (config.codexModel && !`${topHelp}\n${execHelp}`.includes('--model')) missing.push('--model');
+  if (missing.length) {
+    const error = new Error(`Codex CLI does not expose required capabilities: ${missing.join(', ')}`);
+    error.code = 'ECODEXVERSION';
+    error.missingFlags = missing;
+    throw error;
+  }
+  const value = { version: String(versionResult.stdout || versionResult.stderr).trim() || 'unknown' };
+  capabilityCache = { key: cacheKey, value };
+  return value;
+}
+
 function parseJsonl(stdout) {
   let lastAgentMessage = '';
   const errors = [];
@@ -71,7 +137,8 @@ function compatibilityError(stderr) {
     .some(fragment => text.includes(fragment));
 }
 
-function runCodex(prompt, config, signal) {
+async function runCodex(prompt, config, signal) {
+  const capability = await probeCodexCapabilities(config);
   return new Promise((resolve, reject) => {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-service-'));
     const schemaPath = path.join(temp, 'review-schema.json');
@@ -86,6 +153,7 @@ function runCodex(prompt, config, signal) {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let limitExceeded = false;
     const cleanup = () => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch {} };
     const stop = () => {
       if (settled) return;
@@ -99,11 +167,11 @@ function runCodex(prompt, config, signal) {
     signal?.addEventListener('abort', onAbort, { once: true });
     child.stdout.on('data', chunk => {
       stdout += chunk;
-      if (Buffer.byteLength(stdout) > 6 * 1024 * 1024) stop();
+      if (Buffer.byteLength(stdout) > 6 * 1024 * 1024) { limitExceeded = true; stop(); }
     });
     child.stderr.on('data', chunk => {
       stderr += chunk;
-      if (Buffer.byteLength(stderr) > 1024 * 1024) stop();
+      if (Buffer.byteLength(stderr) > 1024 * 1024) { limitExceeded = true; stop(); }
     });
     child.on('error', error => {
       settled = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort); cleanup(); reject(error);
@@ -112,6 +180,7 @@ function runCodex(prompt, config, signal) {
       settled = true; clearTimeout(timer); signal?.removeEventListener('abort', onAbort);
       try {
         if (signal?.aborted) return reject(Object.assign(new Error('Review superseded'), { code: 'ESUPERSEDED' }));
+        if (limitExceeded) return reject(Object.assign(new Error('Codex output exceeded configured safety limit'), { code: 'ECODEXOUTPUT' }));
         if (code !== 0) {
           const error = new Error(`Codex exited with code ${code}`);
           error.code = compatibilityError(stderr) ? 'ECODEXVERSION' : 'ECODEX';
@@ -122,7 +191,7 @@ function runCodex(prompt, config, signal) {
         let parsed;
         try { parsed = JSON.parse(text); }
         catch { throw Object.assign(new Error('Codex final agent_message is not valid JSON'), { code: 'ECODEXOUTPUT' }); }
-        resolve({ parsed, version: 'cli' });
+        resolve({ parsed, version: capability.version });
       } catch (error) { reject(error); }
       finally { cleanup(); }
     });
@@ -130,4 +199,7 @@ function runCodex(prompt, config, signal) {
   });
 }
 
-module.exports = { runCodex, filteredEnv, parseJsonl, buildCodexArgs, SAFE_CONFIG_OVERRIDES };
+module.exports = {
+  runCodex, filteredEnv, parseJsonl, buildCodexArgs, probeCodexCapabilities,
+  SAFE_CONFIG_OVERRIDES, REQUIRED_TOP_FLAGS, REQUIRED_EXEC_FLAGS
+};
