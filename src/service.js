@@ -87,7 +87,7 @@ class ReviewService {
       }
     }
 
-    const rows = this.store.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId);
+    const rows = this.store.findingsForRun(runId);
     for (const row of rows) {
       const finding = review.findings.find(f => f.fingerprint === row.fingerprint);
       const file = snapshot.files.find(f => f.path === finding.file);
