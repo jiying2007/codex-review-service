@@ -87,7 +87,13 @@ function createHttpServer({ config, store, service, logger = console }) {
 
       try {
         if (event.shouldReview) {
-          await service.enqueue(event.projectId, event.iid, event.kind === 'note' ? 'command' : event.action);
+          const manual = event.kind === 'note';
+          await service.enqueue(
+            event.projectId,
+            event.iid,
+            manual ? 'command' : event.action,
+            manual ? `command:${verification.webhookId}` : undefined
+          );
         }
         store.markWebhookProcessed(verification.webhookId);
       } catch (error) {
