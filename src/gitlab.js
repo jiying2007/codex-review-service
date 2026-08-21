@@ -105,8 +105,8 @@ class GitLabClient {
     });
   }
 
-  setCommitStatus(projectId, sha, state, description) {
-    return this.request('POST', `/projects/${encodeURIComponent(projectId)}/statuses/${sha}`, {
+  async setCommitStatus(projectId, sha, state, description) {
+    const request = () => this.request('POST', `/projects/${encodeURIComponent(projectId)}/statuses/${sha}`, {
       query: {
         state,
         name: this.statusName,
@@ -114,6 +114,16 @@ class GitLabClient {
       },
       expected: [201]
     });
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try { return await request(); }
+      catch (error) {
+        lastError = error;
+        if (error.status !== 409 || attempt === 2) throw error;
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+    }
+    throw lastError;
   }
 }
 
