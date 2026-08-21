@@ -42,6 +42,7 @@ class Store {
         mr_iid INTEGER NOT NULL,
         base_sha TEXT NOT NULL DEFAULT '',
         head_sha TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
         status TEXT NOT NULL,
         trigger TEXT NOT NULL,
         attempt INTEGER NOT NULL DEFAULT 0,
@@ -49,7 +50,7 @@ class Store {
         created_at TEXT NOT NULL,
         started_at TEXT,
         finished_at TEXT,
-        UNIQUE(project_id, mr_iid, head_sha)
+        UNIQUE(project_id, mr_iid, dedupe_key)
       );
 
       CREATE INDEX IF NOT EXISTS idx_review_jobs_status ON review_jobs(status, id);
@@ -107,16 +108,16 @@ class Store {
     this.db.prepare('DELETE FROM webhook_events WHERE webhook_id=? AND processed_at IS NULL').run(webhookId);
   }
 
-  enqueue({ projectId, mrIid, baseSha = '', headSha, trigger }) {
+  enqueue({ projectId, mrIid, baseSha = '', headSha, trigger, dedupeKey = `head:${headSha}` }) {
     const now = new Date().toISOString();
     return this.withTransaction(() => {
       this.db.prepare(`UPDATE review_jobs SET status='superseded', finished_at=?
         WHERE project_id=? AND mr_iid=? AND head_sha<>? AND status IN ('queued','running')`)
         .run(now, projectId, mrIid, headSha);
       try {
-        const result = this.db.prepare(`INSERT INTO review_jobs(project_id,mr_iid,base_sha,head_sha,status,trigger,created_at)
-          VALUES(?,?,?,?, 'queued', ?, ?)`)
-          .run(projectId, mrIid, baseSha, headSha, trigger, now);
+        const result = this.db.prepare(`INSERT INTO review_jobs(project_id,mr_iid,base_sha,head_sha,dedupe_key,status,trigger,created_at)
+          VALUES(?,?,?,?,?, 'queued', ?, ?)`)
+          .run(projectId, mrIid, baseSha, headSha, dedupeKey, trigger, now);
         return Number(result.lastInsertRowid);
       } catch (error) {
         if (String(error.message).includes('UNIQUE constraint failed')) return null;
