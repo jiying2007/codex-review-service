@@ -1,0 +1,15 @@
+{
+  "gitlab": {
+    "baseUrl": "https://gitlab.example.internal",
+    "projects": [101, 102],
+    "groups": [
+      { "id": 20, "includeSubgroups": true }
+    ]
+  },
+  "review": {
+    "concurrency": 2
+  },
+  "runner": {
+    "mode": "inline"
+  }
+}

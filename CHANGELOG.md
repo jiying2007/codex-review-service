@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0 - 2026-08-22
+
+### Simpler deployment and first-class multi-repository scope
+
+- Added strict `/etc/codex-review/config.json` structured configuration for non-secret deployment settings.
+- Made Standard Deployment the default product path: one `codex-review-service` process with inline Codex; the isolated Unix-socket Runner remains the Hardened Deployment option.
+- Added first-class multi-repository scope through explicit `gitlab.projects` plus GitLab `gitlab.groups` discovery with optional subgroup expansion.
+- Group discovery uses GitLab's paginated Group Projects API, excludes archived projects, requires Merge Requests support, merges/deduplicates explicit and discovered projects, and refreshes on the reconciliation cadence.
+- Project discovery is fail-closed: incomplete/failed discovery does not replace the last complete scope and makes readiness unhealthy.
+- Kept legacy `GITLAB_PROJECT_ALLOWLIST` as an explicit compatibility input; when set it overrides structured project/group scope. `*` remains webhook-only.
+- Added project-scope health/counts to Doctor, readiness, metrics, startup logs and reconciliation behavior.
+- Reduced the default environment template to credentials plus optional overrides; advanced tuning remains available without being required for first deployment.
+- Added strict config schema/precedence and project/group discovery regression tests.
+
 ## 1.1.0 - 2026-08-22
 
 ### Long-term production asset
