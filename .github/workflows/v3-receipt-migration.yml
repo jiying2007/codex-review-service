@@ -1,0 +1,59 @@
+name: Family v3 Service receipt migration
+
+on:
+  push:
+    branches: [feat/family-v3-service]
+    paths: [.github/workflows/v3-receipt-migration.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Apply schema-4 Receipt v3 persistence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const p='src/db.js';
+          let s=fs.readFileSync(p,'utf8');
+          const must=(old,next,label)=>{if(!s.includes(old))throw new Error(`missing ${label}`);s=s.replace(old,next);};
+          must('const SCHEMA_VERSION = 3;','const SCHEMA_VERSION = 4;','schema version');
+          must("reasoning_output_tokens INTEGER NOT NULL DEFAULT 0);","reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,receipt_json TEXT NOT NULL DEFAULT '',receipt_fingerprint TEXT NOT NULL DEFAULT '');",'review_runs create');
+          must("['reasoning_output_tokens','INTEGER NOT NULL DEFAULT 0']","['reasoning_output_tokens','INTEGER NOT NULL DEFAULT 0'],['receipt_json',\"TEXT NOT NULL DEFAULT ''\"],['receipt_fingerprint',\"TEXT NOT NULL DEFAULT ''\"]",'review_runs additions');
+          must('saveRunWithOutbox(jobId,review,durationMs,policy,actions){','saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null){','save signature');
+          must('reasoning_output_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)','reasoning_output_tokens,receipt_json,receipt_fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)','insert columns');
+          must('usage.reasoningOutputTokens||0),runId=Number(run.lastInsertRowid)','usage.reasoningOutputTokens||0,receiptProjection?json(receiptProjection.receipt):\'\',receiptProjection?.fingerprint||\'\'),runId=Number(run.lastInsertRowid)','insert values');
+          must("findingsForRun(runId){return this.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId);}","receiptForRun(runId){const row=this.db.prepare('SELECT receipt_json,receipt_fingerprint FROM review_runs WHERE id=?').get(runId);return row?{receipt:parseJson(row.receipt_json),fingerprint:row.receipt_fingerprint}:null;}\n  findingsForRun(runId){return this.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId);}",'receipt getter');
+          fs.writeFileSync(p,s);
+
+          const service='src/service.js';
+          let v=fs.readFileSync(service,'utf8');
+          if(!v.includes('createServiceReviewReceipt')){
+            v=v.replace("const{buildSnapshot,buildPrompt,validateChunkResult,consolidateReviews,emptyReview,formatSummary}=require('./review');","const{buildSnapshot,buildPrompt,validateChunkResult,consolidateReviews,emptyReview,formatSummary,createServiceReviewReceipt}=require('./review');");
+          }
+          const oldCall='const actions=this.planPublication(job,snapshot,review,policy);this.store.saveRunWithOutbox(job.id,review,Date.now()-started,policy,actions);';
+          const newCall='const actions=this.planPublication(job,snapshot,review,policy),receiptProjection=createServiceReviewReceipt(snapshot,review,policy);this.store.saveRunWithOutbox(job.id,review,Date.now()-started,policy,actions,receiptProjection);';
+          if(!v.includes(oldCall))throw new Error('missing saveRunWithOutbox service call');
+          v=v.replace(oldCall,newCall);
+          fs.writeFileSync(service,v);
+          NODE
+          node --check src/db.js
+          node --check src/service.js
+          node --check src/review.js
+          git rm .github/workflows/v3-receipt-migration.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/db.js src/service.js src/review.js
+          git diff --cached --check
+          git commit -m 'feat: persist Service Review Receipt v3 atomically'
+          git push origin HEAD:feat/family-v3-service
