@@ -1,0 +1,20 @@
+'use strict';
+
+const crypto=require('node:crypto');
+function hex(bytes){return crypto.randomBytes(bytes).toString('hex');}
+function safeAttr(value){if(typeof value==='number'||typeof value==='boolean')return value;return String(value??'').slice(0,512);}
+function otlpValue(value){if(typeof value==='boolean')return{boolValue:value};if(typeof value==='number')return Number.isInteger(value)?{intValue:String(value)}:{doubleValue:value};return{stringValue:String(value)};}
+class Metrics{
+  constructor(){this.counters=new Map();this.histograms=new Map();}
+  inc(name,value=1){this.counters.set(name,(this.counters.get(name)||0)+value);}
+  observe(name,value,buckets=[0.1,0.25,0.5,1,2,5,10,30,60,120,300]){let h=this.histograms.get(name);if(!h){h={count:0,sum:0,buckets:[...buckets],counts:Array(buckets.length).fill(0)};this.histograms.set(name,h);}h.count++;h.sum+=value;for(let i=0;i<h.buckets.length;i++)if(value<=h.buckets[i])h.counts[i]++;}
+  render(){const lines=[];for(const[name,value]of [...this.counters.entries()].sort())lines.push(`# TYPE ${name} counter`,`${name} ${value}`);for(const[name,h]of [...this.histograms.entries()].sort()){lines.push(`# TYPE ${name} histogram`);for(let i=0;i<h.buckets.length;i++)lines.push(`${name}_bucket{le="${h.buckets[i]}"} ${h.counts[i]}`);lines.push(`${name}_bucket{le="+Inf"} ${h.count}`,`${name}_sum ${h.sum}`,`${name}_count ${h.count}`);}return lines.length?`${lines.join('\n')}\n`:'';}
+}
+class Telemetry{
+  constructor({logger=console,endpoint='',serviceName='codex-review-service',timeoutMs=3000}={}){this.logger=logger;this.endpoint=String(endpoint||'').replace(/\/$/,'');this.serviceName=serviceName;this.timeoutMs=timeoutMs;this.metrics=new Metrics();this.pending=new Set();}
+  traceId(value=''){return /^[0-9a-f]{32}$/i.test(value)?value.toLowerCase():hex(16);}
+  async span(traceId,name,attrs,fn){const spanId=hex(8),started=process.hrtime.bigint(),startUnix=BigInt(Date.now())*1000000n;let status={code:1};try{return await fn({traceId,spanId});}catch(error){status={code:2,message:String(error?.code||error?.message||'error').slice(0,256)};throw error;}finally{const elapsed=Number(process.hrtime.bigint()-started)/1e9;this.metrics.observe('codex_review_span_duration_seconds',elapsed);this.logger.info?.({event:'trace_span',traceId,spanId,name,durationMs:Math.round(elapsed*1000),...attrs,status:status.code===1?'ok':'error'});if(this.endpoint)this.exportSpan({traceId,spanId,name,attrs,status,startUnix,endUnix:startUnix+BigInt(Math.max(1,Math.round(elapsed*1e9))) });}}
+  exportSpan(span){const task=(async()=>{try{const url=this.endpoint.endsWith('/v1/traces')?this.endpoint:`${this.endpoint}/v1/traces`;const attributes=Object.entries(span.attrs||{}).filter(([,v])=>v!==undefined&&v!==null).map(([key,value])=>({key,value:otlpValue(safeAttr(value))}));const body={resourceSpans:[{resource:{attributes:[{key:'service.name',value:{stringValue:this.serviceName}}]},scopeSpans:[{scope:{name:'codex-review-service'},spans:[{traceId:span.traceId,spanId:span.spanId,name:span.name,kind:1,startTimeUnixNano:String(span.startUnix),endTimeUnixNano:String(span.endUnix),attributes,status:span.status}]}]}]};await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(this.timeoutMs)});}catch(error){this.logger.warn?.({event:'otel_export_failed',code:error?.code||'EOTEL'});}})();this.pending.add(task);task.finally(()=>this.pending.delete(task));}
+  async flush(){await Promise.allSettled([...this.pending]);}
+}
+module.exports={Telemetry,Metrics};
