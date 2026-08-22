@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.0.0 - 2026-08-23
+
+### Codex Safe Family v4 terminal baseline
+
+- Pin Safe Core 4.0.0 and hard-switch GitLab MR Review Receipt to v4 with complete protocol/prompt/model/Codex provenance.
+- Add project-fair queue scheduling, fail-closed isolated Runner capability negotiation, and deterministic new/persistent/resolved/regressed finding lifecycle ledger.
+- Preserve stale-snapshot cancellation, bounded retries, poison-job cutoff, durable SQLite Outbox and provider isolation.
+- Add Scorecard plus immutable TGZ/SPDX-SBOM/SHA256/provenance release assets.
+
 ## 3.0.0 - 2026-08-22
 
 ### Codex Safe Family v3 convergence
