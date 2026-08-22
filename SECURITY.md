@@ -2,72 +2,54 @@
 
 ## Trust boundary
 
-Codex Review Service separates the privileged GitLab controller from the unprivileged Codex review process.
+The privileged controller owns GitLab API/webhook credentials. Codex is a separate child process and never intentionally receives `GITLAB_API_TOKEN`, signing tokens, legacy webhook secrets, or controller-only configuration.
 
-The controller may hold:
+Codex receives a small environment allowlist plus `CODEX_HOME` and optional `OPENAI_API_KEY`. It runs in a fresh empty directory with the Codex Safe Contract: no approval prompts, ephemeral execution, ignored user/repository rules, read-only sandbox, disabled web search, shell/unified execution, apps, multi-agent, remote plugins, hooks, goals, memories, and dependency installation.
 
-- `GITLAB_API_TOKEN`
-- `GITLAB_WEBHOOK_SIGNING_TOKEN`
-- `GITLAB_WEBHOOK_SECRET_TOKEN`
+## Webhook authentication and scope
 
-Those values are never intentionally copied into the Codex child-process environment. Codex receives only a small runtime allowlist plus `CODEX_HOME` and, when explicitly configured, `OPENAI_API_KEY`.
+The preferred GitLab 19+ path validates Standard Webhooks `webhook-id`, timestamp, HMAC signature over the exact raw body, replay skew, and expected `X-Gitlab-Instance`. Legacy `X-Gitlab-Token` is supported only as a compatibility fallback. Delivery IDs are persisted for idempotency.
 
-Before the service starts accepting traffic, it verifies that the configured Codex CLI exposes the safety and structured-output capabilities required by the service. User config and repository rules are ignored for review execution, approval is disabled, the sandbox is read-only, and unnecessary shell/app/agent/network-related features are explicitly disabled.
+`GITLAB_PROJECT_ALLOWLIST` limits accepted project IDs independently of token permissions. Use explicit IDs for the strongest boundary.
+
+Webhook requests perform no GitLab API or Codex work. They authenticate and enqueue locally, allowing fast acknowledgement and limiting request-amplification risk. Body/header sizes and queue depth are bounded.
+
+## Manual command authorization
+
+`/codex review` accepts only newly-created MR comments, ignores the bot itself, and verifies the commenter's effective GitLab membership before spending Codex capacity. Default minimum access is Developer (30).
 
 ## Untrusted repository data
 
-Merge request titles, descriptions, filenames, diffs, source comments, strings, generated text, and webhook payload fields are untrusted input. They cannot change service policy or grant Codex additional capabilities.
+MR titles, descriptions, filenames, diffs, source comments/strings, generated files, and model output are untrusted. Repository text cannot grant tools, network, credentials, or override deterministic controller policy.
 
-The service does not clone the reviewed repository. It sends bounded textual merge request diffs to Codex and runs Codex in a newly-created empty temporary directory with a read-only sandbox.
+The optional `.codex-review.json` is read from the target snapshot `diff_refs.start_sha`, not from the unreviewed source branch. Unknown/malformed fields fail closed. Repository policy can only narrow service resource ceilings/refine review emphasis and cannot hide severities blocked by the global gate.
 
-## Webhook authentication
+## Snapshot and stale-result protection
 
-For GitLab versions supporting Standard Webhooks signing tokens, the service verifies:
-
-- `webhook-id`
-- `webhook-timestamp`
-- `webhook-signature`
-- HMAC-SHA256 over the exact raw body
-- an allowed timestamp skew to reduce replay risk
-
-The `whsec_` signing token is base64-decoded before HMAC computation, and `v1,<base64 digest>` signatures are compared in constant time. Multiple space-separated signatures are supported.
-
-Legacy `X-Gitlab-Token` verification is supported for older GitLab and migrations. If both mechanisms are configured and a signed request is present, HMAC verification takes precedence.
-
-Webhook delivery IDs are persisted with a unique constraint. A delivery that fails before enqueue is removed from the unprocessed ledger so GitLab retry semantics remain intact.
-
-## Stale-result protection
-
-A review is bound to a specific MR HEAD SHA. Before publishing any result, the service re-fetches the merge request and verifies that HEAD is unchanged. A new HEAD aborts an active old review and supersedes queued/running jobs for older HEADs.
-
-Interrupted running jobs are returned to the persistent queue after service restart. Transient review failures have a bounded retry count; known CLI capability and invalid-output failures are not retried indefinitely.
+A review is bound to both target `start_sha` and source `head_sha`. The service re-fetches the MR before publishing and discards results if either SHA changed. A newer source HEAD aborts an active older review. Periodic reconciliation with explicit project IDs helps recover from missed webhooks and target-snapshot changes.
 
 ## Coverage safety
 
-A merge request is never marked pass if its diff coverage is incomplete. Files reported by GitLab as `too_large` or `collapsed`, unavailable diffs, or files skipped because the configured diff-byte budget was exhausted cause the review verdict to become `incomplete` and the external commit status to fail.
+A review cannot pass when GitLab diff pagination is incomplete or a file is unavailable, binary/empty, `too_large`, `collapsed`, larger than the per-chunk byte ceiling, or omitted due to the chunk-count ceiling. Such cases produce `incomplete` and a failed external status.
 
-## Finding validation
+Codex output is locally validated against exact changed old/new lines. A structurally invalid/unverifiable model finding makes the review incomplete rather than being silently discarded into a false pass. Low-confidence findings below the configured floor are filtered without changing the gate.
 
-Model output is locally validated. Findings must:
+## GitLab write safety
 
-- use an allowed severity and category;
-- reference a changed file;
-- meet the configured confidence threshold;
-- reference a changed post-change line or a nearby changed line;
-- fit bounded title/description/suggestion lengths.
+The controller, not Codex, creates/updates notes, discussions, resolution state, and external statuses. Stable fingerprints prevent repeated unresolved threads. A human-resolved old finding is not silently reopened; if the problem reappears, a new current-snapshot discussion is created. Only still-unresolved obsolete threads are auto-resolved.
 
-`critical` and `high` findings are deterministically blocking; the model does not control the merge-gate policy.
+## Storage and logging
 
-## Logging
+SQLite stores only service metadata, review summaries/findings, fingerprints, and GitLab discussion IDs. It does not persist raw source diffs, prompts, raw Codex stdout/stderr, GitLab credentials, OpenAI credentials, or repository checkouts.
 
-Do not add persistent logs containing source diffs, prompts, raw Codex output, GitLab tokens, webhook secrets, OpenAI credentials, or full sensitive filesystem paths. Operational logs should contain only metadata such as job ID, project ID, MR IID, short HEAD, duration, verdict, counts, and normalized error categories.
+Operational logs must remain metadata-only: job ID, project ID, MR IID, short SHA, attempts, duration, normalized error code/status, counts, and lifecycle events. Never add full source paths/content or raw provider responses containing sensitive data.
 
-## Deployment
+## Deployment hardening
 
-Run the service as a dedicated non-login Unix account. Keep `/etc/codex-review-service.env` mode `0600`. The included systemd unit enables `NoNewPrivileges`, a read-only system filesystem, kernel/control-group protections, and a private temporary directory. Writes are restricted to `/var/lib/codex-review` plus the dedicated `/home/codex-review/.codex` auth directory; the latter must remain writable when Codex managed authentication refreshes tokens.
+Run as the dedicated non-login `codex-review` account. Keep `/etc/codex-review-service.env` mode `0600`. The provided systemd unit drops capabilities, enables `NoNewPrivileges`, isolates temp/devices, protects system/home/kernel surfaces, restricts address families, and grants write access only to the state directory and dedicated Codex auth directory.
 
-Terminate TLS at a trusted internal reverse proxy and restrict network access to the webhook endpoint to the GitLab instance or trusted ingress whenever possible.
+Terminate TLS at a trusted internal proxy, keep the app on loopback when possible, allow webhook ingress only from GitLab/trusted ingress, and keep health/metrics endpoints on a trusted monitoring network.
 
 ## Reporting
 
-Do not open a public issue containing secrets or exploitable details. Use GitHub's private security reporting facilities for this repository when available.
+Do not publish credentials or exploitable details in a public issue. Use GitHub private vulnerability reporting/security advisories when available.

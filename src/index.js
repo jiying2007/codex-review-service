@@ -1,58 +1,6 @@
 'use strict';
-
-const { loadConfig } = require('./config');
-const { Store } = require('./db');
-const { GitLabClient } = require('./gitlab');
-const { ReviewService } = require('./service');
-const { createHttpServer } = require('./http');
-const { probeCodexCapabilities } = require('./codex');
-
-function log(level, value) {
-  const record = typeof value === 'object' && value ? value : { message: String(value) };
-  process.stdout.write(`${JSON.stringify({ ts: new Date().toISOString(), level, ...record })}\n`);
-}
-
-async function main() {
-  const config = loadConfig();
-  const logger = {
-    info: value => log('info', value),
-    warn: value => log('warn', value),
-    error: value => log('error', value)
-  };
-  const capability = await probeCodexCapabilities(config);
-  logger.info({ event: 'codex_ready', version: capability.version });
-  const store = new Store(config.dbPath);
-  const recovered = store.recoverInterruptedJobs();
-  if (recovered) logger.info({ event: 'jobs_recovered', count: recovered });
-  const gitlab = new GitLabClient(config);
-  const service = new ReviewService({ config, store, gitlab, logger });
-  const server = createHttpServer({ config, store, service, logger });
-
-  const worker = service.workerLoop().catch(error => {
-    logger.error({ event: 'worker_crashed', code: error.code || 'EWORKER' });
-    process.exitCode = 1;
-  });
-
-  server.listen(config.port, config.host, () => {
-    logger.info({ event: 'service_started', host: config.host, port: config.port });
-  });
-
-  let shuttingDown = false;
-  const shutdown = async signal => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    logger.info({ event: 'shutdown', signal });
-    service.stop();
-    await new Promise(resolve => server.close(resolve));
-    await worker;
-    store.close();
-  };
-
-  process.on('SIGTERM', () => { shutdown('SIGTERM').catch(() => process.exit(1)); });
-  process.on('SIGINT', () => { shutdown('SIGINT').catch(() => process.exit(1)); });
-}
-
-main().catch(error => {
-  log('error', { event: 'startup_failed', code: error.code || 'ESTART', message: error.message });
-  process.exitCode = 1;
-});
+const{loadConfig}=require('./config');const{Store}=require('./db');const{GitLabClient}=require('./gitlab');const{ReviewService}=require('./service');const{createHttpServer}=require('./http');const{probeCodexCapabilities}=require('./codex');
+function log(level,value){const record=typeof value==='object'&&value?value:{message:String(value)};process.stdout.write(`${JSON.stringify({ts:new Date().toISOString(),level,...record})}\n`);}
+async function listen(server,port,host){await new Promise((resolve,reject)=>{const onError=e=>{server.off('listening',onListening);reject(e);},onListening=()=>{server.off('error',onError);resolve();};server.once('error',onError);server.once('listening',onListening);server.listen(port,host);});}
+async function main(){const startedAt=Date.now(),config=loadConfig(),logger={info:v=>log('info',v),warn:v=>log('warn',v),error:v=>log('error',v)};const capability=await probeCodexCapabilities(config);logger.info({event:'codex_ready',version:capability.version});const store=new Store(config.dbPath),recovered=store.recoverInterruptedJobs();if(recovered)logger.info({event:'jobs_recovered',count:recovered});const gitlab=new GitLabClient(config),service=new ReviewService({config,store,gitlab,logger});service.startWorkers();const server=createHttpServer({config,store,service,gitlab,logger,startedAt});await listen(server,config.port,config.host);logger.info({event:'service_started',host:config.host,port:config.port,workers:config.workerConcurrency,schemaVersion:store.schemaVersion()});const maintenance=setInterval(()=>{try{const pruned=store.prune(config);store.checkpoint();if(pruned.webhooks||pruned.jobs)logger.info({event:'data_pruned',...pruned});}catch(error){logger.warn({event:'maintenance_failed',code:error.code||'EMAINTENANCE'});}},config.maintenanceIntervalMs);maintenance.unref?.();const reconcile=setInterval(()=>{service.reconcile().then(result=>{if(result.enqueued)logger.info({event:'reconcile_enqueued',...result});}).catch(error=>logger.warn({event:'reconcile_failed',code:error.code||'ERECONCILE'}));},config.reconcileIntervalMs);reconcile.unref?.();if(config.gitlabProjectAllowlist)setTimeout(()=>service.reconcile().catch(()=>{}),Math.min(5000,config.pollIntervalMs)).unref?.();else logger.warn({event:'reconcile_disabled',reason:'GITLAB_PROJECT_ALLOWLIST=* cannot be exhaustively reconciled'});let shuttingDown=false;const shutdown=async signal=>{if(shuttingDown)return;shuttingDown=true;logger.info({event:'shutdown',signal});clearInterval(maintenance);clearInterval(reconcile);await new Promise(resolve=>server.close(resolve));await service.stop();store.checkpoint();store.close();};process.on('SIGTERM',()=>{shutdown('SIGTERM').catch(()=>process.exit(1));});process.on('SIGINT',()=>{shutdown('SIGINT').catch(()=>process.exit(1));});process.on('unhandledRejection',error=>logger.error({event:'unhandled_rejection',code:error?.code||'EUNHANDLED'}));}
+main().catch(error=>{log('error',{event:'startup_failed',code:error.code||'ESTART',message:error.message});process.exitCode=1;});

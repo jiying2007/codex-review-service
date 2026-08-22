@@ -1,138 +1,445 @@
 'use strict';
 
-const { buildSnapshot, buildPrompt, validateReview, formatSummary } = require('./review');
+const {
+  buildSnapshot,
+  buildPrompt,
+  validateChunkResult,
+  consolidateReviews,
+  emptyReview,
+  formatSummary
+} = require('./review');
 const { runCodex } = require('./codex');
+const { getEffectivePolicy } = require('./policy');
+const { discussionResolved } = require('./gitlab');
 
-const NON_RETRYABLE_ERRORS = new Set(['ECODEXVERSION', 'ECODEXOUTPUT']);
+const NON_RETRYABLE_ERRORS = new Set([
+  'ECODEXVERSION', 'ECODEXOUTPUT', 'ECODEXNOTFOUND', 'EPROJECTPOLICY',
+  'EJOBTIMEOUT', 'EUNAUTHORIZED'
+]);
+
+function abortError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
+function retryable(error) {
+  if (!error) return true;
+  if (NON_RETRYABLE_ERRORS.has(error.code)) return false;
+  if (error.code === 'EGITLABHTTP') {
+    const status = Number(error.status);
+    if ([408, 409, 425, 429].includes(status)) return true;
+    if (status >= 500) return true;
+    if (status >= 400) return false;
+  }
+  return true;
+}
+
+function retryDelay(config, job, error) {
+  if (Number.isFinite(error?.retryAfterMs)) return Math.min(config.retryMaxDelayMs, error.retryAfterMs);
+  const base = Math.min(config.retryMaxDelayMs, config.retryBaseDelayMs * (2 ** Math.max(0, job.attempt - 1)));
+  return Math.round(base * (0.85 + Math.random() * 0.3));
+}
+
+function getResolvableState(discussion) {
+  return discussionResolved(discussion);
+}
 
 class ReviewService {
-  constructor({ config, store, gitlab, logger = console }) {
+  constructor({ config, store, gitlab, logger = console, runCodexFn = runCodex, getPolicyFn = getEffectivePolicy }) {
     this.config = config;
     this.store = store;
     this.gitlab = gitlab;
     this.logger = logger;
+    this.runCodexFn = runCodexFn;
+    this.getPolicyFn = getPolicyFn;
     this.active = new Map();
     this.stopping = false;
+    this.workers = [];
   }
 
-  key(projectId, iid) { return `${projectId}:${iid}`; }
+  key(projectId, iid) {
+    return `${projectId}:${iid}`;
+  }
 
-  async enqueue(projectId, iid, trigger, dedupeKey) {
-    const mr = await this.gitlab.getMergeRequest(projectId, iid);
-    if (mr.state !== 'opened') return null;
-    const headSha = String(mr.diff_refs?.head_sha || mr.sha || '').trim();
-    const baseSha = String(mr.diff_refs?.base_sha || '').trim();
-    if (!headSha) throw new Error('Merge request does not expose a head SHA');
-    const active = this.active.get(this.key(projectId, iid));
-    if (active && active.headSha !== headSha) active.controller.abort();
-    return this.store.enqueue({
-      projectId, mrIid: iid, baseSha, headSha, trigger,
-      dedupeKey: dedupeKey || `head:${headSha}`
+  ensureAllowedProject(projectId) {
+    if (this.config.gitlabProjectAllowlist && !this.config.gitlabProjectAllowlist.has(Number(projectId))) {
+      const error = new Error('GitLab project is not allowed');
+      error.code = 'EPROJECTNOTALLOWED';
+      throw error;
+    }
+  }
+
+  handleEvent(event, webhookId) {
+    if (!event.projectAllowed || !event.projectId) return { status: 'ignored' };
+    this.ensureAllowedProject(event.projectId);
+
+    if (event.shouldCancel && event.iid) {
+      this.store.cancelMergeRequest(event.projectId, event.iid, 'cancelled');
+      const active = this.active.get(this.key(event.projectId, event.iid));
+      active?.controller.abort(abortError('ECANCELLED', `Merge request ${event.action}`));
+      return { status: 'cancelled' };
+    }
+    if (!event.shouldReview) return { status: 'ignored' };
+
+    const manual = event.kind === 'note';
+    const snapshotKey = event.startSha && event.headSha
+      ? `snapshot:${event.startSha}:${event.headSha}`
+      : event.headSha
+        ? `head:${event.headSha}`
+        : `event:${webhookId}`;
+    const dedupeKey = manual ? `command:${webhookId}` : snapshotKey;
+    const jobId = this.store.enqueue({
+      projectId: event.projectId,
+      mrIid: event.iid,
+      baseSha: event.baseSha || '',
+      startSha: event.startSha || '',
+      headSha: event.headSha || '',
+      sourceBranch: event.sourceBranch || '',
+      trigger: manual ? 'command' : event.action,
+      dedupeKey,
+      requestedByUserId: manual ? event.userId : null,
+      requestWebhookId: webhookId,
+      maxQueueDepth: this.config.maxQueueDepth
     });
+
+    const active = this.active.get(this.key(event.projectId, event.iid));
+    const snapshotChanged = active && (
+      (event.headSha && active.headSha && event.headSha !== active.headSha) ||
+      (event.startSha && active.startSha && event.startSha !== active.startSha)
+    );
+    if (snapshotChanged) active.controller.abort(abortError('ESUPERSEDED', 'A newer merge request snapshot arrived'));
+    return { status: jobId ? 'queued' : 'duplicate', jobId };
+  }
+
+  enqueueHydratedMr(projectId, mr, trigger = 'reconcile') {
+    const headSha = String(mr.diff_refs?.head_sha || mr.sha || '').trim();
+    const startSha = String(mr.diff_refs?.start_sha || '').trim();
+    if (!headSha || !startSha) return null;
+
+    const jobId = this.store.enqueue({
+      projectId,
+      mrIid: Number(mr.iid),
+      baseSha: String(mr.diff_refs?.base_sha || ''),
+      startSha,
+      headSha,
+      sourceBranch: String(mr.source_branch || ''),
+      trigger,
+      dedupeKey: `snapshot:${startSha}:${headSha}`,
+      maxQueueDepth: this.config.maxQueueDepth
+    });
+
+    const active = this.active.get(this.key(projectId, Number(mr.iid)));
+    if (active && (
+      (active.headSha && active.headSha !== headSha) ||
+      (active.startSha && active.startSha !== startSha)
+    )) {
+      active.controller.abort(abortError('ESUPERSEDED', 'Reconciliation found a newer merge request snapshot'));
+    }
+    return jobId;
+  }
+
+  async reconcile() {
+    if (!this.config.gitlabProjectAllowlist || this.stopping) return { projects: 0, enqueued: 0 };
+    let enqueued = 0;
+    for (const projectId of this.config.gitlabProjectAllowlist) {
+      try {
+        const result = await this.gitlab.listOpenMergeRequests(projectId);
+        if (!result.complete) this.logger.warn?.({ event: 'reconcile_incomplete', projectId });
+        for (const mr of result.items) if (this.enqueueHydratedMr(projectId, mr)) enqueued += 1;
+      } catch (error) {
+        this.logger.warn?.({ event: 'reconcile_failed', projectId, code: error.code || 'EUNKNOWN', status: error.status || null });
+      }
+    }
+    return { projects: this.config.gitlabProjectAllowlist.size, enqueued };
+  }
+
+  async authorizeManual(job) {
+    if (job.trigger !== 'command') return true;
+    if (!job.requested_by_user_id) return false;
+    if (this.config.manualMinAccessLevel <= 0) return true;
+    const member = await this.gitlab.getProjectMember(job.project_id, job.requested_by_user_id);
+    return Boolean(member && Number(member.access_level) >= this.config.manualMinAccessLevel);
+  }
+
+  async hydrateJob(job) {
+    const mr = await this.gitlab.getMergeRequest(job.project_id, job.mr_iid);
+    if (mr.state !== 'opened') return { mr, terminal: 'cancelled' };
+
+    const headSha = String(mr.diff_refs?.head_sha || mr.sha || '').trim();
+    const startSha = String(mr.diff_refs?.start_sha || '').trim();
+    const baseSha = String(mr.diff_refs?.base_sha || '').trim();
+    if (!headSha || !startSha || !baseSha) {
+      const error = new Error('Merge request diff refs are not ready');
+      error.code = 'EDIFFREFS';
+      throw error;
+    }
+
+    const bound = this.store.bindJobSnapshot(job.id, {
+      baseSha,
+      startSha,
+      headSha,
+      sourceBranch: String(mr.source_branch || '')
+    });
+    if (bound.status === 'duplicate') return { mr, terminal: 'duplicate' };
+
+    const active = this.active.get(this.key(job.project_id, job.mr_iid));
+    if (active) {
+      active.headSha = headSha;
+      active.startSha = startSha;
+    }
+    return { mr, terminal: null };
+  }
+
+  async reviewSnapshot(mr, diffs, policy, controller) {
+    const snapshot = buildSnapshot(mr, diffs, policy);
+    if (!snapshot.chunks.length) return { snapshot, review: emptyReview(snapshot) };
+
+    const perChunkFindings = Math.max(1, Math.ceil(policy.maxFindings / snapshot.chunks.length));
+    const results = [];
+    let version = 'unknown';
+    for (const chunk of snapshot.chunks) {
+      if (controller.signal.aborted) throw controller.signal.reason;
+      const prompt = buildPrompt(snapshot, chunk, policy);
+      const executionConfig = { ...this.config, reviewTimeoutSeconds: policy.timeoutSeconds };
+      const result = await this.runCodexFn(prompt, executionConfig, controller.signal, perChunkFindings);
+      version = result.version;
+      results.push(validateChunkResult(result.parsed, chunk, policy));
+    }
+    const review = consolidateReviews(snapshot, results, policy);
+    review.codexVersion = version;
+    return { snapshot, review };
+  }
+
+  async assertCurrentSnapshot(job, snapshot) {
+    const latest = await this.gitlab.getMergeRequest(job.project_id, job.mr_iid);
+    const latestHead = String(latest.diff_refs?.head_sha || latest.sha || '');
+    const latestStart = String(latest.diff_refs?.start_sha || '');
+    if (latest.state !== 'opened' || latestHead !== snapshot.headSha || latestStart !== snapshot.startSha) {
+      throw abortError('ESUPERSEDED', 'Merge request diff snapshot changed during review');
+    }
   }
 
   async processJob(job) {
     const key = this.key(job.project_id, job.mr_iid);
     const controller = new AbortController();
-    this.active.set(key, { headSha: job.head_sha, controller });
+    this.active.set(key, { headSha: job.head_sha || '', startSha: job.start_sha || '', controller, jobId: job.id });
     const started = Date.now();
+    const jobTimer = setTimeout(
+      () => controller.abort(abortError('EJOBTIMEOUT', 'Review job exceeded JOB_TIMEOUT_SECONDS')),
+      this.config.jobTimeoutSeconds * 1000
+    );
+    let statusProjectId = job.project_id;
+
     try {
-      const mr = await this.gitlab.getMergeRequest(job.project_id, job.mr_iid);
-      const currentHead = String(mr.diff_refs?.head_sha || mr.sha || '');
-      if (mr.state !== 'opened' || currentHead !== job.head_sha) {
-        this.store.finishJob(job.id, 'superseded');
+      this.ensureAllowedProject(job.project_id);
+      if (!(await this.authorizeManual(job))) {
+        this.store.finishJob(job.id, 'unauthorized', 'EUNAUTHORIZED');
         return;
       }
 
-      await this.gitlab.setCommitStatus(job.project_id, job.head_sha, 'running', 'Codex review is running');
-      const diffs = await this.gitlab.listMergeRequestDiffs(job.project_id, job.mr_iid);
-      const snapshot = buildSnapshot(mr, diffs, this.config.maxDiffBytes);
-      const prompt = buildPrompt(snapshot, this.config);
-      const { parsed, version } = await runCodex(prompt, this.config, controller.signal);
-      const review = validateReview(parsed, snapshot, this.config);
-      review.codexVersion = version;
-
-      const latest = await this.gitlab.getMergeRequest(job.project_id, job.mr_iid);
-      const latestHead = String(latest.diff_refs?.head_sha || latest.sha || '');
-      if (controller.signal.aborted || latestHead !== job.head_sha) {
-        this.store.finishJob(job.id, 'superseded');
+      const hydrated = await this.hydrateJob(job);
+      if (hydrated.terminal) {
+        if (hydrated.terminal !== 'duplicate') this.store.finishJob(job.id, hydrated.terminal);
         return;
       }
 
-      const runId = this.store.saveRun(job.id, review, Date.now() - started);
-      await this.publish(job, snapshot, review, runId);
+      const mr = hydrated.mr;
+      job = this.store.getJob(job.id) || job;
+      const headSha = String(mr.diff_refs.head_sha);
+      const sourceBranch = String(mr.source_branch || '');
+      statusProjectId = Number(mr.source_project_id || job.project_id);
+      if (!Number.isInteger(statusProjectId) || statusProjectId <= 0) statusProjectId = job.project_id;
+
+      await this.gitlab.setCommitStatus(statusProjectId, headSha, 'running', 'Codex review is running', sourceBranch);
+      const policy = await this.getPolicyFn(this.gitlab, job.project_id, mr, this.config);
+      const diffResult = await this.gitlab.listMergeRequestDiffs(job.project_id, job.mr_iid);
+      const hardLimitCoverage = await this.gitlab.validateMergeRequestDiffCoverage(job.project_id, job.mr_iid, mr, diffResult);
+      if (!hardLimitCoverage.complete) {
+        diffResult.complete = false;
+        diffResult.coverageReason = hardLimitCoverage.reason;
+        this.logger.warn?.({
+          event: 'diff_coverage_incomplete',
+          jobId: job.id,
+          projectId: job.project_id,
+          mrIid: job.mr_iid,
+          reason: hardLimitCoverage.reason
+        });
+      }
+
+      const { snapshot, review } = await this.reviewSnapshot(mr, diffResult, policy, controller);
+      if (!diffResult.complete) snapshot.coverageComplete = false;
+      if (!snapshot.coverageComplete && review.verdict !== 'incomplete') review.verdict = 'incomplete';
+      review.coverageComplete = snapshot.coverageComplete && review.rejectedFindingCount === 0;
+      if (!review.coverageComplete) review.verdict = 'incomplete';
+
+      await this.assertCurrentSnapshot(job, snapshot);
+      const runId = this.store.saveRun(job.id, review, Date.now() - started, policy);
+      await this.publish(job, snapshot, review, runId, policy, statusProjectId);
       this.store.finishJob(job.id, review.verdict === 'block' ? 'blocked' : review.verdict);
     } catch (error) {
-      if (error.code === 'ESUPERSEDED' || controller.signal.aborted) {
-        this.store.finishJob(job.id, 'superseded');
+      const code = error?.code || 'EUNKNOWN';
+      if (code === 'ESUPERSEDED' || code === 'ECANCELLED') {
+        this.store.finishJob(job.id, code === 'ESUPERSEDED' ? 'superseded' : 'cancelled', code);
         return;
       }
-      const code = error.code || 'EUNKNOWN';
-      const retry = job.attempt < this.config.maxJobAttempts && !NON_RETRYABLE_ERRORS.has(code) && !this.stopping;
-      this.logger.error({ event: retry ? 'review_retry' : 'review_failed', jobId: job.id, projectId: job.project_id, mrIid: job.mr_iid, head: job.head_sha.slice(0, 12), attempt: job.attempt, code });
-      if (retry) {
-        this.store.retryJob(job.id, code);
+      if (code === 'ESHUTDOWN') {
+        this.store.requeueRunningJob(job.id, code);
+        return;
+      }
+
+      const shouldRetry = job.attempt < this.config.maxJobAttempts && retryable(error) && !this.stopping;
+      this.logger.error({
+        event: shouldRetry ? 'review_retry' : 'review_failed',
+        jobId: job.id,
+        projectId: job.project_id,
+        mrIid: job.mr_iid,
+        head: String(job.head_sha || '').slice(0, 12),
+        attempt: job.attempt,
+        code,
+        status: error?.status || null
+      });
+      if (shouldRetry) {
+        this.store.retryJob(job.id, code, retryDelay(this.config, job, error));
       } else {
         this.store.finishJob(job.id, 'failed', code);
-        try { await this.gitlab.setCommitStatus(job.project_id, job.head_sha, 'failed', 'Codex review service failed'); } catch {}
+        const latestJob = this.store.getJob(job.id) || job;
+        if (latestJob.head_sha) {
+          try {
+            await this.gitlab.setCommitStatus(
+              statusProjectId,
+              latestJob.head_sha,
+              'failed',
+              code === 'EPROJECTPOLICY' ? 'Codex review policy is invalid' : 'Codex review service failed',
+              latestJob.source_branch || ''
+            );
+          } catch {}
+        }
       }
     } finally {
+      clearTimeout(jobTimer);
       if (this.active.get(key)?.controller === controller) this.active.delete(key);
     }
   }
 
-  async publish(job, snapshot, review, runId) {
-    await this.gitlab.upsertSummary(job.project_id, job.mr_iid, formatSummary(review, snapshot));
-    const previous = this.store.latestFindings(job.project_id, job.mr_iid, job.id);
+  async reusableDiscussion(projectId, iid, prior) {
+    if (!prior?.discussion_id) return null;
+    try {
+      const discussion = await this.gitlab.getDiscussion(projectId, iid, prior.discussion_id);
+      if (!discussion) return null;
+      return getResolvableState(discussion) === false ? prior.discussion_id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async resolveIfOpen(projectId, iid, discussionId) {
+    try {
+      const discussion = await this.gitlab.getDiscussion(projectId, iid, discussionId);
+      if (discussion && getResolvableState(discussion) === false) {
+        await this.gitlab.setDiscussionResolved(projectId, iid, discussionId, true);
+      }
+    } catch {}
+  }
+
+  async publish(job, snapshot, review, runId, policy, statusProjectId = job.project_id) {
+    await this.gitlab.upsertSummary(job.project_id, job.mr_iid, formatSummary(review, snapshot, policy));
+    const previous = this.store.priorFindings(job.project_id, job.mr_iid, runId);
     const previousByFingerprint = new Map();
-    for (const old of previous) if (!previousByFingerprint.has(old.fingerprint)) previousByFingerprint.set(old.fingerprint, old);
-    const currentFingerprints = new Set(review.findings.map(f => f.fingerprint));
+    for (const old of previous) {
+      if (!previousByFingerprint.has(old.fingerprint)) previousByFingerprint.set(old.fingerprint, old);
+    }
+    const currentFingerprints = new Set(review.findings.map(finding => finding.fingerprint));
 
     if (this.config.autoResolveObsolete) {
       for (const old of previousByFingerprint.values()) {
         if (old.discussion_id && !currentFingerprints.has(old.fingerprint)) {
-          try { await this.gitlab.resolveDiscussion(job.project_id, job.mr_iid, old.discussion_id); } catch {}
+          await this.resolveIfOpen(job.project_id, job.mr_iid, old.discussion_id);
         }
       }
     }
 
-    for (const row of this.store.findingsForRun(runId)) {
+    const rows = this.store.findingsForRun(runId).slice(0, policy.maxPublishedFindings);
+    for (const row of rows) {
+      const finding = review.findings.find(item => item.fingerprint === row.fingerprint);
+      if (!finding) continue;
       const prior = previousByFingerprint.get(row.fingerprint);
-      if (prior?.discussion_id) {
-        this.store.setDiscussionId(row.id, prior.discussion_id);
+      const reused = await this.reusableDiscussion(job.project_id, job.mr_iid, prior);
+      if (reused) {
+        this.store.setDiscussionId(row.id, reused);
         continue;
       }
-      const finding = review.findings.find(f => f.fingerprint === row.fingerprint);
-      const file = snapshot.files.find(f => f.path === finding.file);
+      const file = snapshot.files.find(item => item.path === finding.file && !item.skipped);
+      if (!file) continue;
       try {
-        const discussion = await this.gitlab.createDiscussion(job.project_id, job.mr_iid, finding, snapshot.diffRefs, file.old_path, file.new_path);
+        const discussion = await this.gitlab.createDiscussion(
+          job.project_id,
+          job.mr_iid,
+          finding,
+          snapshot.diffRefs,
+          file.old_path,
+          file.new_path
+        );
         this.store.setDiscussionId(row.id, discussion.id);
       } catch (error) {
-        this.logger.warn?.({ event: 'inline_comment_failed', jobId: job.id, finding: finding.fingerprint.slice(0, 12), status: error.status || null });
+        this.logger.warn?.({
+          event: 'inline_comment_failed',
+          jobId: job.id,
+          finding: finding.fingerprint.slice(0, 12),
+          status: error.status || null
+        });
       }
     }
 
-    const state = (review.verdict === 'block' || review.verdict === 'incomplete') ? 'failed' : 'success';
-    const description = review.verdict === 'pass' ? 'No substantive findings' :
-      review.verdict === 'incomplete' ? 'Review coverage incomplete' : `${review.findings.length} finding(s)`;
-    await this.gitlab.setCommitStatus(job.project_id, job.head_sha, state, description);
+    const state = review.verdict === 'block' || review.verdict === 'incomplete' ? 'failed' : 'success';
+    const description = review.verdict === 'pass'
+      ? 'No substantive findings'
+      : review.verdict === 'incomplete'
+        ? 'Review coverage incomplete'
+        : `${review.findings.length} finding(s)`;
+    await this.gitlab.setCommitStatus(statusProjectId, snapshot.headSha, state, description, snapshot.sourceBranch);
   }
 
-  async workerLoop() {
+  async workerLoop(workerId) {
     while (!this.stopping) {
       const job = this.store.claimNext();
       if (!job) {
         await new Promise(resolve => setTimeout(resolve, this.config.pollIntervalMs));
         continue;
       }
+      this.logger.info?.({
+        event: 'job_started',
+        workerId,
+        jobId: job.id,
+        projectId: job.project_id,
+        mrIid: job.mr_iid
+      });
       await this.processJob(job);
     }
   }
 
-  stop() {
+  startWorkers() {
+    if (this.workers.length) return this.workers;
+    this.workers = Array.from({ length: this.config.workerConcurrency }, (_, index) =>
+      this.workerLoop(index + 1).catch(error => {
+        this.logger.error({ event: 'worker_crashed', workerId: index + 1, code: error.code || 'EWORKER' });
+        throw error;
+      })
+    );
+    return this.workers;
+  }
+
+  async stop() {
     this.stopping = true;
-    for (const active of this.active.values()) active.controller.abort();
+    for (const active of this.active.values()) {
+      active.controller.abort(abortError('ESHUTDOWN', 'Service is shutting down'));
+    }
+    await Promise.allSettled(this.workers);
   }
 }
 
-module.exports = { ReviewService, NON_RETRYABLE_ERRORS };
+module.exports = {
+  ReviewService,
+  NON_RETRYABLE_ERRORS,
+  retryable,
+  retryDelay,
+  abortError
+};
