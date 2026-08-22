@@ -2,12 +2,12 @@
 
 function scopeError(message,code='EPROJECTSCOPE'){const error=new Error(message);error.code=code;return error;}
 
-async function resolveProjectScope(gitlab,config){
+async function discoverProjects(gitlab,config){
   if(config.gitlabScopeWildcard)return{projects:null,mode:'webhook-only-wildcard',explicitProjects:0,groups:0,discoveredProjects:0};
   const projects=new Set(config.gitlabProjectAllowlist||[]),explicitProjects=projects.size;
   for(const group of config.gitlabGroups||[]){
     let result;
-    try{result=await gitlab.listGroupProjects(group.id,{includeSubgroups:group.includeSubgroups});}
+    try{result=await gitlab.paginated(`/groups/${encodeURIComponent(group.id)}/projects`,{include_subgroups:group.includeSubgroups?'true':'false',archived:'false',with_merge_requests_enabled:'true',simple:'true'});}
     catch(cause){const error=scopeError(`Failed to discover projects for GitLab group ${group.id}`);error.cause=cause;throw error;}
     if(!result?.complete)throw scopeError(`GitLab group ${group.id} project discovery was incomplete`,'EPROJECTSCOPEPAGINATION');
     for(const project of result.items||[]){const id=Number(project?.id||0);if(Number.isInteger(id)&&id>0)projects.add(id);}
@@ -16,6 +16,12 @@ async function resolveProjectScope(gitlab,config){
   return{projects,mode:(config.gitlabGroups||[]).length?'projects+groups':'projects',explicitProjects,groups:(config.gitlabGroups||[]).length,discoveredProjects:projects.size-explicitProjects};
 }
 
-function applyResolvedScope(config,resolved){return Object.freeze({...config,gitlabProjectAllowlist:resolved.projects,gitlabScopeMode:resolved.mode,gitlabScopeStats:Object.freeze({explicitProjects:resolved.explicitProjects,groups:resolved.groups,discoveredProjects:resolved.discoveredProjects,totalProjects:resolved.projects?.size||0})});}
+class ProjectScopeManager{
+  constructor(gitlab,config){this.gitlab=gitlab;this.config=config;this.projects=config.gitlabScopeWildcard?null:new Set(config.gitlabProjectAllowlist||[]);this.mode=config.gitlabScopeWildcard?'webhook-only-wildcard':'unresolved';this.healthy=config.gitlabScopeWildcard;this.lastError=null;this.lastRefreshAt=null;this.stats={explicitProjects:this.projects?.size||0,groups:(config.gitlabGroups||[]).length,discoveredProjects:0,totalProjects:this.projects?.size||0};}
+  async refresh(){if(this.config.gitlabScopeWildcard){this.healthy=true;this.lastRefreshAt=new Date().toISOString();return this.snapshot();}try{const resolved=await discoverProjects(this.gitlab,this.config);this.projects.clear();for(const id of resolved.projects)this.projects.add(id);this.mode=resolved.mode;this.stats={explicitProjects:resolved.explicitProjects,groups:resolved.groups,discoveredProjects:resolved.discoveredProjects,totalProjects:this.projects.size};this.healthy=true;this.lastError=null;this.lastRefreshAt=new Date().toISOString();return this.snapshot();}catch(error){this.healthy=false;this.lastError=error.code||'EPROJECTSCOPE';throw error;}}
+  snapshot(){return{projects:this.projects,mode:this.mode,healthy:this.healthy,lastError:this.lastError,lastRefreshAt:this.lastRefreshAt,...this.stats};}
+}
 
-module.exports={resolveProjectScope,applyResolvedScope,scopeError};
+function applyProjectScope(config,manager){return Object.freeze({...config,gitlabProjectAllowlist:manager.projects,gitlabScopeMode:manager.mode,gitlabScopeManager:manager});}
+
+module.exports={discoverProjects,ProjectScopeManager,applyProjectScope,scopeError};
