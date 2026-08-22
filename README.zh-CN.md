@@ -2,55 +2,73 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 GitLab Self-Managed Merge Request 的生产级、自托管 Codex 代码审核服务。**v2.0 删除全部 v1 兼容路径**，正式收敛为：单一非 Secret 配置文件、GitLab Signed Webhook、显式 Projects/Groups 范围、SQLite/Outbox 持久语义，以及可选的独立 Codex Runner 安全加固。
+面向 GitLab Self-Managed Merge Request 的生产级、自托管 Codex 审核执行服务。**v3.0 是 Codex Safe 产品族的服务端 Enforcement 成员**：与本地 Review / Commit / PR 产品共用 commit-pinned `codex-safe-core`、Policy Schema v3、Review Evidence、确定性 Review Rules 与 Review Receipt v3。
+
+## 产品族边界
+
+```text
+                     codex-safe-core 3.0.1
+              Safe Contract v2 / Policy v3
+           Review Evidence / Rules / Receipt v3
+                           │
+       ┌───────────────────┼───────────────────┐
+       │                   │                   │
+Codex Review Safe   Codex Commit Safe    Codex PR Safe
+       │
+       └───────────────────────────────┐
+                                       ▼
+                              Codex Review Service
+                              GitLab 服务端 Enforcement
+```
+
+Core 负责跨产品共用的 Codex / Process / Policy / Review Evidence / Receipt 语义；Service 只负责 GitLab Provider、MR immutable evidence、SQLite、Queue、Outbox、Publication、状态/Discussion、可观测性和部署。
 
 ## 环境要求
 
 - Node.js **22.13+**
-- GitLab Self-Managed **19.1+**，配置 Standard Webhooks Signing Token
-- GitLab API Token，只授予配置范围内所需的 Project/Group/MR/Repository/Discussion/Status 权限
+- GitLab Self-Managed **19.1+**，使用 Standard Webhooks Signing Token
+- 仅授予必要 Project/Group/MR/Repository/Discussion/Status 权限的 GitLab API Token
 - Standard 模式由服务用户登录 Codex CLI；Hardened 模式由独立 Runner 用户登录
 
-## 配置契约
+## 唯一配置模型
 
-所有非敏感产品配置只有一个来源：
+所有非 Secret 服务配置只来自：
 
 ```text
 /etc/codex-review/config.json
 ```
 
-从 [`config.example.json`](config.example.json) 复制并修改。环境变量只允许：
+环境变量仅允许：
 
 ```text
-CODEX_REVIEW_CONFIG_FILE      # 可选，自定义配置文件路径
-GITLAB_API_TOKEN              # 必填 Secret
-GITLAB_WEBHOOK_SIGNING_TOKEN  # 必填 Secret
-OPENAI_API_KEY                # 可选 Codex 认证 Secret
+CODEX_REVIEW_CONFIG_FILE
+GITLAB_API_TOKEN
+GITLAB_WEBHOOK_SIGNING_TOKEN
+OPENAI_API_KEY
 ```
 
-Project Scope、Runner 模式、并发、预算、生命周期、可观测性、GitLab URL、审核上限等都不再支持环境变量覆盖，避免“文件里是 A、运行时实际是 B”的隐藏优先级。
+不存在非 Secret 环境覆盖层。
 
-## Standard Deployment：默认部署
+## Standard Deployment
 
-默认生产路径就是一个进程直接调用 Codex：
+默认生产拓扑：
 
 ```text
 GitLab → codex-review-service
             ├─ SQLite WAL + synchronous=FULL
             ├─ Review Workers
-            ├─ Publication Outbox / Publisher Workers
-            └─ Codex CLI（Inline）
+            ├─ Transactional Publication Outbox
+            └─ Codex Safe Core → Codex CLI（Inline）
 ```
-
-最简安装：
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
 sudo mkdir -p /etc/codex-review
 
-git clone https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
+git clone --recurse-submodules https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
 cd /opt/codex-review-service
 npm ci --ignore-scripts --no-audit --no-fund
+npm run core:init
 
 sudo install -m 0644 config.example.json /etc/codex-review/config.json
 sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
@@ -63,36 +81,27 @@ sudo systemctl enable --now codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-正式运行 Doctor/服务前先修改 `config.json` 和 Secret 环境文件。
-
 ## 多仓库 Scope
 
-一个 Review Service 可以同时管理多个 Project 与 Group：
+一个实例可同时管理 Projects 与 Groups：
 
 ```json
 {
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
-    "projects": [101, 102, 103],
+    "projects": [101, 102],
     "groups": [
-      { "id": 20, "includeSubgroups": true },
-      { "id": 35, "includeSubgroups": false }
+      { "id": 20, "includeSubgroups": true }
     ]
   },
-  "review": {
-    "concurrency": 4
-  },
-  "runner": {
-    "mode": "inline"
-  }
+  "review": { "concurrency": 4 },
+  "runner": { "mode": "inline" }
 }
 ```
 
-Group Project 自动发现支持分页、去重、排除 archived Project；只有完整发现成功后才替换运行时 Scope。发现失败/分页不完整时继续保留上一次完整集合，同时 readiness 变为不健康。不同 MR 可以并行，同一个 MR 始终严格串行。
+Group discovery 支持分页并 fail-closed：只有完整发现成功后才原子替换 Scope；失败时保留上一次完整集合并让 readiness 变为 unhealthy。不同 MR 可并发，同一 MR 始终串行。
 
-## Hardened Deployment：增强安全模式
-
-配置：
+## Hardened Deployment
 
 ```json
 {
@@ -103,37 +112,89 @@ Group Project 自动发现支持分页、去重、排除 archived Project；只�
 }
 ```
 
-启用 `codex-review-runner.service`。Controller 与 Runner 读取同一个 `config.json`；Controller 持有 GitLab 凭据和 SQLite，Runner 只持有 Codex/OpenAI 凭据，不持有 GitLab 凭据。
+Controller 与 Runner 读取同一份 `config.json`。Controller 持有 GitLab 凭据与 SQLite；Runner 只持有 Codex/OpenAI 凭据，通过 Unix socket 接收有界审核输入，不持有 GitLab 凭据。两种模式执行完全相同的 Safe Core Runtime 与 Safe Contract。
 
 ## GitLab Webhook
 
-GitLab 19.1+ 配置 Signing Token，并启用 **Merge request events** 和 **Note events**：
+启用 GitLab 19.1+ **Merge request events** 和 **Note events**：
 
 ```text
 https://review.example.internal/webhooks/gitlab
 ```
 
-服务强制校验 `webhook-id`、`webhook-timestamp`、`webhook-signature`、原始 Body HMAC、重放时间窗和 `X-Gitlab-Instance`。v2 不再支持纯文本 `X-Gitlab-Token`。
+服务强制校验 `webhook-id`、`webhook-timestamp`、`webhook-signature`、原始 Body HMAC、时间窗、`X-Gitlab-Instance` 与 delivery 去重，完成本地持久入队后快速返回。
 
-## 长期资产不变量
+## Repository Policy v3
 
-- Webhook 202 前先完成 SQLite `WAL + synchronous=FULL` 持久事务；
+唯一仓库策略文件是目标分支的 **`.codex-safe.json`**。Service 只从精确 `diff_refs.start_sha` 读取，并由 pinned Core closed schema 校验。参考 [`.codex-safe.example.json`](.codex-safe.example.json)。
+
+```json
+{
+  "schemaVersion": 3,
+  "review": {
+    "language": "zh-CN",
+    "maxDiffBytes": 524288,
+    "maxFindings": 30,
+    "severityThreshold": "low",
+    "confidenceThreshold": 0.7,
+    "rules": {
+      "requireTestsForCodeChanges": true,
+      "codePathPrefixes": ["src/"],
+      "testPathPrefixes": ["test/", "tests/"],
+      "forbiddenPathPrefixes": []
+    }
+  },
+  "reviewService": {
+    "maxContextBytes": 131072,
+    "maxContextFiles": 8,
+    "contextLines": 16,
+    "skipGeneratedFiles": true,
+    "blockUnreviewableFiles": false
+  }
+}
+```
+
+`review` 是本地 Review Safe 与 Service 共用语义；`reviewService` 只承载服务端 Provider/Context 控制。仓库策略只能收紧资源与增强 Gate，不能削弱服务全局 Blocking / Confidence / Security / Capacity 边界。
+
+## Review Evidence 与精确 changed-line
+
+GitLab 常见的 hunk-only patch 会先由 Provider Adapter 规范化为 canonical unified diff，再进入 Core `buildReviewEvidenceChunks()`。`maxDiffBytes` 是 Review Evidence chunk 预算；changed hunk 不允许静默 head/tail 截断，一个 hunk 要么被审核，要么产生明确 coverage gap。
+
+Service 仍保留完整 Provider diff 元数据用于精确 `old/new` changed-line 校验和稳定 anchor。模型 Finding 不做 nearest-line/±N 行迁移。
+
+## Immutable Context
+
+Service 只通过 GitLab Repository API，在精确 source `head_sha` 与 target `start_sha` 上读取有界源码窗口；不会 checkout 或执行被审核仓库代码。Core 消费这些有界 Evidence，但不负责 GitLab Provider 访问。
+
+## Review Receipt v3 与 SQLite schema 4
+
+SQLite schema **4** 在 `review_runs` 中保存 canonical GitLab-MR Review Receipt v3 与 fingerprint。Receipt、Run、Findings、Publication Plan 在同一个 `BEGIN IMMEDIATE` 事务内提交。
+
+Receipt 绑定：
+
+```text
+projectId + MR iid + startSha + headSha
++ diff fingerprint + policy fingerprint
++ quality/readiness/mechanical/coverage verdicts
++ model + Codex version + timestamp
+```
+
+SQLite 仍是 Service Source of Truth；Receipt v3 只是跨产品 Audit/Provenance 投影，不是第二套存储系统。
+
+## 长期不变量
+
+- SQLite `WAL + synchronous=FULL`；
 - Review 与 GitLab Publication 通过事务性 Outbox 分离；
-- 审核固定绑定目标 `start_sha` + 源 `head_sha`；
-- stale 结果、移出 Scope 的旧 Publication 都不能继续写 GitLab；
-- External Status 绑定正确 source project/ref，并尽量绑定精确 `pipeline_id`；
-- Finding 必须精确命中 changed line，不做 ±N 行修复；
-- Finding identity 使用稳定代码 anchor；
-- 真实 provider/local coverage gap fail-closed；
-- Controller 只读取 immutable SHA 上的有界上下文，不 clone、不执行被审核代码；
-- 目标分支确定性规则与 AI Finding 共用同一 Gate/Outbox；
-- Codex Token usage、MR/Project Budget 持久化并执行；
-- GitLab API 有限速、Retry-After 和 Circuit Breaker；
-- GitHub Actions 依赖人工审查并固定 immutable full SHA。
-
-## 仓库审核策略
-
-仓库可在目标分支提交 `.codex-review.json`，服务只从 `diff_refs.start_sha` 读取。参考 [`.codex-review.example.json`](.codex-review.example.json)。仓库策略只能收紧上限或增加确定性规则，不能削弱全局 Gate、Confidence、Credential Boundary、Safe Contract 或服务容量边界。
+- 审核绑定 target `start_sha` + source `head_sha`；
+- stale snapshot 与移出 Scope 的旧 Publication 不能继续写 GitLab；
+- Status 绑定 source project/ref，并尽量绑定精确 `pipeline_id`；
+- Finding 必须精确 changed-line，不做 relocation；
+- Finding identity 使用稳定 code anchor；
+- Provider / Context / Evidence coverage gap fail-closed；
+- deterministic `review.rules` 来自 Safe Core；
+- Token usage 与 MR/Project Budget 持久化执行；
+- GitLab API 有限速、Retry-After 与 Circuit Breaker；
+- GitHub Actions 全部 full-SHA pin。
 
 ## Health / Doctor
 
@@ -143,20 +204,18 @@ GET /health/ready
 GET /metrics
 ```
 
-`npm run doctor` 会验证配置、SQLite durability/schema、Codex/Runner capability、GitLab 可达性和完整 Projects/Groups Scope，不执行真实代码审核。
+`npm run doctor` 验证 canonical config、SQLite durability/schema、Core-backed Codex/Runner capability、GitLab 可达性与完整 Project/Group Scope，不执行真实代码审核。
 
-更多见 [OPERATIONS.md](OPERATIONS.md)、[SECURITY.md](SECURITY.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[LONG_TERM_ASSET.md](LONG_TERM_ASSET.md)、[CHANGELOG.md](CHANGELOG.md)。
+详见 [OPERATIONS.md](OPERATIONS.md)、[SECURITY.md](SECURITY.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[LONG_TERM_ASSET.md](LONG_TERM_ASSET.md)、[CHANGELOG.md](CHANGELOG.md)。
 
-## v1.x → v2.0 迁移
-
-把所有非 Secret 环境配置迁入 `/etc/codex-review/config.json`。删除 `GITLAB_PROJECT_ALLOWLIST`、`GITLAB_WEBHOOK_SECRET_TOKEN`、`CODEX_RUNNER_MODE`、`CODEX_RUNNER_SOCKET`、`GITLAB_BASE_URL`、各类并发/预算/生命周期/OTLP 环境覆盖；在 GitLab 配置 Signing Token，环境文件只保留 v2 支持的 Secret。重新接 Webhook 前先跑 Doctor。
-
-## 开发验证
+## 开发与发布
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
+npm run core:init
 npm run ci
 npm pack --dry-run --ignore-scripts
+npm run release:check
 ```
 
-CI 同时验证 Node.js 22.13.0 与 Node.js 24。
+CI 同时验证 Node.js 22.13.0 与 Node.js 24。`main` 上版本变化会触发 Release workflow：再次执行双 Node Gate，生成唯一 `codex-review-service-<version>.tgz`、`SHA256SUMS` 与 GitHub build-provenance attestation，创建/校验不可变 `v<version>` Tag，并发布 GitHub Release。
