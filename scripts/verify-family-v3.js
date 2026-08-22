@@ -35,10 +35,10 @@ const requiredPackageFiles = [
   'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js',
   'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js',
   'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js',
-  'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/package.json', 'src/codex-safe-core/LICENSE'
+  'src/codex-safe-core/codex-safe.schema.json'
 ];
 assert.deepEqual(pkg.files, requiredPackageFiles, 'release package allowlist must remain explicit and runtime-only');
-for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github']) {
+for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github', 'src/codex-safe-core/package.json']) {
   assert.equal(pkg.files.some(entry => entry === forbidden || entry.startsWith(`${forbidden}/`)), false, `release package must exclude ${forbidden}`);
 }
 
@@ -52,6 +52,7 @@ assert.match(release, /Release .* already exists; immutable assets will not be o
 assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373/, 'release provenance action must stay full-SHA pinned');
 assert.match(release, /tar -tzf "\$tgz"/, 'release must inspect the actual TGZ contents');
 assert.match(release, /release package contains development-only files/, 'release must fail on development-only package contents');
+assert.match(release, /src\/codex-safe-core\/\(README/, 'release package gate must reject duplicated Core documentation');
 
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
