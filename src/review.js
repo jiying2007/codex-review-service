@@ -32,6 +32,15 @@ function outputSchema(maxFindings) {
 function providerDiffFingerprint(items = []) {
   return fingerprint(items.map(entry => ({ oldPath:String(entry.old_path||''), newPath:String(entry.new_path||''), diff:typeof entry.diff==='string'?entry.diff:'', tooLarge:entry.too_large===true, collapsed:entry.collapsed===true, generated:entry.generated_file===true, renamed:entry.renamed_file===true, deleted:entry.deleted_file===true, newFile:entry.new_file===true })));
 }
+function toUnifiedReviewBlock(file){
+  const raw=String(file.diff||'');
+  if(/^diff --git /m.test(raw))return raw;
+  const oldPath=String(file.old_path||file.path||'').replace(/\\/g,'/');
+  const newPath=String(file.new_path||file.path||'').replace(/\\/g,'/');
+  const oldHeader=file.new_file===true?'/dev/null':`a/${oldPath}`;
+  const newHeader=file.deleted_file===true?'/dev/null':`b/${newPath}`;
+  return [`diff --git a/${oldPath} b/${newPath}`,`--- ${oldHeader}`,`+++ ${newHeader}`,raw].filter(Boolean).join('\n');
+}
 function buildSnapshot(mr, diffResult, policy) {
   const files = [], reviewable = [], coverageGaps = [], advisories = []; let totalBytes = 0;
   if (!diffResult.complete) coverageGaps.push(diffResult.coverageReason || 'provider_pagination');
@@ -55,7 +64,7 @@ function buildSnapshot(mr, diffResult, policy) {
     }
     const file = {...entry,path:filePath,old_path:oldPath,new_path:newPath,skipped:false,coverageState:'reviewed_text',bytes,changedLines,coreKind}; files.push(file); reviewable.push(file); totalBytes += bytes;
   }
-  const evidence = buildReviewEvidenceChunks({ diff:reviewable.map(file=>file.diff).join('\n'), maxBytes:policy.maxDiffBytes, maxChunks:policy.maxReviewChunks, includeKinds:['source','generated'] });
+  const evidence = buildReviewEvidenceChunks({ diff:reviewable.map(toUnifiedReviewBlock).join('\n'), maxBytes:policy.maxDiffBytes, maxChunks:policy.maxReviewChunks, includeKinds:['source','generated'] });
   coverageGaps.push(...evidence.coverageGaps);
   const byPath = new Map(reviewable.map(file => [file.path,file]));
   const chunks = evidence.chunks.map(coreChunk => ({ index:coreChunk.index, files:coreChunk.paths.map(path=>byPath.get(path)).filter(Boolean), bytes:coreChunk.bytes, diffText:coreChunk.text }));
@@ -76,4 +85,4 @@ function emptyReview(snapshot){return{summary:'',findings:[],allFindings:[],verd
 function reviewReceiptVerdicts(review){const qualityVerdict=review.verdict==='block'?'blocked':review.allFindings?.length||review.findings?.length?'findings_open':'no_findings';return{qualityVerdict,readinessVerdict:review.coverageComplete===false||qualityVerdict==='blocked'?'blocked':'needs_evidence',mechanicalGate:review.deterministicViolationCount>0?'fail':'pass',coverageVerdict:review.coverageComplete===false?'incomplete':'complete'};}
 function createServiceReviewReceipt(snapshot,review,policy,now=new Date()){const receipt=validateReviewReceipt({schemaVersion:REVIEW_RECEIPT_SCHEMA_VERSION,kind:'codex-review',subject:{type:'gitlab-mr',projectId:Number(snapshot.projectId),mrIid:Number(snapshot.iid),startSha:snapshot.startSha,headSha:snapshot.headSha},diffFingerprint:snapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',...reviewReceiptVerdicts(review),model:review.codexModel||'',codexVersion:review.codexVersion||'',createdAt:now.toISOString()});if(!receipt){const error=new Error('Review Receipt v3 projection is invalid');error.code='ERECEIPT';throw error;}return Object.freeze({receipt,fingerprint:fingerprint(receipt)});}
 function formatSummary(review,snapshot,policy){const zh=policy.language==='zh-CN',counts=Object.fromEntries(SEVERITIES.map(s=>[s,review.findings.filter(f=>f.severity===s).length])),status=zh?{pass:'✅ 通过',needs_attention:'⚠️ 需关注',block:'❌ 阻断',incomplete:'⛔ 覆盖不完整'}[review.verdict]:{pass:'✅ Pass',needs_attention:'⚠️ Needs attention',block:'❌ Blocked',incomplete:'⛔ Incomplete'}[review.verdict],reviewed=snapshot.files.filter(f=>!f.skipped).length;const lines=['## Codex Review Service','',`**${zh?'结果':'Result'}:** ${status}`,`**${zh?'提交':'Commit'}:** \`${snapshot.headSha.slice(0,12)}\``,`**${zh?'覆盖':'Coverage'}:** ${reviewed} ${zh?'个文本文件已审核':'text files reviewed'} · ${snapshot.coverageGaps.length} gaps · ${snapshot.advisories.length} advisories`,`**Policy:** \`${policy.source}\` · \`${policy.fingerprint.slice(0,12)}\``,'',review.summary||(zh?'无额外摘要。':'No additional summary.'),'',`### ${zh?'问题统计':'Findings'}`,'',`- Critical: ${counts.critical}`,`- High: ${counts.high}`,`- Medium: ${counts.medium}`,`- Low: ${counts.low}`,`- Info: ${counts.info}`];if(review.deterministicFindingCount)lines.push('',`> ${zh?`确定性规则发现 ${review.deterministicFindingCount} 个问题。`:`Deterministic rules found ${review.deterministicFindingCount} issue(s).`}`);if(review.rejectedFindingCount)lines.push('',`> ${zh?'模型返回了无法精确映射到 changed line 的 finding；审核按覆盖不完整处理。':'Model findings could not be mapped exactly to changed lines; review is incomplete.'}`);if(review.truncatedFindingCount)lines.push('',`> ${zh?`MAX_FINDINGS 截断 ${review.truncatedFindingCount} 个展示项；门禁仍基于全部已验证 finding。`:`${review.truncatedFindingCount} validated findings were omitted by MAX_FINDINGS; gate used all validated findings.`}`);if(snapshot.coverageGaps.length)lines.push('',`> ${zh?'阻断型覆盖缺口':'Blocking coverage gaps'}: ${snapshot.coverageGaps.slice(0,20).join(', ')}`);if(snapshot.advisories.length)lines.push('',`> ${zh?'不可自动审核但不阻断':'Unreviewable advisory'}: ${snapshot.advisories.slice(0,20).join(', ')}`);return lines.join('\n');}
-module.exports={SEVERITIES,outputSchema,sha256,normalizeAnchorText,parseChangedLines,metadataOnlyDiff,providerDiffFingerprint,buildSnapshot,buildPrompt,normalizeFinding,validateChunkResult,passesThreshold,consolidateReviews,emptyReview,reviewReceiptVerdicts,createServiceReviewReceipt,formatSummary};
+module.exports={SEVERITIES,outputSchema,sha256,normalizeAnchorText,parseChangedLines,metadataOnlyDiff,providerDiffFingerprint,toUnifiedReviewBlock,buildSnapshot,buildPrompt,normalizeFinding,validateChunkResult,passesThreshold,consolidateReviews,emptyReview,reviewReceiptVerdicts,createServiceReviewReceipt,formatSummary};
