@@ -1,8 +1,8 @@
 {
   "name": "codex-review-service",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Persistent Codex code review service for GitLab merge requests",
+  "description": "Persistent, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
   "type": "commonjs",
   "engines": {
@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "doctor": "node src/doctor.js",
     "check": "node --check src/*.js && node --check test/*.test.js",
     "test": "node --test test/*.test.js",
     "ci": "npm run check && npm test"

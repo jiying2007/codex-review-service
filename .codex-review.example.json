@@ -1,0 +1,8 @@
+{
+  "language": "zh-CN",
+  "maxDiffBytes": 524288,
+  "maxFindings": 30,
+  "severityThreshold": "low",
+  "timeoutSeconds": 120,
+  "extraInstructions": "重点检查资源生命周期、并发和错误处理。"
+}
