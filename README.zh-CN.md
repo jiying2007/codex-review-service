@@ -52,17 +52,17 @@ cd /opt/codex-review-service
 npm ci --ignore-scripts --no-audit --no-fund
 
 sudo install -m 0644 config.example.json /etc/codex-review/config.json
-sudo install -m 0600 .env.example /etc/codex-review-service.env
+sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
 sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 
 sudo -u codex-review -H codex login
+sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 sudo systemctl daemon-reload
 sudo systemctl enable --now codex-review-service
-npm run doctor
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-正式启动前修改上述两个配置文件。`config.json` 放非敏感产品配置，环境文件只放 Secret 和少量特殊覆盖项。
+正式运行 Doctor 或启动生产服务前修改上述两个配置文件。`config.json` 放非敏感产品配置，环境文件只放 Secret 和少量特殊覆盖项。`0640 root:codex-review` 让 Doctor 可以在真实服务用户下加载同一份 Secret，不需要把 Token 写进命令行。
 
 ## 多仓库监控与并发处理
 
@@ -139,7 +139,7 @@ GET /health/ready
 GET /metrics
 ```
 
-Readiness 会同时检查 GitLab、SQLite durability、Review/Publisher Worker、Circuit Breaker 和 Project Scope 自动发现健康度。`npm run doctor` 会实际展开配置的 Group，并在正式接 Webhook 前输出最终 Project 数量。
+Readiness 会同时检查 GitLab、SQLite durability、Review/Publisher Worker、Circuit Breaker 和 Project Scope 自动发现健康度。上面的 Doctor 命令会实际展开配置的 Group，并在正式接 Webhook 前输出最终 Project 数量。
 
 更多见 [OPERATIONS.md](OPERATIONS.md)、[SECURITY.md](SECURITY.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[LONG_TERM_ASSET.md](LONG_TERM_ASSET.md)、[CHANGELOG.md](CHANGELOG.md)。
 
