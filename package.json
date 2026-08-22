@@ -31,9 +31,7 @@
     "src/codex-safe-core/policy.js",
     "src/codex-safe-core/review-rules.js",
     "src/codex-safe-core/git-repository.js",
-    "src/codex-safe-core/codex-safe.schema.json",
-    "src/codex-safe-core/package.json",
-    "src/codex-safe-core/LICENSE"
+    "src/codex-safe-core/codex-safe.schema.json"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",
