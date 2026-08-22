@@ -37,14 +37,16 @@ GITLAB_API_TOKEN=...
 GITLAB_WEBHOOK_SIGNING_TOKEN=whsec_...
 ```
 
+Install the Controller environment as `0640 root:codex-review`. The Controller account already needs these credentials, and this permits Doctor to load the exact same environment without placing secrets in command arguments.
+
 Preflight:
 
 1. install Node.js 22.13+ and the approved Codex CLI;
 2. create the `codex-review` non-login user;
 3. install `config.json`, environment file and the Controller systemd unit;
 4. run `codex login` as `codex-review` or provision `OPENAI_API_KEY`;
-5. run `npm run doctor` under the service environment;
-6. verify `/health/ready` before enabling production webhooks.
+5. from `/opt/codex-review-service`, run `sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js`;
+6. start the service and verify `/health/ready` before enabling production webhooks.
 
 ## Multi-repository project scope
 
@@ -53,6 +55,8 @@ Preflight:
 Project discovery runs at startup and again on the reconciliation cadence when groups are configured. A refresh is atomic from the service's point of view: if any group lookup fails or pagination is incomplete, the last complete project set remains active and readiness becomes unhealthy until a complete refresh succeeds. This avoids silently dropping repositories during a GitLab incident.
 
 Legacy `GITLAB_PROJECT_ALLOWLIST` is still accepted. When present, it overrides structured `projects/groups`. Wildcard `*` is intentionally webhook-only and disables exhaustive reconciliation.
+
+If a project leaves the resolved scope, queued work will no longer be accepted for it and pending Outbox publications are canceled locally before any further GitLab mutation.
 
 ## Hardened Deployment
 
@@ -88,7 +92,7 @@ Crash recovery rules:
 - running Review Jobs are requeued;
 - publishing Outbox actions return to pending;
 - publication retry never reruns an already-persisted Codex review;
-- stale Summary/Finding publications are canceled;
+- stale or out-of-scope Summary/Finding/Status publications are canceled;
 - delayed `running` status cannot overwrite terminal status.
 
 ## Upgrade
@@ -145,7 +149,7 @@ Start with `review.concurrency=2` and `PUBLISHER_CONCURRENCY=2`. Review concurre
 
 ### Unexpected project not reviewed
 
-Run `npm run doctor` and compare `explicitProjects`, `groups`, `discoveredProjects`, and `totalProjects`. Check whether a legacy `GITLAB_PROJECT_ALLOWLIST` environment value is overriding `config.json`.
+Run Doctor with the command above and compare `explicitProjects`, `groups`, `discoveredProjects`, and `totalProjects`. Check whether a legacy `GITLAB_PROJECT_ALLOWLIST` environment value is overriding `config.json`.
 
 ### GitLab unavailable / rate-limited
 
@@ -174,6 +178,7 @@ Before release:
 - `git diff --check` passes;
 - Node 22.13.0 and 24 CI are green;
 - strict config/project-scope tests are green;
+- out-of-scope publication cancellation tests are green;
 - Runner contract tests remain green;
 - `npm pack --dry-run --ignore-scripts` succeeds;
 - README/README.zh-CN/OPERATIONS/SECURITY/ARCHITECTURE agree on Standard/Hardened deployment and project-scope semantics;
