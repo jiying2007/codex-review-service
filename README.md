@@ -158,7 +158,7 @@ Example:
   "skipGeneratedFiles": true,
   "blockUnreviewableFiles": false,
   "forbiddenPathPrefixes": ["infra/prod-secrets/"],
-  "requireTestsForCode": true,
+  "requireTestsForCodeChanges": true,
   "codePathPrefixes": ["src/"],
   "testPathPrefixes": ["test/", "tests/"],
   "extraInstructions": "Focus on concurrency, resource lifetime and error handling."
