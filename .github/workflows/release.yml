@@ -84,13 +84,29 @@ jobs:
         with: { node-version: '22.13.0', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run core:init
-      - name: Build immutable package and checksum
+      - name: Build and verify immutable runtime package
         shell: bash
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
           tgz=$(npm pack --ignore-scripts --json | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s)[0].filename))")
           test "$tgz" = "codex-review-service-${version}.tgz"
+          tar -tzf "$tgz" > /tmp/package-files.txt
+          for required in \
+            package/package.json \
+            package/config.example.json \
+            package/src/index.js \
+            package/src/codex.js \
+            package/src/codex-safe-core/codex-cli.js \
+            package/src/codex-safe-core/process-runner.js \
+            package/src/codex-safe-core/policy.js \
+            package/deploy/systemd/codex-review-service.service; do
+            grep -Fx "$required" /tmp/package-files.txt >/dev/null
+          done
+          if grep -Eq '^package/(test/|scripts/|\.github/|\.gitmodules$|src/codex-safe-core/test/|src/codex-safe-core/\.github/)' /tmp/package-files.txt; then
+            echo 'release package contains development-only files' >&2
+            exit 1
+          fi
           sha256sum "$tgz" > SHA256SUMS
       - name: Attest package provenance
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
