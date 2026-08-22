@@ -4,105 +4,61 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const SCHEMA_VERSION = 2;
-const TERMINAL_JOB_STATUSES = Object.freeze(['pass','needs_attention','blocked','incomplete','failed','superseded','cancelled','unauthorized','duplicate']);
-function hasColumn(db, table, column) { return db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column); }
-function isoAfter(ms) { return new Date(Date.now() + Math.max(0, ms)).toISOString(); }
+const SCHEMA_VERSION = 3;
+const TERMINAL_JOB_STATUSES = Object.freeze(['pass','needs_attention','blocked','incomplete','failed','superseded','cancelled','unauthorized','duplicate','skipped']);
+const TERMINAL_PUBLICATION_STATUSES = Object.freeze(['published','failed','cancelled']);
+function hasColumn(db,table,column){return db.prepare(`PRAGMA table_info(${table})`).all().some(row=>row.name===column);}
+function isoAfter(ms){return new Date(Date.now()+Math.max(0,ms)).toISOString();}
+function json(value){return JSON.stringify(value??null);}
+function parseJson(value){try{return JSON.parse(value);}catch{return null;}}
 
-class Store {
-  constructor(dbPath) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(dbPath);
-    this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
-    this.migrate();
-  }
-  withTransaction(fn) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const value = fn(); this.db.exec('COMMIT'); return value; }
-    catch (error) { try { this.db.exec('ROLLBACK'); } catch {} throw error; }
-  }
-  migrate() {
+class Store{
+  constructor(dbPath){fs.mkdirSync(path.dirname(dbPath),{recursive:true,mode:0o700});this.db=new DatabaseSync(dbPath);this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');this.migrate();}
+  withTransaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){try{this.db.exec('ROLLBACK');}catch{}throw error;}}
+  migrate(){
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS webhook_events(id INTEGER PRIMARY KEY AUTOINCREMENT,webhook_id TEXT NOT NULL UNIQUE,event_type TEXT NOT NULL,project_id INTEGER,mr_iid INTEGER,received_at TEXT NOT NULL,processed_at TEXT);
-      CREATE TABLE IF NOT EXISTS review_jobs(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,base_sha TEXT NOT NULL DEFAULT '',start_sha TEXT NOT NULL DEFAULT '',head_sha TEXT NOT NULL DEFAULT '',dedupe_key TEXT NOT NULL,status TEXT NOT NULL,trigger TEXT NOT NULL,attempt INTEGER NOT NULL DEFAULT 0,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,requested_by_user_id INTEGER,request_webhook_id TEXT,source_branch TEXT NOT NULL DEFAULT '',available_at TEXT NOT NULL DEFAULT '',UNIQUE(project_id,mr_iid,dedupe_key));
-      CREATE TABLE IF NOT EXISTS review_runs(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL REFERENCES review_jobs(id) ON DELETE CASCADE,verdict TEXT NOT NULL,summary TEXT NOT NULL,coverage_complete INTEGER NOT NULL,finding_count INTEGER NOT NULL,codex_version TEXT,duration_ms INTEGER NOT NULL,created_at TEXT NOT NULL,policy_source TEXT NOT NULL DEFAULT 'service-default',policy_fingerprint TEXT NOT NULL DEFAULT '<none>',chunk_count INTEGER NOT NULL DEFAULT 0,rejected_finding_count INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS review_findings(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER NOT NULL REFERENCES review_runs(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,severity TEXT NOT NULL,category TEXT NOT NULL,file TEXT NOT NULL,line INTEGER NOT NULL,end_line INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,suggestion TEXT NOT NULL,confidence REAL NOT NULL,discussion_id TEXT,side TEXT NOT NULL DEFAULT 'new',UNIQUE(run_id,fingerprint));
+      CREATE TABLE IF NOT EXISTS review_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,base_sha TEXT NOT NULL DEFAULT '',start_sha TEXT NOT NULL DEFAULT '',head_sha TEXT NOT NULL DEFAULT '',dedupe_key TEXT NOT NULL,status TEXT NOT NULL,trigger TEXT NOT NULL,attempt INTEGER NOT NULL DEFAULT 0,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,requested_by_user_id INTEGER,request_webhook_id TEXT,source_branch TEXT NOT NULL DEFAULT '',available_at TEXT NOT NULL DEFAULT '',status_project_id INTEGER,pipeline_id INTEGER,trace_id TEXT NOT NULL DEFAULT '',UNIQUE(project_id,mr_iid,dedupe_key));
+      CREATE TABLE IF NOT EXISTS review_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,job_id INTEGER NOT NULL REFERENCES review_jobs(id) ON DELETE CASCADE,verdict TEXT NOT NULL,summary TEXT NOT NULL,coverage_complete INTEGER NOT NULL,finding_count INTEGER NOT NULL,codex_version TEXT,codex_model TEXT NOT NULL DEFAULT '',duration_ms INTEGER NOT NULL,created_at TEXT NOT NULL,policy_source TEXT NOT NULL DEFAULT 'service-default',policy_fingerprint TEXT NOT NULL DEFAULT '<none>',chunk_count INTEGER NOT NULL DEFAULT 0,rejected_finding_count INTEGER NOT NULL DEFAULT 0,truncated_finding_count INTEGER NOT NULL DEFAULT 0,input_tokens INTEGER NOT NULL DEFAULT 0,cached_input_tokens INTEGER NOT NULL DEFAULT 0,cache_write_input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0,reasoning_output_tokens INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS review_findings(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER NOT NULL REFERENCES review_runs(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,severity TEXT NOT NULL,category TEXT NOT NULL,file TEXT NOT NULL,line INTEGER NOT NULL,end_line INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,suggestion TEXT NOT NULL,confidence REAL NOT NULL,discussion_id TEXT,side TEXT NOT NULL DEFAULT 'new',anchor_hash TEXT NOT NULL DEFAULT '',UNIQUE(run_id,fingerprint));
+      CREATE TABLE IF NOT EXISTS publication_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,action_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);
     `);
-    const jobColumns = [['start_sha',"TEXT NOT NULL DEFAULT ''"],['requested_by_user_id','INTEGER'],['request_webhook_id','TEXT'],['source_branch',"TEXT NOT NULL DEFAULT ''"],['available_at',"TEXT NOT NULL DEFAULT ''"]];
-    for (const [column,type] of jobColumns) if (!hasColumn(this.db,'review_jobs',column)) this.db.exec(`ALTER TABLE review_jobs ADD COLUMN ${column} ${type}`);
-    const runColumns = [['policy_source',"TEXT NOT NULL DEFAULT 'service-default'"],['policy_fingerprint',"TEXT NOT NULL DEFAULT '<none>'"],['chunk_count','INTEGER NOT NULL DEFAULT 0'],['rejected_finding_count','INTEGER NOT NULL DEFAULT 0']];
-    for (const [column,type] of runColumns) if (!hasColumn(this.db,'review_runs',column)) this.db.exec(`ALTER TABLE review_runs ADD COLUMN ${column} ${type}`);
-    if (!hasColumn(this.db,'review_findings','side')) this.db.exec("ALTER TABLE review_findings ADD COLUMN side TEXT NOT NULL DEFAULT 'new'");
-    this.db.exec(`UPDATE review_jobs SET available_at=created_at WHERE available_at=''; CREATE INDEX IF NOT EXISTS idx_review_jobs_status_available ON review_jobs(status,available_at,id); CREATE INDEX IF NOT EXISTS idx_review_jobs_mr ON review_jobs(project_id,mr_iid,id); CREATE INDEX IF NOT EXISTS idx_review_runs_job ON review_runs(job_id,id); CREATE INDEX IF NOT EXISTS idx_webhooks_processed ON webhook_events(processed_at,received_at); PRAGMA user_version=${SCHEMA_VERSION};`);
+    const additions={review_jobs:[['start_sha',"TEXT NOT NULL DEFAULT ''"],['requested_by_user_id','INTEGER'],['request_webhook_id','TEXT'],['source_branch',"TEXT NOT NULL DEFAULT ''"],['available_at',"TEXT NOT NULL DEFAULT ''"],['status_project_id','INTEGER'],['pipeline_id','INTEGER'],['trace_id',"TEXT NOT NULL DEFAULT ''"]],review_runs:[['policy_source',"TEXT NOT NULL DEFAULT 'service-default'"],['policy_fingerprint',"TEXT NOT NULL DEFAULT '<none>'"],['chunk_count','INTEGER NOT NULL DEFAULT 0'],['rejected_finding_count','INTEGER NOT NULL DEFAULT 0'],['truncated_finding_count','INTEGER NOT NULL DEFAULT 0'],['codex_model',"TEXT NOT NULL DEFAULT ''"],['input_tokens','INTEGER NOT NULL DEFAULT 0'],['cached_input_tokens','INTEGER NOT NULL DEFAULT 0'],['cache_write_input_tokens','INTEGER NOT NULL DEFAULT 0'],['output_tokens','INTEGER NOT NULL DEFAULT 0'],['reasoning_output_tokens','INTEGER NOT NULL DEFAULT 0']],review_findings:[['side',"TEXT NOT NULL DEFAULT 'new'"],['anchor_hash',"TEXT NOT NULL DEFAULT ''"]]};
+    for(const[table,columns]of Object.entries(additions))for(const[column,type]of columns)if(!hasColumn(this.db,table,column))this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    this.db.exec(`UPDATE review_jobs SET available_at=created_at WHERE available_at='';CREATE INDEX IF NOT EXISTS idx_review_jobs_status_available ON review_jobs(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_review_jobs_mr ON review_jobs(project_id,mr_iid,id);CREATE INDEX IF NOT EXISTS idx_review_runs_job ON review_runs(job_id,id);CREATE INDEX IF NOT EXISTS idx_review_runs_created ON review_runs(created_at,id);CREATE INDEX IF NOT EXISTS idx_webhooks_processed ON webhook_events(processed_at,received_at);CREATE INDEX IF NOT EXISTS idx_outbox_status_available ON publication_outbox(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_outbox_run ON publication_outbox(run_id,id);PRAGMA user_version=${SCHEMA_VERSION};`);
   }
-  schemaVersion() { return Number(this.db.prepare('PRAGMA user_version').get().user_version || 0); }
-  ping() { return Number(this.db.prepare('SELECT 1 AS ok').get().ok) === 1; }
-  recordWebhook({ webhookId,eventType,projectId=null,mrIid=null }) {
-    try { this.db.prepare('INSERT INTO webhook_events(webhook_id,event_type,project_id,mr_iid,received_at) VALUES(?,?,?,?,?)').run(webhookId,eventType,projectId,mrIid,new Date().toISOString()); return true; }
-    catch (error) { if (String(error.message).includes('UNIQUE constraint failed')) return false; throw error; }
-  }
-  markWebhookProcessed(webhookId) { this.db.prepare('UPDATE webhook_events SET processed_at=? WHERE webhook_id=?').run(new Date().toISOString(),webhookId); }
-  forgetWebhook(webhookId) { this.db.prepare('DELETE FROM webhook_events WHERE webhook_id=? AND processed_at IS NULL').run(webhookId); }
-  queueDepth() { return Number(this.db.prepare("SELECT COUNT(*) AS count FROM review_jobs WHERE status='queued'").get().count); }
-  enqueue({ projectId,mrIid,baseSha='',startSha='',headSha='',sourceBranch='',trigger,dedupeKey,requestedByUserId=null,requestWebhookId=null,maxQueueDepth=Infinity }) {
-    if (this.queueDepth() >= maxQueueDepth) { const error = new Error('Review queue is full'); error.code='EQUEUEFULL'; error.status=503; throw error; }
-    const now = new Date().toISOString();
-    return this.withTransaction(() => {
-      if (headSha) this.db.prepare(`UPDATE review_jobs SET status='superseded',finished_at=? WHERE project_id=? AND mr_iid=? AND status='queued' AND (head_sha<>'' AND head_sha<>? OR (?<>'' AND start_sha<>'' AND start_sha<>?))`).run(now,projectId,mrIid,headSha,startSha,startSha);
-      try {
-        const result = this.db.prepare(`INSERT INTO review_jobs(project_id,mr_iid,base_sha,start_sha,head_sha,dedupe_key,status,trigger,created_at,available_at,requested_by_user_id,request_webhook_id,source_branch) VALUES(?,?,?,?,?,?,'queued',?,?,?,?,?,?)`).run(projectId,mrIid,baseSha,startSha,headSha,dedupeKey,trigger,now,now,requestedByUserId,requestWebhookId,sourceBranch);
-        return Number(result.lastInsertRowid);
-      } catch (error) { if (String(error.message).includes('UNIQUE constraint failed')) return null; throw error; }
-    });
-  }
-  bindJobSnapshot(id,{ baseSha,startSha,headSha,sourceBranch }) {
-    const now = new Date().toISOString();
-    return this.withTransaction(() => {
-      const job = this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id); if (!job) return {status:'missing'};
-      if (job.trigger !== 'command') {
-        const duplicate = this.db.prepare(`SELECT id,status FROM review_jobs WHERE project_id=? AND mr_iid=? AND start_sha=? AND head_sha=? AND id<>? AND trigger<>'command' ORDER BY id LIMIT 1`).get(job.project_id,job.mr_iid,startSha,headSha,id);
-        if (duplicate) { this.db.prepare("UPDATE review_jobs SET status='duplicate',head_sha=?,base_sha=?,start_sha=?,source_branch=?,finished_at=? WHERE id=?").run(headSha,baseSha,startSha,sourceBranch||'',now,id); return {status:'duplicate',duplicateId:duplicate.id}; }
-      }
-      this.db.prepare('UPDATE review_jobs SET base_sha=?,start_sha=?,head_sha=?,source_branch=? WHERE id=?').run(baseSha||'',startSha||'',headSha,sourceBranch||'',id);
-      this.db.prepare(`UPDATE review_jobs SET status='superseded',finished_at=? WHERE project_id=? AND mr_iid=? AND id<>? AND status='queued' AND (head_sha<>'' AND head_sha<>? OR (?<>'' AND start_sha<>'' AND start_sha<>?))`).run(now,job.project_id,job.mr_iid,id,headSha,startSha,startSha);
-      return {status:'bound'};
-    });
-  }
-  recoverInterruptedJobs() { return this.db.prepare("UPDATE review_jobs SET status='queued',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='running'").run(new Date().toISOString()).changes; }
-  claimNext() {
-    return this.withTransaction(() => {
-      const now = new Date().toISOString();
-      const row = this.db.prepare(`SELECT j.* FROM review_jobs j WHERE j.status='queued' AND j.available_at<=? AND NOT EXISTS(SELECT 1 FROM review_jobs r WHERE r.project_id=j.project_id AND r.mr_iid=j.mr_iid AND r.status='running') ORDER BY j.id LIMIT 1`).get(now);
-      if (!row) return null;
-      const result = this.db.prepare("UPDATE review_jobs SET status='running',started_at=?,attempt=attempt+1 WHERE id=? AND status='queued'").run(now,row.id);
-      return result.changes===1 ? this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(row.id) : null;
-    });
-  }
-  getJob(id) { return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id)||null; }
-  retryJob(id,errorCode,delayMs) { this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,isoAfter(delayMs),id); }
-  requeueRunningJob(id,errorCode='ESHUTDOWN') { this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,new Date().toISOString(),id); }
-  finishJob(id,status,errorCode=null) { this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,new Date().toISOString(),id); }
-  cancelMergeRequest(projectId,mrIid,status='cancelled') { return this.db.prepare("UPDATE review_jobs SET status=?,finished_at=? WHERE project_id=? AND mr_iid=? AND status IN ('queued','running')").run(status,new Date().toISOString(),projectId,mrIid).changes; }
-  saveRun(jobId,review,durationMs,policy) {
-    return this.withTransaction(() => {
-      const run = this.db.prepare(`INSERT INTO review_runs(job_id,verdict,summary,coverage_complete,finding_count,codex_version,duration_ms,created_at,policy_source,policy_fingerprint,chunk_count,rejected_finding_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(jobId,review.verdict,review.summary,review.coverageComplete?1:0,review.findings.length,review.codexVersion||null,durationMs,new Date().toISOString(),policy.source,policy.fingerprint,review.chunkCount||0,review.rejectedFindingCount||0);
-      const runId=Number(run.lastInsertRowid); const insert=this.db.prepare(`INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence,side) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`);
-      for (const f of review.findings) insert.run(runId,f.fingerprint,f.severity,f.category,f.file,f.line,f.endLine,f.title,f.description,f.suggestion,f.confidence,f.side);
-      return runId;
-    });
-  }
-  findingsForRun(runId) { return this.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId); }
-  priorFindings(projectId,mrIid,beforeRunId) { return this.db.prepare(`SELECT f.*,r.id AS run_id,j.id AS job_id FROM review_findings f JOIN review_runs r ON r.id=f.run_id JOIN review_jobs j ON j.id=r.job_id WHERE j.project_id=? AND j.mr_iid=? AND r.id<? ORDER BY r.id DESC,f.id`).all(projectId,mrIid,beforeRunId); }
-  setDiscussionId(findingId,discussionId) { this.db.prepare('UPDATE review_findings SET discussion_id=? WHERE id=?').run(discussionId,findingId); }
-  stats() { const rows=this.db.prepare('SELECT status,COUNT(*) AS count FROM review_jobs GROUP BY status').all(); return {jobs:Object.fromEntries(rows.map(r=>[r.status,Number(r.count)])),webhookCount:Number(this.db.prepare('SELECT COUNT(*) AS count FROM webhook_events').get().count),findings:Number(this.db.prepare('SELECT COUNT(*) AS count FROM review_findings').get().count),schemaVersion:this.schemaVersion()}; }
-  prune({dataRetentionDays,webhookRetentionDays}) {
-    const jobCutoff=new Date(Date.now()-dataRetentionDays*86400000).toISOString(); const webhookCutoff=new Date(Date.now()-webhookRetentionDays*86400000).toISOString();
-    return this.withTransaction(()=>{ const webhooks=this.db.prepare('DELETE FROM webhook_events WHERE processed_at IS NOT NULL AND received_at<?').run(webhookCutoff).changes; const placeholders=TERMINAL_JOB_STATUSES.map(()=>'?').join(','); const jobs=this.db.prepare(`DELETE FROM review_jobs WHERE status IN (${placeholders}) AND finished_at IS NOT NULL AND finished_at<?`).run(...TERMINAL_JOB_STATUSES,jobCutoff).changes; return {webhooks,jobs}; });
-  }
-  checkpoint() { try { return this.db.prepare('PRAGMA wal_checkpoint(PASSIVE)').get(); } catch { return null; } }
-  close() { this.db.close(); }
+  schemaVersion(){return Number(this.db.prepare('PRAGMA user_version').get().user_version||0);}
+  synchronousMode(){return Number(this.db.prepare('PRAGMA synchronous').get().synchronous);}
+  ping(){return Number(this.db.prepare('SELECT 1 AS ok').get().ok)===1;}
+  recordWebhook({webhookId,eventType,projectId=null,mrIid=null}){try{this.db.prepare('INSERT INTO webhook_events(webhook_id,event_type,project_id,mr_iid,received_at) VALUES(?,?,?,?,?)').run(webhookId,eventType,projectId,mrIid,new Date().toISOString());return true;}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return false;throw error;}}
+  markWebhookProcessed(webhookId){this.db.prepare('UPDATE webhook_events SET processed_at=? WHERE webhook_id=?').run(new Date().toISOString(),webhookId);}
+  forgetWebhook(webhookId){this.db.prepare('DELETE FROM webhook_events WHERE webhook_id=? AND processed_at IS NULL').run(webhookId);}
+  queueDepth(){return Number(this.db.prepare("SELECT COUNT(*) count FROM review_jobs WHERE status='queued'").get().count);}
+  publicationDepth(){return Number(this.db.prepare("SELECT COUNT(*) count FROM publication_outbox WHERE status='pending'").get().count);}
+  enqueue({projectId,mrIid,baseSha='',startSha='',headSha='',sourceBranch='',trigger,dedupeKey,requestedByUserId=null,requestWebhookId=null,maxQueueDepth=Infinity,delayMs=0,traceId=''}){if(this.queueDepth()>=maxQueueDepth){const error=new Error('Review queue is full');error.code='EQUEUEFULL';error.status=503;throw error;}const now=new Date().toISOString(),availableAt=isoAfter(delayMs);return this.withTransaction(()=>{if(headSha)this.db.prepare(`UPDATE review_jobs SET status='superseded',finished_at=? WHERE project_id=? AND mr_iid=? AND status='queued' AND (head_sha<>'' AND head_sha<>? OR (?<>'' AND start_sha<>'' AND start_sha<>?))`).run(now,projectId,mrIid,headSha,startSha,startSha);try{const result=this.db.prepare(`INSERT INTO review_jobs(project_id,mr_iid,base_sha,start_sha,head_sha,dedupe_key,status,trigger,created_at,available_at,requested_by_user_id,request_webhook_id,source_branch,trace_id) VALUES(?,?,?,?,?,?,'queued',?,?,?,?,?,?,?)`).run(projectId,mrIid,baseSha,startSha,headSha,dedupeKey,trigger,now,availableAt,requestedByUserId,requestWebhookId,sourceBranch,traceId);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}});}
+  bindJobSnapshot(id,{baseSha,startSha,headSha,sourceBranch,statusProjectId=null,pipelineId=null}){const now=new Date().toISOString();return this.withTransaction(()=>{const job=this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id);if(!job)return{status:'missing'};if(job.trigger!=='command'){const duplicate=this.db.prepare(`SELECT id FROM review_jobs WHERE project_id=? AND mr_iid=? AND start_sha=? AND head_sha=? AND id<>? AND trigger<>'command' ORDER BY id LIMIT 1`).get(job.project_id,job.mr_iid,startSha,headSha,id);if(duplicate){this.db.prepare("UPDATE review_jobs SET status='duplicate',head_sha=?,base_sha=?,start_sha=?,source_branch=?,finished_at=? WHERE id=?").run(headSha,baseSha,startSha,sourceBranch||'',now,id);return{status:'duplicate',duplicateId:duplicate.id};}}this.db.prepare('UPDATE review_jobs SET base_sha=?,start_sha=?,head_sha=?,source_branch=?,status_project_id=?,pipeline_id=? WHERE id=?').run(baseSha||'',startSha||'',headSha,sourceBranch||'',statusProjectId,pipelineId,id);this.db.prepare(`UPDATE review_jobs SET status='superseded',finished_at=? WHERE project_id=? AND mr_iid=? AND id<>? AND status='queued' AND (head_sha<>'' AND head_sha<>? OR (?<>'' AND start_sha<>'' AND start_sha<>?))`).run(now,job.project_id,job.mr_iid,id,headSha,startSha,startSha);return{status:'bound'};});}
+  recoverInterruptedJobs(){return this.db.prepare("UPDATE review_jobs SET status='queued',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='running'").run(new Date().toISOString()).changes;}
+  recoverPublications(){return this.db.prepare("UPDATE publication_outbox SET status='pending',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='publishing'").run(new Date().toISOString()).changes;}
+  claimNext(){return this.withTransaction(()=>{const now=new Date().toISOString(),row=this.db.prepare(`SELECT j.* FROM review_jobs j WHERE j.status='queued' AND j.available_at<=? AND NOT EXISTS(SELECT 1 FROM review_jobs r WHERE r.project_id=j.project_id AND r.mr_iid=j.mr_iid AND r.status='running') ORDER BY j.id LIMIT 1`).get(now);if(!row)return null;const result=this.db.prepare("UPDATE review_jobs SET status='running',started_at=?,attempt=attempt+1 WHERE id=? AND status='queued'").run(now,row.id);return result.changes===1?this.getJob(row.id):null;});}
+  claimPublication(){return this.withTransaction(()=>{const now=new Date().toISOString(),row=this.db.prepare(`SELECT p.* FROM publication_outbox p WHERE p.status='pending' AND p.available_at<=? AND NOT EXISTS(SELECT 1 FROM publication_outbox prior WHERE prior.run_id=p.run_id AND p.run_id IS NOT NULL AND prior.id<p.id AND prior.status IN ('pending','publishing')) ORDER BY p.id LIMIT 1`).get(now);if(!row)return null;const result=this.db.prepare("UPDATE publication_outbox SET status='publishing',started_at=?,attempt=attempt+1 WHERE id=? AND status='pending'").run(now,row.id);if(result.changes!==1)return null;const value=this.db.prepare('SELECT * FROM publication_outbox WHERE id=?').get(row.id);value.payload=parseJson(value.payload_json);return value;});}
+  getJob(id){return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id)||null;}
+  retryJob(id,errorCode,delayMs){this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,isoAfter(delayMs),id);}
+  requeueRunningJob(id,errorCode='ESHUTDOWN'){this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,new Date().toISOString(),id);}
+  finishJob(id,status,errorCode=null){this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,new Date().toISOString(),id);}
+  cancelMergeRequest(projectId,mrIid,status='cancelled'){return this.db.prepare("UPDATE review_jobs SET status=?,finished_at=? WHERE project_id=? AND mr_iid=? AND status IN ('queued','running')").run(status,new Date().toISOString(),projectId,mrIid).changes;}
+  enqueuePublication({runId=null,projectId,mrIid,type,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare(`INSERT INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`).run(runId,projectId,mrIid,type,dedupeKey,json(payload),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
+  saveRunWithOutbox(jobId,review,durationMs,policy,actions){return this.withTransaction(()=>{const usage=review.usage||{},run=this.db.prepare(`INSERT INTO review_runs(job_id,verdict,summary,coverage_complete,finding_count,codex_version,codex_model,duration_ms,created_at,policy_source,policy_fingerprint,chunk_count,rejected_finding_count,truncated_finding_count,input_tokens,cached_input_tokens,cache_write_input_tokens,output_tokens,reasoning_output_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(jobId,review.verdict,review.summary,review.coverageComplete?1:0,review.findings.length,review.codexVersion||null,review.codexModel||'',durationMs,new Date().toISOString(),policy.source,policy.fingerprint,review.chunkCount||0,review.rejectedFindingCount||0,review.truncatedFindingCount||0,usage.inputTokens||0,usage.cachedInputTokens||0,usage.cacheWriteInputTokens||0,usage.outputTokens||0,usage.reasoningOutputTokens||0),runId=Number(run.lastInsertRowid),insertFinding=this.db.prepare(`INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence,side,anchor_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`);for(const f of review.findings)insertFinding.run(runId,f.fingerprint,f.severity,f.category,f.file,f.line,f.endLine,f.title,f.description,f.suggestion,f.confidence,f.side,f.anchorHash||'');const insertAction=this.db.prepare(`INSERT OR IGNORE INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`),now=new Date().toISOString();for(const action of actions||[])insertAction.run(runId,action.projectId,action.mrIid,action.type,action.dedupeKey,json(action.payload),now,now);return runId;});}
+  findingsForRun(runId){return this.db.prepare('SELECT * FROM review_findings WHERE run_id=? ORDER BY id').all(runId);}
+  priorFindings(projectId,mrIid,beforeRunId=Number.MAX_SAFE_INTEGER){return this.db.prepare(`SELECT f.*,r.id run_id,j.id job_id FROM review_findings f JOIN review_runs r ON r.id=f.run_id JOIN review_jobs j ON j.id=r.job_id WHERE j.project_id=? AND j.mr_iid=? AND r.id<? ORDER BY r.id DESC,f.id`).all(projectId,mrIid,beforeRunId);}
+  setDiscussionIdByFingerprint(runId,fingerprint,discussionId){this.db.prepare('UPDATE review_findings SET discussion_id=? WHERE run_id=? AND fingerprint=?').run(discussionId,runId,fingerprint);}
+  finishPublication(id,remoteId=null){this.db.prepare("UPDATE publication_outbox SET status='published',remote_id=?,error_code=NULL,finished_at=? WHERE id=?").run(remoteId,new Date().toISOString(),id);}
+  retryPublication(id,errorCode,delayMs){this.db.prepare("UPDATE publication_outbox SET status='pending',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='publishing'").run(errorCode,isoAfter(delayMs),id);}
+  failPublication(id,errorCode){this.db.prepare("UPDATE publication_outbox SET status='failed',error_code=?,finished_at=? WHERE id=?").run(errorCode,new Date().toISOString(),id);}
+  cancelPublication(id,errorCode='ECANCELLED'){this.db.prepare("UPDATE publication_outbox SET status='cancelled',error_code=?,finished_at=? WHERE id=?").run(errorCode,new Date().toISOString(),id);}
+  tokenUsageSince(projectId,sinceIso){const row=this.db.prepare(`SELECT COALESCE(SUM(r.input_tokens+r.output_tokens),0) tokens FROM review_runs r JOIN review_jobs j ON j.id=r.job_id WHERE j.project_id=? AND r.created_at>=?`).get(projectId,sinceIso);return Number(row.tokens||0);}
+  stats(){const jobs=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM review_jobs GROUP BY status').all().map(r=>[r.status,Number(r.count)])),publications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM publication_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),usage=this.db.prepare('SELECT COALESCE(SUM(input_tokens),0) input,COALESCE(SUM(cached_input_tokens),0) cached,COALESCE(SUM(output_tokens),0) output,COALESCE(SUM(reasoning_output_tokens),0) reasoning FROM review_runs').get();return{jobs,publications,webhookCount:Number(this.db.prepare('SELECT COUNT(*) count FROM webhook_events').get().count),findings:Number(this.db.prepare('SELECT COUNT(*) count FROM review_findings').get().count),schemaVersion:this.schemaVersion(),usage};}
+  prune({dataRetentionDays,webhookRetentionDays}){const jobCutoff=new Date(Date.now()-dataRetentionDays*86400000).toISOString(),webhookCutoff=new Date(Date.now()-webhookRetentionDays*86400000).toISOString();return this.withTransaction(()=>{const webhooks=this.db.prepare('DELETE FROM webhook_events WHERE processed_at IS NOT NULL AND received_at<?').run(webhookCutoff).changes,placeholders=TERMINAL_JOB_STATUSES.map(()=>'?').join(','),jobs=this.db.prepare(`DELETE FROM review_jobs WHERE status IN (${placeholders}) AND finished_at IS NOT NULL AND finished_at<?`).run(...TERMINAL_JOB_STATUSES,jobCutoff).changes;return{webhooks,jobs};});}
+  checkpoint(){try{return this.db.prepare('PRAGMA wal_checkpoint(PASSIVE)').get();}catch{return null;}}
+  close(){this.db.close();}
 }
-module.exports = { Store, SCHEMA_VERSION, TERMINAL_JOB_STATUSES };
+module.exports={Store,SCHEMA_VERSION,TERMINAL_JOB_STATUSES,TERMINAL_PUBLICATION_STATUSES};

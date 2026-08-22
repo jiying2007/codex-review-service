@@ -1,256 +1,29 @@
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { ReviewService, retryable } = require('../src/service');
-const { Store } = require('../src/db');
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const{ReviewService,retryable,isDraft}=require('../src/service');
+const{Store}=require('../src/db');
 
-test('webhook event handling is local and does not call GitLab', () => {
-  let gitlabCalls = 0;
-  const enqueued = [];
-  const service = new ReviewService({
-    config: { gitlabProjectAllowlist: new Set([7]), maxQueueDepth: 10 },
-    store: { enqueue: value => (enqueued.push(value), 1), cancelMergeRequest: () => 0 },
-    gitlab: new Proxy({}, { get() { gitlabCalls += 1; return () => {}; } }),
-    logger: {}
-  });
-  const result = service.handleEvent({
-    projectAllowed: true,
-    shouldReview: true,
-    shouldCancel: false,
-    kind: 'merge_request',
-    projectId: 7,
-    iid: 9,
-    action: 'open',
-    startSha: 's',
-    headSha: 'h',
-    baseSha: 'b',
-    sourceBranch: 'feat'
-  }, 'wid');
-  assert.equal(result.status, 'queued');
-  assert.equal(gitlabCalls, 0);
-  assert.equal(enqueued[0].dedupeKey, 'snapshot:s:h');
-});
+function tempStore(prefix='codex-review-service-test-'){const dir=fs.mkdtempSync(path.join(os.tmpdir(),prefix)),store=new Store(path.join(dir,'db.sqlite'));return{store,close(){store.close();fs.rmSync(dir,{recursive:true,force:true});}};}
+function config(overrides={}){return{gitlabProjectAllowlist:new Set([7]),maxQueueDepth:10,manualMinAccessLevel:30,maxJobAttempts:2,retryBaseDelayMs:10,retryMaxDelayMs:100,jobTimeoutSeconds:30,maxDiffBytes:4096,maxReviewChunks:2,maxFindings:10,maxPublishedFindings:10,minConfidence:0.7,blockingSeverity:'high',reviewTimeoutSeconds:30,codexPath:'codex',codexModel:'',codexHome:'',workerConcurrency:1,pollIntervalMs:10,autoResolveObsolete:true,reviewDebounceMs:0,reviewDraftMergeRequests:false,mrMaxTokenBudget:0,projectDailyTokenBudget:0,contextEnabled:false,maxContextBytes:0,maxContextFiles:0,contextLines:0,skipGeneratedFiles:true,blockUnreviewableFiles:false,...overrides};}
+function policy(overrides={}){return{language:'en',maxDiffBytes:4096,maxReviewChunks:2,maxFindings:10,maxPublishedFindings:10,minConfidence:0.7,blockingSeverity:'high',severityThreshold:'info',timeoutSeconds:30,extraInstructions:'',skipGeneratedFiles:true,blockUnreviewableFiles:false,maxContextBytes:0,maxContextFiles:0,contextLines:0,source:'test',fingerprint:'a'.repeat(64),...overrides};}
+function mr(overrides={}){return{project_id:7,source_project_id:7,target_project_id:7,iid:9,state:'opened',draft:false,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'},...overrides};}
+function outbox(store){return store.db.prepare('SELECT * FROM publication_outbox ORDER BY id').all().map(row=>({...row,payload:JSON.parse(row.payload_json)}));}
 
-test('retry classifier does not retry policy/output or ordinary 4xx', () => {
-  assert.equal(retryable({ code: 'EPROJECTPOLICY' }), false);
-  assert.equal(retryable({ code: 'EGITLABHTTP', status: 403 }), false);
-  assert.equal(retryable({ code: 'EGITLABHTTP', status: 429 }), true);
-  assert.equal(retryable({ code: 'EGITLABHTTP', status: 503 }), true);
-});
+ test('webhook event handling is local and debounced without GitLab access',()=>{let gitlabCalls=0;const enqueued=[];const service=new ReviewService({config:config({reviewDebounceMs:3000}),store:{enqueue:value=>(enqueued.push(value),1),cancelMergeRequest:()=>0},gitlab:new Proxy({},{get(){gitlabCalls++;return()=>{};}}),logger:{}});const result=service.handleEvent({projectAllowed:true,shouldReview:true,shouldCancel:false,kind:'merge_request',projectId:7,iid:9,action:'open',startSha:'s',headSha:'h',baseSha:'b',sourceBranch:'feat'},'wid');assert.equal(result.status,'queued');assert.equal(gitlabCalls,0);assert.equal(enqueued[0].dedupeKey,'snapshot:s:h');assert.equal(enqueued[0].delayMs,3000);});
 
-test('processes complete snapshot and publishes blocking gate', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-service-e2e-'));
-  const store = new Store(path.join(dir, 'db.sqlite'));
-  const statuses = [];
-  const summaries = [];
-  const discussions = [];
-  const mr = {
-    project_id: 7,
-    source_project_id: 7,
-    iid: 9,
-    state: 'opened',
-    source_branch: 'feat',
-    target_branch: 'main',
-    diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' }
-  };
-  const gitlab = {
-    getMergeRequest: async () => mr,
-    getProjectMember: async () => ({ access_level: 40 }),
-    setCommitStatus: async (projectId, _h, state) => statuses.push({ projectId, state }),
-    listMergeRequestDiffs: async () => ({
-      complete: true,
-      items: [{ old_path: 'a.js', new_path: 'a.js', diff: '@@ -1 +1 @@\n-old\n+new' }]
-    }),
-    validateMergeRequestDiffCoverage: async () => ({ complete: true, reason: 'complete' }),
-    upsertSummary: async (_p, _i, body) => summaries.push(body),
-    createDiscussion: async () => (discussions.push(1), { id: 'd1' }),
-    getDiscussion: async () => null,
-    setDiscussionResolved: async () => {}
-  };
-  const config = {
-    gitlabProjectAllowlist: new Set([7]),
-    maxQueueDepth: 10,
-    manualMinAccessLevel: 30,
-    maxJobAttempts: 2,
-    retryBaseDelayMs: 10,
-    retryMaxDelayMs: 100,
-    jobTimeoutSeconds: 30,
-    maxDiffBytes: 4096,
-    maxReviewChunks: 2,
-    maxFindings: 10,
-    maxPublishedFindings: 10,
-    minConfidence: 0.7,
-    blockingSeverity: 'high',
-    reviewTimeoutSeconds: 30,
-    codexPath: 'codex',
-    codexModel: '',
-    codexHome: '',
-    workerConcurrency: 1,
-    pollIntervalMs: 10,
-    autoResolveObsolete: true
-  };
-  const policy = {
-    language: 'en',
-    maxDiffBytes: 4096,
-    maxReviewChunks: 2,
-    maxFindings: 10,
-    maxPublishedFindings: 10,
-    minConfidence: 0.7,
-    blockingSeverity: 'high',
-    severityThreshold: 'info',
-    timeoutSeconds: 30,
-    extraInstructions: '',
-    source: 'test',
-    fingerprint: 'a'.repeat(64)
-  };
-  const service = new ReviewService({
-    config,
-    store,
-    gitlab,
-    logger: { info() {}, warn() {}, error() {} },
-    getPolicyFn: async () => policy,
-    runCodexFn: async () => ({
-      version: 'test',
-      parsed: {
-        summary: 'found issue',
-        findings: [{
-          severity: 'high', category: 'correctness', file: 'a.js', side: 'new', line: 1, endLine: 1,
-          title: 'Regression', description: 'The new line regresses behavior.', suggestion: 'Fix it.', confidence: 0.95
-        }]
-      }
-    })
-  });
-  try {
-    const id = store.enqueue({
-      projectId: 7,
-      mrIid: 9,
-      baseSha: 'b',
-      startSha: 's',
-      headSha: 'h',
-      sourceBranch: 'feat',
-      trigger: 'open',
-      dedupeKey: 'snapshot:s:h',
-      maxQueueDepth: 10
-    });
-    const job = store.claimNext();
-    assert.equal(job.id, id);
-    await service.processJob(job);
-    assert.equal(store.getJob(id).status, 'blocked');
-    assert.deepEqual(statuses, [{ projectId: 7, state: 'running' }, { projectId: 7, state: 'failed' }]);
-    assert.equal(summaries.length, 1);
-    assert.equal(discussions.length, 1);
-  } finally {
-    store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+test('retry classifier protects non-retryable safety failures',()=>{assert.equal(retryable({code:'EPROJECTPOLICY'}),false);assert.equal(retryable({code:'ETOKENBUDGET'}),false);assert.equal(retryable({code:'EGITLABHTTP',status:403}),false);assert.equal(retryable({code:'EGITLABHTTP',status:429}),true);assert.equal(retryable({code:'EGITLABHTTP',status:503}),true);});
 
-test('fork merge request writes external commit status to source project', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-service-fork-'));
-  const store = new Store(path.join(dir, 'db.sqlite'));
-  const statusProjects = [];
-  const mr = {
-    project_id: 7,
-    source_project_id: 99,
-    iid: 9,
-    state: 'opened',
-    source_branch: 'fork-feature',
-    target_branch: 'main',
-    diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' }
-  };
-  const gitlab = {
-    getMergeRequest: async () => mr,
-    setCommitStatus: async projectId => statusProjects.push(projectId),
-    listMergeRequestDiffs: async () => ({ complete: true, items: [] }),
-    validateMergeRequestDiffCoverage: async () => ({ complete: true, reason: 'complete' }),
-    upsertSummary: async () => {},
-    getDiscussion: async () => null,
-    setDiscussionResolved: async () => {}
-  };
-  const config = {
-    gitlabProjectAllowlist: new Set([7]), maxQueueDepth: 10, manualMinAccessLevel: 30,
-    maxJobAttempts: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100, jobTimeoutSeconds: 30,
-    workerConcurrency: 1, pollIntervalMs: 10, autoResolveObsolete: true
-  };
-  const policy = {
-    language: 'en', maxDiffBytes: 4096, maxReviewChunks: 2, maxFindings: 10,
-    maxPublishedFindings: 10, minConfidence: 0.7, blockingSeverity: 'high',
-    severityThreshold: 'info', timeoutSeconds: 30, extraInstructions: '', source: 'test', fingerprint: 'b'.repeat(64)
-  };
-  const service = new ReviewService({
-    config,
-    store,
-    gitlab,
-    logger: { info() {}, warn() {}, error() {} },
-    getPolicyFn: async () => policy,
-    runCodexFn: async () => { throw new Error('should not run without chunks'); }
-  });
-  try {
-    store.enqueue({
-      projectId: 7, mrIid: 9, baseSha: 'b', startSha: 's', headSha: 'h', sourceBranch: 'fork-feature',
-      trigger: 'open', dedupeKey: 'snapshot:s:h', maxQueueDepth: 10
-    });
-    await service.processJob(store.claimNext());
-    assert.deepEqual(statusProjects, [99, 99]);
-  } finally {
-    store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+test('draft detection accepts both GitLab fields',()=>{assert.equal(isDraft({draft:true}),true);assert.equal(isDraft({work_in_progress:true}),true);assert.equal(isDraft({draft:false,work_in_progress:false}),false);});
 
-test('hard diff-limit mismatch makes review incomplete', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-service-diff-limit-'));
-  const store = new Store(path.join(dir, 'db.sqlite'));
-  const states = [];
-  const mr = {
-    project_id: 7, source_project_id: 7, iid: 9, state: 'opened', source_branch: 'feat', target_branch: 'main',
-    diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' }
-  };
-  const gitlab = {
-    getMergeRequest: async () => mr,
-    setCommitStatus: async (_p, _h, state) => states.push(state),
-    listMergeRequestDiffs: async () => ({
-      complete: true,
-      items: [{ old_path: 'a.js', new_path: 'a.js', diff: '@@ -1 +1 @@\n-a\n+b' }]
-    }),
-    validateMergeRequestDiffCoverage: async () => ({ complete: false, reason: 'diff_version_size_mismatch' }),
-    upsertSummary: async () => {},
-    createDiscussion: async () => ({ id: 'd1' }),
-    getDiscussion: async () => null,
-    setDiscussionResolved: async () => {}
-  };
-  const config = {
-    gitlabProjectAllowlist: new Set([7]), maxQueueDepth: 10, manualMinAccessLevel: 30,
-    maxJobAttempts: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100, jobTimeoutSeconds: 30,
-    workerConcurrency: 1, pollIntervalMs: 10, autoResolveObsolete: true
-  };
-  const policy = {
-    language: 'en', maxDiffBytes: 4096, maxReviewChunks: 2, maxFindings: 10,
-    maxPublishedFindings: 10, minConfidence: 0.7, blockingSeverity: 'high',
-    severityThreshold: 'info', timeoutSeconds: 30, extraInstructions: '', source: 'test', fingerprint: 'c'.repeat(64)
-  };
-  const service = new ReviewService({
-    config,
-    store,
-    gitlab,
-    logger: { info() {}, warn() {}, error() {} },
-    getPolicyFn: async () => policy,
-    runCodexFn: async () => ({ version: 'test', parsed: { summary: 'ok', findings: [] } })
-  });
-  try {
-    const id = store.enqueue({
-      projectId: 7, mrIid: 9, baseSha: 'b', startSha: 's', headSha: 'h', sourceBranch: 'feat',
-      trigger: 'open', dedupeKey: 'snapshot:s:h', maxQueueDepth: 10
-    });
-    await service.processJob(store.claimNext());
-    assert.equal(store.getJob(id).status, 'incomplete');
-    assert.deepEqual(states, ['running', 'failed']);
-  } finally {
-    store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+test('review run and GitLab publication plan are persisted separately',async()=>{const db=tempStore();const currentMr=mr();const gitlab={getMergeRequest:async()=>currentMr,getProjectMember:async()=>({access_level:40}),resolveStatusPipeline:async()=>123,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@ fn\n-old\n+new'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true,reason:'complete'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],bytes:0,complete:true}),runCodexFn:async()=>({version:'test',model:'model-x',usage:{inputTokens:100,outputTokens:20},parsed:{summary:'found issue',findings:[{severity:'high',category:'correctness',file:'a.js',side:'new',line:1,endLine:1,title:'Regression',description:'The new line regresses behavior.',suggestion:'Fix it.',confidence:0.95}]}})});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());assert.equal(db.store.getJob(id).status,'blocked');const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.input_tokens,100);assert.equal(run.output_tokens,20);assert.equal(run.codex_model,'model-x');const actions=outbox(db.store);assert.deepEqual(actions.map(a=>a.action_type),['status','summary','finding','status']);assert.equal(actions[0].payload.state,'running');assert.equal(actions.at(-1).payload.state,'failed');assert.equal(actions.at(-1).payload.pipelineId,123);}finally{db.close();}});
+
+test('fork MR final status is planned for source project and pipeline',async()=>{const db=tempStore();const currentMr=mr({source_project_id:99,source_branch:'fork-feature'});const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>456,listMergeRequestDiffs:async()=>({complete:true,items:[]}),validateMergeRequestDiffCoverage:async()=>({complete:true,reason:'complete'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{throw new Error('should not run');}});try{db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'fork-feature',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());const statuses=outbox(db.store).filter(a=>a.action_type==='status');assert.equal(statuses.length,2);for(const status of statuses){assert.equal(status.payload.statusProjectId,99);assert.equal(status.payload.pipelineId,456);assert.equal(status.payload.ref,'fork-feature');}}finally{db.close();}});
+
+test('hard provider diff-limit mismatch persists incomplete review and failed final gate',async()=>{const db=tempStore();const currentMr=mr();const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>12,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-a\n+b'}]}),validateMergeRequestDiffCoverage:async()=>({complete:false,reason:'diff_version_size_mismatch'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>({version:'test',usage:{},parsed:{summary:'ok',findings:[]}})});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());assert.equal(db.store.getJob(id).status,'incomplete');const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.coverage_complete,0);assert.equal(outbox(db.store).at(-1).payload.state,'failed');}finally{db.close();}});
+
+test('MR token budget stops remaining chunks and fails closed without retrying review',async()=>{const db=tempStore();const currentMr=mr();const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-a\n+b'},{old_path:'b.js',new_path:'b.js',diff:'@@ -1 +1 @@\n-a\n+b'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true})};let calls=0;const service=new ReviewService({config:config({mrMaxTokenBudget:50,maxDiffBytes:20}),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy({maxDiffBytes:20}),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{calls++;return{version:'test',usage:{inputTokens:60,outputTokens:1},parsed:{summary:'',findings:[]}};}});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());assert.equal(calls,1);assert.equal(db.store.getJob(id).status,'incomplete');}finally{db.close();}});

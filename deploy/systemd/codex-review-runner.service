@@ -1,0 +1,42 @@
+[Unit]
+Description=Codex Review Isolated Runner
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=codex-review-runner
+Group=codex-review
+WorkingDirectory=/opt/codex-review-service
+EnvironmentFile=/etc/codex-review-runner.env
+ExecStart=/usr/bin/node /opt/codex-review-service/src/runner-server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0007
+RuntimeDirectory=codex-review-runner
+RuntimeDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/home/codex-review-runner/.codex /run/codex-review-runner
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

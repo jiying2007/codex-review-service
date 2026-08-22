@@ -1,99 +1,17 @@
 'use strict';
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const {
-  buildSnapshot,
-  validateChunkResult,
-  consolidateReviews,
-  parseChangedLines
-} = require('../src/review');
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const{buildSnapshot,validateChunkResult,consolidateReviews,parseChangedLines,metadataOnlyDiff}=require('../src/review');
+const policy={language:'en',maxDiffBytes:100,maxReviewChunks:2,maxFindings:10,maxPublishedFindings:10,minConfidence:0.7,severityThreshold:'info',blockingSeverity:'high',extraInstructions:'',skipGeneratedFiles:true,blockUnreviewableFiles:false};
+const mr={iid:1,project_id:7,source_project_id:7,target_project_id:7,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'}};
 
-const policy = {
-  language: 'en',
-  maxDiffBytes: 100,
-  maxReviewChunks: 2,
-  maxFindings: 10,
-  maxPublishedFindings: 10,
-  minConfidence: 0.7,
-  severityThreshold: 'info',
-  blockingSeverity: 'high',
-  extraInstructions: ''
-};
-const mr = {
-  iid: 1,
-  source_branch: 'feat',
-  target_branch: 'main',
-  diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' }
-};
-
-test('tracks added and removed changed lines', () => {
-  assert.deepEqual(parseChangedLines('@@ -10,2 +10,2 @@\n-old\n+new\n same'), { new: [10], old: [10] });
-});
-
-test('chunks files and fails closed on unavailable diffs', () => {
-  const snapshot = buildSnapshot(mr, {
-    complete: true,
-    items: [
-      { old_path: 'a.js', new_path: 'a.js', diff: '@@ -1 +1 @@\n-a\n+b' },
-      { old_path: 'b.bin', new_path: 'b.bin', diff: '' }
-    ]
-  }, policy);
-  assert.equal(snapshot.chunks.length, 1);
-  assert.equal(snapshot.coverageComplete, false);
-  assert.equal(snapshot.files.find(file => file.path === 'b.bin').skippedReason, 'unavailable_or_binary');
-});
-
-test('validates old-side findings and rejects unsupported locations', () => {
-  const snapshot = buildSnapshot(mr, {
-    complete: true,
-    items: [{ old_path: 'a.js', new_path: 'a.js', diff: '@@ -10 +10 @@\n-danger()\n+safe()' }]
-  }, { ...policy, maxDiffBytes: 4096 });
-  const result = validateChunkResult({
-    summary: 's',
-    findings: [{
-      severity: 'high', category: 'correctness', file: 'a.js', side: 'old', line: 10, endLine: 10,
-      title: 'Removed guard', description: 'A guard was removed.', suggestion: 'Restore it.', confidence: 0.9
-    }, {
-      severity: 'low', category: 'other', file: 'missing.js', side: 'new', line: 1, endLine: 1,
-      title: 'Bad path', description: 'x', suggestion: '', confidence: 0.9
-    }]
-  }, snapshot.chunks[0], policy);
-  assert.equal(result.findings.length, 1);
-  assert.equal(result.findings[0].side, 'old');
-  assert.equal(result.rejected, 1);
-});
-
-test('structurally rejected model finding makes review incomplete', () => {
-  const snapshot = buildSnapshot(mr, {
-    complete: true,
-    items: [{ old_path: 'a.js', new_path: 'a.js', diff: '@@ -1 +1 @@\n-a\n+b' }]
-  }, { ...policy, maxDiffBytes: 4096 });
-  assert.equal(consolidateReviews(snapshot, [{
-    summary: 's', findings: [], rejected: 1, filtered: 0, modelFindingCount: 1
-  }], policy).verdict, 'incomplete');
-});
-
-test('MAX_FINDINGS is a global retained-output cap across chunks without weakening blocking gate', () => {
-  const snapshot = { coverageComplete: true };
-  const findings = Array.from({ length: 6 }, (_, index) => ({
-    severity: index === 5 ? 'high' : 'low',
-    category: 'correctness',
-    file: `f${index}.js`,
-    side: 'new',
-    line: 1,
-    endLine: 1,
-    title: `Issue ${index}`,
-    description: 'x',
-    suggestion: '',
-    confidence: 0.9,
-    fingerprint: `fp-${index}`
-  }));
-  const result = consolidateReviews(snapshot, [
-    { summary: 'a', findings: findings.slice(0, 3), rejected: 0, filtered: 0, modelFindingCount: 3 },
-    { summary: 'b', findings: findings.slice(3), rejected: 0, filtered: 0, modelFindingCount: 3 }
-  ], { ...policy, maxFindings: 3 });
-  assert.equal(result.allFindings.length, 3);
-  assert.equal(result.truncatedFindingCount, 3);
-  assert.equal(result.verdict, 'block');
-});
+test('tracks added/removed lines and stable source anchors',()=>{const changed=parseChangedLines('@@ -10,2 +10,2 @@ fn\n-old\n+new\n same');assert.deepEqual(changed.new,[10]);assert.deepEqual(changed.old,[10]);assert.match(changed.anchors.new[10],/fn\|new/);assert.match(changed.anchors.old[10],/fn\|old/);});
+test('known binary is advisory by default instead of false coverage failure',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-a\n+b'},{old_path:'image.png',new_path:'image.png',diff:''}]},policy);assert.equal(snapshot.chunks.length,1);assert.equal(snapshot.coverageComplete,true);assert.equal(snapshot.files.find(f=>f.path==='image.png').coverageState,'unreviewable');assert.deepEqual(snapshot.advisories,['image.png:binary_file']);});
+test('unknown unavailable diff still fails closed',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'data.unknown',new_path:'data.unknown',diff:''}]},policy);assert.equal(snapshot.coverageComplete,false);assert.match(snapshot.coverageGaps[0],/unavailable_unknown/);});
+test('metadata-only rename does not create a false block',()=>{const diff='similarity index 100%\nrename from a.js\nrename to b.js';assert.equal(metadataOnlyDiff(diff),true);const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'a.js',new_path:'b.js',renamed_file:true,diff}]},policy);assert.equal(snapshot.coverageComplete,true);assert.equal(snapshot.files[0].coverageState,'metadata_only');});
+test('generated file can be policy-excluded without reducing provider coverage',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'gen.js',new_path:'gen.js',generated_file:true,diff:'@@ -1 +1 @@\n-a\n+b'}]},policy);assert.equal(snapshot.coverageComplete,true);assert.equal(snapshot.files[0].coverageState,'policy_excluded');});
+test('findings require exact changed line and use code anchor identity',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -10 +10 @@ risky\n-danger()\n+safe()'}]},{...policy,maxDiffBytes:4096});const accepted=validateChunkResult({summary:'s',findings:[{severity:'high',category:'correctness',file:'a.js',side:'old',line:10,endLine:10,title:'Removed guard',description:'A guard was removed.',suggestion:'Restore it.',confidence:0.9}]},snapshot.chunks[0],policy);assert.equal(accepted.findings.length,1);assert.match(accepted.findings[0].anchorHash,/^[0-9a-f]{64}$/);assert.match(accepted.findings[0].fingerprint,/^[0-9a-f]{64}$/);const rejected=validateChunkResult({summary:'s',findings:[{severity:'high',category:'correctness',file:'a.js',side:'old',line:11,endLine:11,title:'Wrong line',description:'x',suggestion:'',confidence:0.9}]},snapshot.chunks[0],policy);assert.equal(rejected.findings.length,0);assert.equal(rejected.rejected,1);});
+test('same anchored defect keeps fingerprint even when model title changes',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@ fn\n-old\n+new'}]},{...policy,maxDiffBytes:4096}),chunk=snapshot.chunks[0],base={severity:'high',category:'correctness',file:'a.js',side:'new',line:1,endLine:1,description:'d',suggestion:'',confidence:0.9};const a=validateChunkResult({summary:'',findings:[{...base,title:'Potential regression'}]},chunk,policy).findings[0],b=validateChunkResult({summary:'',findings:[{...base,title:'Regression possible'}]},chunk,policy).findings[0];assert.equal(a.fingerprint,b.fingerprint);});
+test('structurally rejected model finding makes review incomplete',()=>{const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-a\n+b'}]},{...policy,maxDiffBytes:4096});assert.equal(consolidateReviews(snapshot,[{summary:'s',findings:[],rejected:1,filtered:0,modelFindingCount:1}],policy).verdict,'incomplete');});
+test('MAX_FINDINGS is a global retained-output cap without weakening blocking gate',()=>{const snapshot={coverageComplete:true,advisories:[],files:[]},findings=Array.from({length:6},(_,index)=>({severity:index===5?'high':'low',category:'correctness',file:`f${index}.js`,side:'new',line:1,endLine:1,title:`Issue ${index}`,description:'x',suggestion:'',confidence:0.9,fingerprint:`fp-${index}`}));const result=consolidateReviews(snapshot,[{summary:'a',findings:findings.slice(0,3),rejected:0,filtered:0,modelFindingCount:3},{summary:'b',findings:findings.slice(3),rejected:0,filtered:0,modelFindingCount:3}],{...policy,maxFindings:3,forbiddenPathPrefixes:[],requireTestsForCodeChanges:false});assert.equal(result.allFindings.length,3);assert.equal(result.truncatedFindingCount,3);assert.equal(result.verdict,'block');});
