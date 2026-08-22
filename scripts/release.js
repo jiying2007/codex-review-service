@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 const pkgPath = path.join(root, 'package.json');
 const lockPath = path.join(root, 'package-lock.json');
 const changelogPath = path.join(root, 'CHANGELOG.md');
-const EXPECTED_CORE_COMMIT = 'e6e25b502aa35a079f660346785cf283fe293b6d';
+const EXPECTED_CORE_COMMIT = '4dc4de836625a8b70084531eb3321734eca675d0';
 
 function fail(message) { throw new Error(message); }
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
