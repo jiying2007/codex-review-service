@@ -154,7 +154,7 @@ GitLab 19+ 配置 Standard Webhooks Signing Token，并把 `whsec_...` 写入 `G
   "skipGeneratedFiles": true,
   "blockUnreviewableFiles": false,
   "forbiddenPathPrefixes": ["infra/prod-secrets/"],
-  "requireTestsForCode": true,
+  "requireTestsForCodeChanges": true,
   "codePathPrefixes": ["src/"],
   "testPathPrefixes": ["test/", "tests/"],
   "extraInstructions": "重点检查并发、资源生命周期和错误处理。"
