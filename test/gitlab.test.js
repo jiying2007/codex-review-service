@@ -1,133 +1,23 @@
 'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');const{GitLabClient,discussionResolved,nextPageFromHeaders,CircuitBreaker}=require('../src/gitlab');
+function config(overrides={}){return{gitlabApiUrl:'https://gitlab.example.test/api/v4',gitlabToken:'token',statusName:'codex-review',statusTargetUrl:'',gitlabRequestTimeoutMs:1000,gitlabMaxPages:3,gitlabStatusRetries:2,gitlabRequestsPerSecond:1000,gitlabCircuitFailureThreshold:2,gitlabCircuitResetMs:1000,bindStatusPipeline:true,...overrides};}
 
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const {
-  GitLabClient,
-  discussionResolved,
-  nextPageFromHeaders
-} = require('../src/gitlab');
+test('pagination follows X-Next-Page and reports completeness',async()=>{const old=global.fetch,pages=[];global.fetch=async url=>{const page=new URL(url).searchParams.get('page');pages.push(page);return new Response(JSON.stringify(page==='1'?[{id:1}]:[{id:2}]),{status:200,headers:page==='1'?{'x-next-page':'2'}:{}});};try{const result=await new GitLabClient(config()).listMergeRequestDiffs(1,2);assert.deepEqual(pages,['1','2']);assert.equal(result.complete,true);assert.equal(result.items.length,2);}finally{global.fetch=old;}});
 
-function config() {
-  return {
-    gitlabApiUrl: 'https://gitlab.example.test/api/v4',
-    gitlabToken: 'token',
-    statusName: 'codex-review',
-    statusTargetUrl: '',
-    gitlabRequestTimeoutMs: 1000,
-    gitlabMaxPages: 3,
-    gitlabStatusRetries: 2
-  };
-}
+test('pagination falls back to RFC Link rel=next',async()=>{const old=global.fetch,pages=[];global.fetch=async url=>{const page=new URL(url).searchParams.get('page');pages.push(page);const headers=page==='1'?{link:'<https://gitlab.example.test/api/v4/items?page=2&per_page=100>; rel="next"'}:{};return new Response(JSON.stringify([{id:Number(page)}]),{status:200,headers});};try{const result=await new GitLabClient(config()).paginated('/items');assert.deepEqual(pages,['1','2']);assert.equal(result.complete,true);}finally{global.fetch=old;}});
 
-test('pagination follows X-Next-Page and reports completeness', async () => {
-  const oldFetch = global.fetch;
-  const pages = [];
-  global.fetch = async url => {
-    const page = new URL(url).searchParams.get('page');
-    pages.push(page);
-    return new Response(JSON.stringify(page === '1' ? [{ id: 1 }] : [{ id: 2 }]), {
-      status: 200,
-      headers: page === '1' ? { 'x-next-page': '2' } : {}
-    });
-  };
-  try {
-    const result = await new GitLabClient(config()).listMergeRequestDiffs(1, 2);
-    assert.deepEqual(pages, ['1', '2']);
-    assert.equal(result.complete, true);
-    assert.equal(result.items.length, 2);
-  } finally {
-    global.fetch = oldFetch;
-  }
-});
+test('invalid pagination pointer fails closed',()=>{assert.equal(nextPageFromHeaders(new Headers({'x-next-page':'1'}),1),null);});
 
-test('pagination falls back to RFC Link rel=next', async () => {
-  const oldFetch = global.fetch;
-  const pages = [];
-  global.fetch = async url => {
-    const page = new URL(url).searchParams.get('page');
-    pages.push(page);
-    const headers = page === '1'
-      ? { link: '<https://gitlab.example.test/api/v4/items?page=2&per_page=100>; rel="next"' }
-      : {};
-    return new Response(JSON.stringify([{ id: Number(page) }]), { status: 200, headers });
-  };
-  try {
-    const result = await new GitLabClient(config()).paginated('/items');
-    assert.deepEqual(pages, ['1', '2']);
-    assert.equal(result.complete, true);
-  } finally {
-    global.fetch = oldFetch;
-  }
-});
+test('diff version metadata detects hard-limit truncation',async()=>{const old=global.fetch;global.fetch=async url=>{if(new URL(url).pathname.endsWith('/versions'))return new Response(JSON.stringify([{base_commit_sha:'b',start_commit_sha:'s',head_commit_sha:'h',state:'collected',real_size:'3'}]),{status:200});throw new Error('unexpected');};try{const result=await new GitLabClient(config()).validateMergeRequestDiffCoverage(1,2,{diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'}},{complete:true,items:[{},{}]});assert.equal(result.complete,false);assert.equal(result.reason,'diff_version_size_mismatch');}finally{global.fetch=old;}});
 
-test('invalid pagination pointer fails closed', () => {
-  const headers = new Headers({ 'x-next-page': '1' });
-  assert.equal(nextPageFromHeaders(headers, 1), null);
-});
+test('diff version metadata confirms complete coverage',async()=>{const old=global.fetch;global.fetch=async()=>new Response(JSON.stringify([{base_commit_sha:'b',start_commit_sha:'s',head_commit_sha:'h',state:'collected',real_size:'2'}]),{status:200});try{const result=await new GitLabClient(config()).validateMergeRequestDiffCoverage(1,2,{diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'}},{complete:true,items:[{},{}]});assert.equal(result.complete,true);assert.equal(result.realSize,2);}finally{global.fetch=old;}});
 
-test('diff version metadata detects hard-limit truncation', async () => {
-  const oldFetch = global.fetch;
-  global.fetch = async url => {
-    const pathname = new URL(url).pathname;
-    if (pathname.endsWith('/versions')) {
-      return new Response(JSON.stringify([{
-        base_commit_sha: 'b', start_commit_sha: 's', head_commit_sha: 'h', state: 'collected', real_size: '3'
-      }]), { status: 200 });
-    }
-    throw new Error(`unexpected URL: ${url}`);
-  };
-  try {
-    const client = new GitLabClient(config());
-    const result = await client.validateMergeRequestDiffCoverage(
-      1,
-      2,
-      { diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' } },
-      { complete: true, items: [{}, {}] }
-    );
-    assert.equal(result.complete, false);
-    assert.equal(result.reason, 'diff_version_size_mismatch');
-  } finally {
-    global.fetch = oldFetch;
-  }
-});
+test('commit status includes ref and exact pipeline_id',async()=>{const old=global.fetch;let requestUrl='';global.fetch=async url=>(requestUrl=String(url),new Response('{}',{status:201}));try{await new GitLabClient(config()).setCommitStatus(1,'abc','success','ok','feat/test',42);const url=new URL(requestUrl);assert.equal(url.searchParams.get('ref'),'feat/test');assert.equal(url.searchParams.get('pipeline_id'),'42');}finally{global.fetch=old;}});
 
-test('diff version metadata confirms complete coverage', async () => {
-  const oldFetch = global.fetch;
-  global.fetch = async () => new Response(JSON.stringify([{
-    base_commit_sha: 'b', start_commit_sha: 's', head_commit_sha: 'h', state: 'collected', real_size: '2'
-  }]), { status: 200 });
-  try {
-    const result = await new GitLabClient(config()).validateMergeRequestDiffCoverage(
-      1,
-      2,
-      { diff_refs: { base_sha: 'b', start_sha: 's', head_sha: 'h' } },
-      { complete: true, items: [{}, {}] }
-    );
-    assert.equal(result.complete, true);
-    assert.equal(result.realSize, 2);
-  } finally {
-    global.fetch = oldFetch;
-  }
-});
+test('head_pipeline is preferred for source-project status binding',async()=>{const client=new GitLabClient(config());const pipeline=await client.resolveStatusPipeline(99,7,2,'abc','feat',{head_pipeline:{id:123,project_id:99,sha:'abc'}});assert.equal(pipeline,123);});
 
-test('commit status includes source ref', async () => {
-  const oldFetch = global.fetch;
-  let requestUrl = '';
-  global.fetch = async url => {
-    requestUrl = String(url);
-    return new Response('{}', { status: 201 });
-  };
-  try {
-    await new GitLabClient(config()).setCommitStatus(1, 'abc', 'success', 'ok', 'feat/test');
-    assert.equal(new URL(requestUrl).searchParams.get('ref'), 'feat/test');
-  } finally {
-    global.fetch = oldFetch;
-  }
-});
+test('project pipeline lookup binds fork source SHA when head_pipeline is absent',async()=>{const old=global.fetch;global.fetch=async url=>{const parsed=new URL(url);assert.match(parsed.pathname,/\/projects\/99\/pipelines$/);return new Response(JSON.stringify([{id:77,sha:'abc'}]),{status:200});};try{const pipeline=await new GitLabClient(config()).resolveStatusPipeline(99,7,2,'abc','feat',{});assert.equal(pipeline,77);}finally{global.fetch=old;}});
 
-test('discussion resolved state reads resolvable note', () => {
-  assert.equal(discussionResolved({ notes: [{ resolvable: false }, { resolvable: true, resolved: true }] }), true);
-  assert.equal(discussionResolved({ notes: [{ resolvable: true, resolved: false }] }), false);
-  assert.equal(discussionResolved(null), null);
-});
+test('circuit breaker opens only after transient failures and resets after window',()=>{const breaker=new CircuitBreaker(2,10);breaker.failure({code:'EGITLABHTTP',status:403});assert.equal(breaker.state(),'closed');breaker.failure({code:'EGITLABHTTP',status:503});assert.equal(breaker.state(),'closed');breaker.failure({code:'EGITLABNETWORK'});assert.equal(breaker.state(),'open');assert.throws(()=>breaker.before(),error=>error.code==='EGITLABCIRCUIT');});
+
+test('discussion resolved state reads resolvable note',()=>{assert.equal(discussionResolved({notes:[{resolvable:false},{resolvable:true,resolved:true}]}),true);assert.equal(discussionResolved({notes:[{resolvable:true,resolved:false}]}),false);assert.equal(discussionResolved(null),null);});
