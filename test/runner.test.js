@@ -8,6 +8,7 @@ const path=require('node:path');
 const http=require('node:http');
 const {runCodex,probeCodexCapabilities,unixRequest}=require('../src/codex');
 const {runnerConfig}=require('../src/runner-server');
+const {SAFE_CORE_VERSION,SAFE_CONTRACT_VERSION,REVIEW_RECEIPT_SCHEMA_VERSION,REVIEW_PROMPT_CONTRACT_VERSION}=require('../src/codex-safe-core/safe-contract');
 
 function withUnixServer(handler,fn){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-runner-test-'));
@@ -23,6 +24,7 @@ function withUnixServer(handler,fn){
 }
 function readJson(req){return new Promise((resolve,reject)=>{let text='';req.setEncoding('utf8');req.on('data',chunk=>text+=chunk);req.on('end',()=>{try{resolve(text?JSON.parse(text):{});}catch(error){reject(error);}});req.on('error',reject);});}
 function withConfig(value,fn){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-runner-config-')),file=path.join(dir,'config.json'),old=process.env.CODEX_REVIEW_CONFIG_FILE;fs.writeFileSync(file,JSON.stringify(value));process.env.CODEX_REVIEW_CONFIG_FILE=file;try{return fn();}finally{if(old===undefined)delete process.env.CODEX_REVIEW_CONFIG_FILE;else process.env.CODEX_REVIEW_CONFIG_FILE=old;fs.rmSync(dir,{recursive:true,force:true});}}
+function capability(overrides={}){return{ok:true,version:'codex-cli 9.9.9',versionMatched:true,safeCoreVersion:SAFE_CORE_VERSION,safeContractVersion:SAFE_CONTRACT_VERSION,reviewReceiptSchemaVersion:REVIEW_RECEIPT_SCHEMA_VERSION,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,os:process.platform,arch:process.arch,maxConcurrency:1,model:'',...overrides};}
 
 test('isolated runner reads canonical config and keeps user-specific HOME by default',()=>withConfig({gitlab:{baseUrl:'https://gitlab.test',projects:[1]},review:{timeoutSeconds:77},codex:{path:'codex-x',home:'',model:'m',versionPolicy:'warn'},runner:{mode:'isolated',socket:'/run/test-runner.sock'}},()=>{const config=runnerConfig();assert.equal(config.socket,'/run/test-runner.sock');assert.equal(config.codexPath,'codex-x');assert.equal(config.codexHome,'');assert.equal(config.codexModel,'m');assert.equal(config.reviewTimeoutSeconds,77);}));
 test('runner refuses to start from inline deployment config',()=>withConfig({gitlab:{baseUrl:'https://gitlab.test',projects:[1]},runner:{mode:'inline'}},()=>assert.throws(()=>runnerConfig(),/must be isolated/)));
@@ -31,10 +33,21 @@ test('controller capability probe uses Unix runner health endpoint',async()=>wit
   assert.equal(req.method,'GET');
   assert.equal(req.url,'/health');
   res.writeHead(200,{'content-type':'application/json'});
-  res.end(JSON.stringify({ok:true,version:'codex-cli 9.9.9',versionMatched:true}));
+  res.end(JSON.stringify(capability()));
 },async socket=>{
   const result=await probeCodexCapabilities({codexRunnerSocket:socket},true);
-  assert.deepEqual(result,{version:'codex-cli 9.9.9',versionMatched:true,mode:'runner'});
+  assert.equal(result.version,'codex-cli 9.9.9');
+  assert.equal(result.versionMatched,true);
+  assert.equal(result.mode,'runner');
+  assert.equal(result.runnerCapability.safeCoreVersion,SAFE_CORE_VERSION);
+  assert.equal(result.runnerCapability.promptContractVersion,REVIEW_PROMPT_CONTRACT_VERSION);
+}));
+
+test('controller capability probe rejects a stale runner protocol',async()=>withUnixServer((_req,res)=>{
+  res.writeHead(200,{'content-type':'application/json'});
+  res.end(JSON.stringify(capability({safeCoreVersion:SAFE_CORE_VERSION-1})));
+},async socket=>{
+  await assert.rejects(()=>probeCodexCapabilities({codexRunnerSocket:socket},true),error=>error.code==='ERUNNERCONTRACT');
 }));
 
 test('controller review request preserves bounded runner contract and usage',async()=>withUnixServer(async(req,res)=>{
@@ -45,6 +58,7 @@ test('controller review request preserves bounded runner contract and usage',asy
   assert.equal(body.maxFindings,7);
   assert.equal(body.reviewTimeoutSeconds,45);
   assert.equal(body.model,'model-x');
+  assert.equal(body.promptContractVersion,REVIEW_PROMPT_CONTRACT_VERSION);
   res.writeHead(200,{'content-type':'application/json'});
   res.end(JSON.stringify({parsed:{summary:'ok',findings:[]},version:'codex-cli 9.9.9',versionMatched:true,usage:{inputTokens:100,cachedInputTokens:30,cacheWriteInputTokens:2,outputTokens:20,reasoningOutputTokens:5},model:'model-x'}));
 },async socket=>{
