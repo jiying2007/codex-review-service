@@ -49,6 +49,7 @@ assert.ok(fs.existsSync(releasePath), 'release workflow must exist');
 const release = fs.readFileSync(releasePath, 'utf8');
 assert.match(release, /branches:\s*\[main\]/, 'release must be driven by main');
 assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must not recursively trigger another release run');
+assert.match(release, /previous_version.*==.*version[\s\S]*git ls-remote --exit-code --refs origin "refs\/tags\/\$\{tag\}"[\s\S]*publish=false/, 'unchanged versions may be skipped only after the immutable tag exists');
 assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
 assert.match(release, /Release .* already exists; immutable assets will not be overwritten/, 'existing releases must fail closed');
 assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373/, 'release provenance action must stay full-SHA pinned');
@@ -72,4 +73,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v3 runtime, package boundary and immutable release policy verified.');
+console.log('Codex Review Service Family v3 runtime, package boundary, recovery and immutable release policy verified.');
