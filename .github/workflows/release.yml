@@ -103,7 +103,7 @@ jobs:
             package/deploy/systemd/codex-review-service.service; do
             grep -Fx "$required" /tmp/package-files.txt >/dev/null
           done
-          if grep -Eq '^package/(test/|scripts/|\.github/|\.gitmodules$|src/codex-safe-core/test/|src/codex-safe-core/\.github/)' /tmp/package-files.txt; then
+          if grep -Eq '^package/(test/|scripts/|\.github/|\.gitmodules$|src/codex-safe-core/test/|src/codex-safe-core/\.github/|src/codex-safe-core/(README|CHANGELOG|SECURITY|ARCHITECTURE|CONTRIBUTING|package\.json|LICENSE))' /tmp/package-files.txt; then
             echo 'release package contains development-only files' >&2
             exit 1
           fi
