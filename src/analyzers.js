@@ -38,15 +38,8 @@ function finding(file, severity, category, title, description) {
 function runDeterministicAnalyzers(snapshot, policy) {
   const reviewed = snapshot.files.filter(file => !file.skipped);
   const byPath = new Map(reviewed.map(file => [file.path, file]));
-  const evaluated = evaluateReviewRules(
-    reviewed.map(file => file.path),
-    {
-      requireTestsForCodeChanges: policy.requireTestsForCodeChanges,
-      codePathPrefixes: policy.codePathPrefixes,
-      testPathPrefixes: policy.testPathPrefixes,
-      forbiddenPathPrefixes: policy.forbiddenPathPrefixes
-    }
-  );
+  const rules = policy?.reviewRules || {};
+  const evaluated = evaluateReviewRules(reviewed.map(file => file.path), rules);
   const findings = [];
 
   for (const violation of evaluated.violations) {
