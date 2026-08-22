@@ -1,8 +1,16 @@
 # Security Policy
 
+## Family v3 contract
+
+- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v3 are owned by the commit-pinned `codex-safe-core` 3.0.1.
+- Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
+- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
+- Standard and isolated Runner modes execute the same Core runtime.
+
+
 ## Deployment trust levels
 
-Codex Review Service v2.0 supports two deployment levels with identical Review/Gate/Outbox semantics:
+Codex Review Service v3.0 supports two deployment levels with identical Review/Gate/Outbox semantics:
 
 - **Standard**: one Controller process owns GitLab credentials, SQLite, and inline Codex execution. The Codex child receives only a strict environment allowlist; GitLab credentials are excluded.
 - **Hardened**: Controller and Codex Runner are separate Unix users/processes over a local Unix socket. Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no GitLab credential.
@@ -38,7 +46,7 @@ Untrusted MR title/description, filenames, diffs, source text, comments, generat
 
 ## Target policy and immutable context
 
-`.codex-review.json` is read only from immutable target `diff_refs.start_sha`. Repository policy may narrow ceilings/add deterministic checks but cannot weaken global blocking threshold, confidence floor, Safe Contract, credentials, Project Scope, or service capacity.
+`.codex-safe.json` is read only from immutable target `diff_refs.start_sha`. Repository policy may narrow ceilings/add deterministic checks but cannot weaken global blocking threshold, confidence floor, Safe Contract, credentials, Project Scope, or service capacity.
 
 Bounded context is fetched through GitLab Repository API at exact source `head_sha` and target `start_sha`. The service does not clone or execute reviewed repositories. Context cannot fabricate inline positions outside the diff.
 
