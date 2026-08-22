@@ -48,6 +48,9 @@ const releasePath = path.join(root, '.github', 'workflows', 'release.yml');
 assert.ok(fs.existsSync(releasePath), 'release workflow must exist');
 const release = fs.readFileSync(releasePath, 'utf8');
 assert.match(release, /branches:\s*\[main\]/, 'release must be driven by main');
+assert.match(release, /issue_comment:\s*\n\s*types:\s*\[created\]/, 'release recovery must expose an auditable comment event');
+assert.match(release, /github\.event\.comment\.body == '\/release-retry'/, 'release recovery command must be exact');
+assert.match(release, /github\.event\.comment\.author_association == 'OWNER'/, 'release recovery command must be owner-only');
 assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must not recursively trigger another release run');
 assert.match(release, /previous_version.*==.*version[\s\S]*git ls-remote --exit-code --refs origin "refs\/tags\/\$\{tag\}"[\s\S]*publish=false/, 'unchanged versions may be skipped only after the immutable tag exists');
 assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
@@ -73,4 +76,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v3 runtime, package boundary, recovery and immutable release policy verified.');
+console.log('Codex Review Service Family v3 runtime, package boundary, owner-only recovery and immutable release policy verified.');
