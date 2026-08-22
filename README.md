@@ -52,17 +52,17 @@ cd /opt/codex-review-service
 npm ci --ignore-scripts --no-audit --no-fund
 
 sudo install -m 0644 config.example.json /etc/codex-review/config.json
-sudo install -m 0600 .env.example /etc/codex-review-service.env
+sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
 sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 
 sudo -u codex-review -H codex login
+sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 sudo systemctl daemon-reload
 sudo systemctl enable --now codex-review-service
-npm run doctor
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Edit the two files before starting production. `/etc/codex-review/config.json` contains non-secret product settings; the environment file should contain credentials and only exceptional overrides.
+Edit the two files before running Doctor or starting production. `/etc/codex-review/config.json` contains non-secret product settings; the environment file should contain credentials and only exceptional overrides. Group-readable `0640 root:codex-review` lets Doctor run under the exact service user without copying secrets to the command line.
 
 ## Multi-repository scope
 
@@ -139,7 +139,7 @@ GET /health/ready
 GET /metrics
 ```
 
-Readiness includes GitLab, SQLite durability, workers, publishers, circuit state and project-scope discovery health. `npm run doctor` also resolves configured groups and reports the final project count before production rollout.
+Readiness includes GitLab, SQLite durability, workers, publishers, circuit state and project-scope discovery health. The Doctor command above also resolves configured groups and reports the final project count before production rollout.
 
 See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), and [CHANGELOG.md](CHANGELOG.md).
 
