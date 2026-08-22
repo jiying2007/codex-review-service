@@ -8,6 +8,33 @@
   "engines": {
     "node": ">=22.13.0"
   },
+  "files": [
+    ".codex-safe.example.json",
+    ".env.example",
+    "CHANGELOG.md",
+    "LICENSE",
+    "LONG_TERM_ASSET.md",
+    "OPERATIONS.md",
+    "README.md",
+    "README.zh-CN.md",
+    "SECURITY.md",
+    "config.example.json",
+    "deploy/systemd/*.service",
+    "deploy/systemd/*.env.example",
+    "docs/ARCHITECTURE.md",
+    "src/*.js",
+    "src/codex-safe-core/index.js",
+    "src/codex-safe-core/safe-contract.js",
+    "src/codex-safe-core/codex-cli.js",
+    "src/codex-safe-core/process-runner.js",
+    "src/codex-safe-core/context-builder.js",
+    "src/codex-safe-core/policy.js",
+    "src/codex-safe-core/review-rules.js",
+    "src/codex-safe-core/git-repository.js",
+    "src/codex-safe-core/codex-safe.schema.json",
+    "src/codex-safe-core/package.json",
+    "src/codex-safe-core/LICENSE"
+  ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",
     "precheck": "npm run core:init",
