@@ -1,5 +1,13 @@
 # Long-term asset invariants
 
+## Family v3 contract
+
+- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v3 are owned by the commit-pinned `codex-safe-core` 3.0.1.
+- Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
+- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
+- Standard and isolated Runner modes execute the same Core runtime.
+
+
 This service is maintained as a security- and reliability-sensitive internal platform component.
 
 ## Non-negotiable invariants
