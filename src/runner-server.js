@@ -1,0 +1,17 @@
+'use strict';
+
+const fs=require('node:fs');
+const http=require('node:http');
+const path=require('node:path');
+const{runCodexLocal,probeCodexCapabilitiesLocal}=require('./codex');
+
+function int(name,fallback,min,max){const value=Number(process.env[name]||fallback);if(!Number.isInteger(value)||value<min||value>max)throw new Error(`${name} is invalid`);return value;}
+function runnerConfig(){return{codexPath:String(process.env.CODEX_PATH||'codex').trim()||'codex',codexHome:String(process.env.CODEX_HOME||'').trim(),codexModel:String(process.env.CODEX_MODEL||'').trim(),codexVersionPolicy:String(process.env.CODEX_VERSION_POLICY||'warn'),codexAllowedVersionPattern:String(process.env.CODEX_ALLOWED_VERSION_PATTERN||''),reviewTimeoutSeconds:int('REVIEW_TIMEOUT_SECONDS',180,30,900)};}
+function json(res,status,body){const data=Buffer.from(JSON.stringify(body));res.writeHead(status,{'Content-Type':'application/json','Content-Length':data.length,'Cache-Control':'no-store'});res.end(data);}
+function readBody(req,maxBytes){return new Promise((resolve,reject)=>{const chunks=[];let size=0;req.on('data',chunk=>{size+=chunk.length;if(size>maxBytes){reject(Object.assign(new Error('runner request too large'),{status:413}));req.destroy();return;}chunks.push(chunk);});req.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));req.on('error',reject);});}
+async function main(){const socket=String(process.env.CODEX_RUNNER_SOCKET||'/run/codex-review-runner/runner.sock'),maxBody=int('RUNNER_MAX_BODY_BYTES',8*1024*1024,64*1024,32*1024*1024),config=runnerConfig();await probeCodexCapabilitiesLocal(config,true);fs.mkdirSync(path.dirname(socket),{recursive:true});try{fs.unlinkSync(socket);}catch(error){if(error.code!=='ENOENT')throw error;}
+  const server=http.createServer(async(req,res)=>{try{if(req.method==='GET'&&req.url==='/health'){const capability=await probeCodexCapabilitiesLocal(config);return json(res,200,{ok:true,version:capability.version,versionMatched:capability.versionMatched});}if(req.method!=='POST'||req.url!=='/review')return json(res,404,{error:'not_found'});const raw=await readBody(req,maxBody);let payload;try{payload=JSON.parse(raw);}catch{return json(res,400,{error:'invalid_json'});}if(typeof payload?.prompt!=='string'||payload.prompt.length===0)return json(res,400,{error:'invalid_prompt'});const controller=new AbortController();req.on('close',()=>{if(!res.writableEnded)controller.abort(Object.assign(new Error('controller disconnected'),{code:'ERUNNERDISCONNECT'}));});const execution={...config,reviewTimeoutSeconds:Math.min(config.reviewTimeoutSeconds,Number(payload.reviewTimeoutSeconds)||config.reviewTimeoutSeconds),codexModel:typeof payload.model==='string'?payload.model:config.codexModel};const result=await runCodexLocal(payload.prompt,execution,controller.signal,Number(payload.maxFindings)||40);return json(res,200,result);}catch(error){return json(res,error.status||500,{error:error.code||'ERUNNER',message:String(error.message||'runner failure').slice(0,300)});}});
+  server.listen(socket,()=>{fs.chmodSync(socket,0o660);process.stdout.write(`${JSON.stringify({event:'runner_started',socket})}\n`);});
+  const shutdown=()=>server.close(()=>{try{fs.unlinkSync(socket);}catch{}process.exit(0);});process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);
+}
+main().catch(error=>{process.stderr.write(`${JSON.stringify({event:'runner_startup_failed',code:error.code||'ERUNNER',message:error.message})}\n`);process.exitCode=1;});
