@@ -27,7 +27,15 @@ const example = JSON.parse(fs.readFileSync(path.join(root, '.codex-safe.example.
 assert.equal(example.schemaVersion, 3);
 assert.ok(example.review && example.reviewService);
 assert.match(String(example.$schema || ''), new RegExp(expectedCore));
-assert.ok(fs.existsSync(path.join(root, '.github', 'workflows', 'release.yml')), 'release workflow must exist');
+
+const releasePath = path.join(root, '.github', 'workflows', 'release.yml');
+assert.ok(fs.existsSync(releasePath), 'release workflow must exist');
+const release = fs.readFileSync(releasePath, 'utf8');
+assert.match(release, /branches:\s*\[main\]/, 'release must be driven by main');
+assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must not recursively trigger another release run');
+assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
+assert.match(release, /Release .* already exists; immutable assets will not be overwritten/, 'existing releases must fail closed');
+assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373/, 'release provenance action must stay full-SHA pinned');
 
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
@@ -44,4 +52,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v3 boundaries verified.');
+console.log('Codex Review Service Family v3 boundaries and immutable release policy verified.');
