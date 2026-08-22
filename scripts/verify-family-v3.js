@@ -28,6 +28,20 @@ assert.equal(example.schemaVersion, 3);
 assert.ok(example.review && example.reviewService);
 assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 
+const requiredPackageFiles = [
+  '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md',
+  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SECURITY.md', 'config.example.json',
+  'deploy/systemd/*.service', 'deploy/systemd/*.env.example', 'docs/ARCHITECTURE.md', 'src/*.js',
+  'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js',
+  'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js',
+  'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js',
+  'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/package.json', 'src/codex-safe-core/LICENSE'
+];
+assert.deepEqual(pkg.files, requiredPackageFiles, 'release package allowlist must remain explicit and runtime-only');
+for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github']) {
+  assert.equal(pkg.files.some(entry => entry === forbidden || entry.startsWith(`${forbidden}/`)), false, `release package must exclude ${forbidden}`);
+}
+
 const releasePath = path.join(root, '.github', 'workflows', 'release.yml');
 assert.ok(fs.existsSync(releasePath), 'release workflow must exist');
 const release = fs.readFileSync(releasePath, 'utf8');
@@ -36,6 +50,8 @@ assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must n
 assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
 assert.match(release, /Release .* already exists; immutable assets will not be overwritten/, 'existing releases must fail closed');
 assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373/, 'release provenance action must stay full-SHA pinned');
+assert.match(release, /tar -tzf "\$tgz"/, 'release must inspect the actual TGZ contents');
+assert.match(release, /release package contains development-only files/, 'release must fail on development-only package contents');
 
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
@@ -44,6 +60,7 @@ for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLA
 }
 assert.match(fs.readFileSync(path.join(root, 'src', 'codex.js'), 'utf8'), /codex-safe-core\/codex-cli/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /codex-safe-core\/review-rules/);
+assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /policy\?\.reviewRules \|\| \{\}/, 'deterministic analyzers must consume Policy v3 review.rules');
 assert.match(fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8'), /buildReviewEvidenceChunks/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'policy.js'), 'utf8'), /parsePolicyDocument/);
 
@@ -52,4 +69,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v3 boundaries and immutable release policy verified.');
+console.log('Codex Review Service Family v3 runtime, package boundary and immutable release policy verified.');
