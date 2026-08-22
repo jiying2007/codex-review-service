@@ -14,6 +14,10 @@ function fail(message) { throw new Error(message); }
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 function run(command, args, options = {}) { return execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: options.stdio || ['ignore','pipe','pipe'] }).trim(); }
 function validVersion(value) { return /^\d+\.\d+\.\d+$/.test(String(value || '')); }
+function hasChangelogVersion(changelog, version) {
+  const escaped = String(version).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^## ${escaped}(?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`, 'm').test(changelog);
+}
 
 function verifyStatic() {
   const pkg = readJson(pkgPath);
@@ -21,7 +25,7 @@ function verifyStatic() {
   if (!validVersion(pkg.version)) fail(`package version must be MAJOR.MINOR.PATCH: ${pkg.version}`);
   if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) fail('package-lock version metadata must match package.json.');
   const changelog = fs.readFileSync(changelogPath, 'utf8');
-  if (!changelog.includes(`\n## ${pkg.version}\n`)) fail(`CHANGELOG.md must contain ## ${pkg.version}.`);
+  if (!hasChangelogVersion(changelog, pkg.version)) fail(`CHANGELOG.md must contain a release heading for ${pkg.version}.`);
   const staged = run('git', ['ls-files','--stage','src/codex-safe-core']);
   const match = staged.match(/^160000 ([0-9a-f]{40,64}) 0\tsrc\/codex-safe-core$/i);
   if (!match || match[1] !== EXPECTED_CORE_COMMIT) fail(`src/codex-safe-core must pin ${EXPECTED_CORE_COMMIT}.`);
@@ -43,9 +47,14 @@ function prepare(version) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
   let changelog = fs.readFileSync(changelogPath, 'utf8');
-  if (!changelog.includes(`\n## ${version}\n`)) changelog = changelog.replace('## Unreleased\n', `## Unreleased\n\n## ${version}\n\n- Release prepared. Replace this line with final release notes before merge.\n`);
+  if (!hasChangelogVersion(changelog, version)) changelog = changelog.replace('# Changelog\n', `# Changelog\n\n## ${version}\n\n- Release prepared. Replace this line with final release notes before merge.\n`);
   fs.writeFileSync(changelogPath, changelog);
   console.log(`Prepared ${version}.`);
+}
+
+function verify() {
+  const version = verifyStatic();
+  console.log(`Release metadata verified for v${version}.`);
 }
 
 function check() {
@@ -67,7 +76,8 @@ function push() {
 const [command, value] = process.argv.slice(2);
 Promise.resolve().then(() => {
   if (command === 'prepare') return prepare(value);
+  if (command === 'verify') return verify();
   if (command === 'check') return check();
   if (command === 'push') return push();
-  fail('Usage: node scripts/release.js <prepare X.Y.Z|check|push>');
+  fail('Usage: node scripts/release.js <prepare X.Y.Z|verify|check|push>');
 }).catch(error => { console.error(error.message || error); process.exit(1); });
