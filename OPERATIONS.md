@@ -2,43 +2,63 @@
 
 ## Deployment model
 
-Codex Review Service v1.1 is a single-node stateful controller backed by SQLite `WAL + synchronous=FULL`. Review execution and GitLab publication are separate durable stages. The recommended production layout also runs Codex in a separate Unix-socket Runner process/user.
+Codex Review Service v1.2 remains a single-node stateful service backed by SQLite `WAL + synchronous=FULL`. Review execution and GitLab publication are separate durable stages.
 
-Use exactly one active controller per SQLite database. Do not place the database on NFS/SMB/network filesystems.
+The default **Standard Deployment** runs one `codex-review-service` process with inline Codex. The optional **Hardened Deployment** adds the isolated Unix-socket Runner. Use exactly one active Controller per SQLite database and never place SQLite on NFS/SMB/network filesystems.
 
-## Recommended process split
+## Standard Deployment
 
-```text
-codex-review controller
-  GitLab credentials + SQLite
-        │ Unix socket
-        ▼
-codex-review-runner
-  Codex/OpenAI credential only
-```
-
-Controller configuration should set:
+Recommended files:
 
 ```text
-CODEX_RUNNER_SOCKET=/run/codex-review-runner/runner.sock
+/etc/codex-review/config.json        # non-secret product settings
+/etc/codex-review-service.env        # GitLab/OpenAI secrets + rare overrides
+/etc/systemd/system/codex-review-service.service
 ```
 
-Runner configuration belongs in `/etc/codex-review-runner.env`; GitLab credentials must not be copied there.
+Minimal config:
 
-## Preflight
+```json
+{
+  "gitlab": {
+    "baseUrl": "https://gitlab.example.internal",
+    "projects": [101, 102],
+    "groups": [{ "id": 20, "includeSubgroups": true }]
+  },
+  "review": { "concurrency": 2 },
+  "runner": { "mode": "inline" }
+}
+```
 
-1. Install Node.js 22.13+ and the production-approved Codex CLI version.
-2. Create `codex-review` and, for split mode, `codex-review-runner` non-login users.
-3. Provision GitLab API/webhook credentials only to the controller.
-4. Authenticate Codex or provision `OPENAI_API_KEY` only to the Runner in split mode.
-5. Install `/etc/codex-review-service.env` and `/etc/codex-review-runner.env` with mode `0600`.
-6. Install both systemd units when using split mode.
-7. Run `npm run doctor` using the same controller environment.
-8. Confirm `/health/ready` returns 200 before enabling production webhooks.
+Minimal protected environment:
 
-## Startup order
+```text
+GITLAB_API_TOKEN=...
+GITLAB_WEBHOOK_SIGNING_TOKEN=whsec_...
+```
 
-Recommended:
+Preflight:
+
+1. install Node.js 22.13+ and the approved Codex CLI;
+2. create the `codex-review` non-login user;
+3. install `config.json`, environment file and the Controller systemd unit;
+4. run `codex login` as `codex-review` or provision `OPENAI_API_KEY`;
+5. run `npm run doctor` under the service environment;
+6. verify `/health/ready` before enabling production webhooks.
+
+## Multi-repository project scope
+
+`gitlab.projects` and `gitlab.groups` form one runtime allowlist. A group entry can set `includeSubgroups=true`; the service asks GitLab's paginated Group Projects API to return projects in that scope, excludes archived projects, filters to Merge-Request-enabled projects, merges IDs with explicit projects and deduplicates them.
+
+Project discovery runs at startup and again on the reconciliation cadence when groups are configured. A refresh is atomic from the service's point of view: if any group lookup fails or pagination is incomplete, the last complete project set remains active and readiness becomes unhealthy until a complete refresh succeeds. This avoids silently dropping repositories during a GitLab incident.
+
+Legacy `GITLAB_PROJECT_ALLOWLIST` is still accepted. When present, it overrides structured `projects/groups`. Wildcard `*` is intentionally webhook-only and disables exhaustive reconciliation.
+
+## Hardened Deployment
+
+Set `runner.mode="isolated"` and optionally `runner.socket`. Install `codex-review-runner.service` and `/etc/codex-review-runner.env` under the separate `codex-review-runner` user. GitLab credentials stay on the Controller; Codex/OpenAI credentials stay on the Runner.
+
+Startup order:
 
 ```bash
 sudo systemctl start codex-review-runner
@@ -46,35 +66,30 @@ sudo systemctl start codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Readiness requires the DB, Review Workers, Publisher Workers, GitLab and Codex/Runner capability path to be healthy.
-
 ## GitLab rollout
 
-Start with one explicit Project ID in `GITLAB_PROJECT_ALLOWLIST`. Enable Merge request and Note events. Verify a test MR produces:
+Start with one explicit Project ID or one small Group. Enable Merge request and Note events. Verify:
 
-1. accepted/authenticated webhook delivery;
-2. one queued review job;
-3. `running` external status;
-4. one persisted review run;
-5. summary + inline findings through the publication outbox;
-6. final success/failed status bound to the expected source project/ref/pipeline;
-7. a later source push supersedes the old review and prevents stale publication.
-
-Expand the allowlist only after this path is healthy. Wildcard mode disables exhaustive reconciliation.
+1. Doctor reports the expected resolved project count;
+2. webhook delivery is accepted only for the resolved scope;
+3. a test MR gets a `running` status;
+4. one durable review run is persisted;
+5. Summary/Discussion/final status are published through the Outbox;
+6. final status targets the expected source project/ref/pipeline;
+7. a later push supersedes the old snapshot;
+8. adding/removing a project in a configured Group is reflected after a successful scope refresh.
 
 ## Durability and recovery
 
-Webhook/job persistence uses SQLite `WAL + synchronous=FULL`. Review results, findings and their publication actions are committed in one transaction. GitLab publication happens later from `publication_outbox`.
+Webhook/job persistence uses SQLite `WAL + synchronous=FULL`. Review results, findings and publication actions are committed in one transaction; Publisher Workers process GitLab writes later.
 
 Crash recovery rules:
 
-- `review_jobs.status=running` → requeued on startup;
-- `publication_outbox.status=publishing` → returned to pending on startup;
-- publication retry never reruns Codex;
-- stale summary/finding publications are canceled when the MR snapshot no longer matches;
-- terminal status publications use stable dedupe keys.
-
-Never manually delete pending outbox rows as an incident workaround unless the corresponding GitLab side effect and desired terminal state have been reconciled first.
+- running Review Jobs are requeued;
+- publishing Outbox actions return to pending;
+- publication retry never reruns an already-persisted Codex review;
+- stale Summary/Finding publications are canceled;
+- delayed `running` status cannot overwrite terminal status.
 
 ## Upgrade
 
@@ -85,125 +100,81 @@ git checkout <release-tag>
 npm ci --ignore-scripts --no-audit --no-fund
 npm run ci
 npm pack --dry-run --ignore-scripts
-sudo systemctl restart codex-review-runner   # split mode
+sudo systemctl restart codex-review-runner   # only in Hardened mode
 sudo systemctl restart codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Migrations are additive in v1.x and run automatically. Back up SQLite before upgrades.
+Migrations are additive in v1.x. Back up SQLite before upgrades.
 
 ## Backup and restore
 
-Preferred online backup when `sqlite3` is installed:
+Preferred online backup:
 
 ```bash
 sqlite3 /var/lib/codex-review/review-service.sqlite ".backup '/secure-backup/codex-review-$(date +%F-%H%M%S).sqlite'"
 ```
 
-For a cold backup, stop the controller before copying the DB. Runner `CODEX_HOME` is a separate credential asset; protect it independently and do not treat it as application state.
-
-Restore only with the controller stopped, preserve ownership/mode, then run doctor and readiness checks before reenabling webhooks.
-
-## Rollback
-
-For v1.x additive migrations, an earlier compatible build should ignore later additive columns/tables. Rollback procedure:
-
-1. stop the controller and Runner;
-2. restore a known-compatible code tag;
-3. `npm ci --ignore-scripts --no-audit --no-fund`;
-4. run its tests and doctor;
-5. start Runner then controller;
-6. verify readiness and one test MR.
-
-Restore a DB backup only when release notes declare schema incompatibility or migration corruption.
+For cold backup/restore, stop the Controller. Codex auth state is a separate credential asset and must be protected independently.
 
 ## Monitoring
 
-Scrape `/metrics` from a trusted monitoring network. Recommended alerts:
+Alert on:
 
 - readiness != 200 for >5 minutes;
-- review queue depth continuously rising;
-- publication queue depth continuously rising;
-- failed jobs increasing;
-- failed publication actions increasing;
-- active Review Workers pinned at capacity while queue grows;
-- GitLab circuit breaker repeatedly opening;
-- project token usage approaching `PROJECT_DAILY_TOKEN_BUDGET`;
-- state-directory disk usage approaching capacity.
+- `codex_review_scope_healthy == 0`;
+- resolved project count unexpectedly changes;
+- review/publication queue depth continuously rises;
+- failed review or publication actions increase;
+- GitLab circuit breaker repeatedly opens;
+- worker capacity remains saturated;
+- project Token Budget approaches its limit;
+- state filesystem approaches capacity.
 
-Optional OTLP/HTTP-compatible trace export can be enabled with `OTEL_EXPORTER_OTLP_ENDPOINT`. Trace/log metadata may include job/run/project/MR identifiers but must not include source code, prompt text, raw model output or credentials.
+Metrics use low-cardinality labels. Logs/traces must not contain source code, prompts, raw model output or credentials.
 
 ## Capacity
 
-Start with `WORKER_CONCURRENCY=2` and `PUBLISHER_CONCURRENCY=2`. Review Workers consume Codex capacity; Publisher Workers mainly consume GitLab API capacity. Increase them independently.
-
-Use `REVIEW_DEBOUNCE_MS` to coalesce push bursts. Prefer `REVIEW_DRAFT_MERGE_REQUESTS=false` unless draft reviews are explicitly valuable.
-
-Context and cost ceilings should remain bounded:
-
-```text
-MAX_DIFF_BYTES
-MAX_REVIEW_CHUNKS
-MAX_CONTEXT_BYTES
-MAX_CONTEXT_FILES
-CONTEXT_LINES
-MR_MAX_TOKEN_BUDGET
-PROJECT_DAILY_TOKEN_BUDGET
-```
+Start with `review.concurrency=2` and `PUBLISHER_CONCURRENCY=2`. Review concurrency controls different-MR parallelism; the scheduler always serializes the same MR. Increase Review and Publisher concurrency independently after observing CPU/memory/Codex/GitLab capacity.
 
 ## Common incidents
 
+### Project-scope discovery failed
+
+`/health/ready` reports an unhealthy project scope. Inspect GitLab connectivity, group permissions and pagination/limit settings. The service intentionally keeps the last complete project set; do not replace it manually with a partial list during the incident.
+
+### Unexpected project not reviewed
+
+Run `npm run doctor` and compare `explicitProjects`, `groups`, `discoveredProjects`, and `totalProjects`. Check whether a legacy `GITLAB_PROJECT_ALLOWLIST` environment value is overriding `config.json`.
+
 ### GitLab unavailable / rate-limited
 
-Readiness becomes unhealthy or GitLab requests fail. Review/publisher work uses bounded retry/backoff; the GitLab circuit breaker prevents worker storms. Do not delete queues. Restore connectivity and allow pending work to drain.
+The circuit breaker and bounded retry prevent worker storms. Restore GitLab connectivity and let queued work drain.
 
 ### Publication queue grows while review queue is healthy
 
-Investigate GitLab write permissions, status pipeline binding, 429/5xx responses and circuit-breaker state. Codex should not be rerun to repair publication failures.
+Investigate GitLab write permissions, status pipeline binding and 429/5xx responses. Do not rerun Codex to repair a publication-only failure.
 
 ### Codex CLI incompatible
 
-Doctor/startup reports `ECODEXVERSION`. Install the tested version or update `CODEX_ALLOWED_VERSION_PATTERN` only after CI/contract validation. Never weaken required Safe Contract flags as an emergency workaround.
+Doctor/startup reports `ECODEXVERSION`. Install the tested CLI version or change the allowed version policy only after CI/contract validation.
 
 ### Runner unavailable
 
-With `CODEX_RUNNER_SOCKET` configured, readiness fails and review jobs should not be treated as healthy. Check `codex-review-runner.service`, socket ownership/group mode and Runner Codex authentication.
+This applies only to Hardened mode. Check the Runner service, Unix socket ownership and Runner-side Codex authentication.
 
-### Codex authentication expired
+### Queue full / Token Budget exhausted / Coverage incomplete
 
-Authenticate/rotate credentials as `codex-review-runner` in split mode. Restart Runner and rerun doctor. Controller GitLab credentials do not need to change.
-
-### Queue full
-
-Webhook returns 503 so GitLab can retry. Investigate GitLab/Codex latency, capacity, debounce and token budgets before raising `MAX_QUEUE_DEPTH`.
-
-### Token budget exhausted
-
-The review becomes incomplete/failed rather than silently skipping work. Adjust budgets only after reviewing actual usage metrics and project risk.
-
-### Coverage incomplete
-
-Inspect summary coverage gaps. Genuine blockers include provider pagination/hard-limit truncation, `too_large`, `collapsed`, unknown unavailable diffs, local file/chunk/token ceilings or invalid model findings. Known binary/metadata-only/generated cases are separately classified and are policy-controlled.
-
-### Manual command rejected
-
-Confirm the author is an effective project member at or above `MANUAL_REVIEW_MIN_ACCESS_LEVEL`.
-
-## Secret rotation
-
-Rotate GitLab and OpenAI/Codex credentials independently. In split mode they are owned by different service accounts/environment files. For Standard Webhooks signing-token rotation, coordinate GitLab and controller configuration during the provider overlap window.
-
-## Data retention
-
-`DATA_RETENTION_DAYS` prunes terminal review jobs and cascaded run/finding/outbox data. `WEBHOOK_RETENTION_DAYS` prunes processed webhook delivery IDs. Keep retention long enough for realistic incident investigation and GitLab retry windows.
+The service fails closed rather than silently dropping work. Investigate capacity and actual usage before raising limits.
 
 ## Release gate
 
-Before marking a release ready:
+Before release:
 
 - `git diff --check` passes;
 - Node 22.13.0 and 24 CI are green;
-- Runner contract tests are green;
+- strict config/project-scope tests are green;
+- Runner contract tests remain green;
 - `npm pack --dry-run --ignore-scripts` succeeds;
-- README/README.zh-CN/OPERATIONS/SECURITY/ARCHITECTURE agree on the trust and durability model;
-- the final PR diff has no transitional compatibility code or temporary deployment files.
+- README/README.zh-CN/OPERATIONS/SECURITY/ARCHITECTURE agree on Standard/Hardened deployment and project-scope semantics;
+- final PR diff has no temporary migration/deployment artifacts.
