@@ -27,6 +27,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
+          fetch-depth: 2
       # actions/setup-node v5, pinned to the digest resolved by GitHub Actions on 2026-08-22.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
