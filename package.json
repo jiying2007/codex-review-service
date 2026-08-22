@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -9,10 +9,13 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "core:init": "git submodule update --init --recursive",
+    "precheck": "npm run core:init",
+    "pretest": "npm run core:init",
     "start": "node src/index.js",
     "start:runner": "node src/runner-server.js",
     "doctor": "node src/doctor.js",
-    "check": "node --check src/*.js && node --check test/*.test.js",
+    "check": "node --check src/*.js && node --check src/codex-safe-core/*.js && node --check test/*.test.js",
     "test": "node --test test/*.test.js",
     "ci": "npm run check && npm test"
   },
