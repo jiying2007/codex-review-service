@@ -65,7 +65,7 @@
   "codex": {
     "path": "codex",
     "model": "",
-    "home": "/home/codex-review/.codex",
+    "home": "",
     "versionPolicy": "warn",
     "allowedVersionPattern": ""
   },
