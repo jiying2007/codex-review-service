@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for GitLab Self-Managed merge requests. **v3.0 is the server-side enforcement member of the Codex Safe family** and consumes the same commit-pinned `codex-safe-core` runtime, Policy Schema v3, Review Evidence semantics, deterministic review rules, and Review Receipt v3 contract as the local products.
+Production-grade, self-hosted Codex review enforcement for GitLab Self-Managed merge requests. **v3.0 is the server-side enforcement member of the Codex Safe family** and consumes the same commit-pinned `codex-safe-core` runtime, Policy Schema v3, Review Evidence semantics, deterministic review rules, and Review Receipt v4 contract as the local products.
 
 ## Product-family boundary
 
@@ -170,9 +170,9 @@ Service retains the complete provider diff metadata for exact `old/new` changed-
 
 Additional source windows are acquired by the Service through GitLab Repository API only at the captured source `head_sha` and target `start_sha`. Reviewed repository code is never checked out or executed by the service. Core receives the resulting bounded evidence but does not own GitLab provider access.
 
-## Review Receipt v3 and durability
+## Review Receipt v4 and durability
 
-SQLite schema **4** stores a canonical GitLab-MR Review Receipt v3 projection and fingerprint in `review_runs`. Receipt, run, findings, and publication plan are committed in the same `BEGIN IMMEDIATE` transaction.
+SQLite schema **4** stores a canonical GitLab-MR Review Receipt v4 projection and fingerprint in `review_runs`. Receipt, run, findings, and publication plan are committed in the same `BEGIN IMMEDIATE` transaction.
 
 The receipt binds:
 

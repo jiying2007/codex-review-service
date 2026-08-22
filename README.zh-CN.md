@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 GitLab Self-Managed Merge Request 的生产级、自托管 Codex 审核执行服务。**v3.0 是 Codex Safe 产品族的服务端 Enforcement 成员**：与本地 Review / Commit / PR 产品共用 commit-pinned `codex-safe-core`、Policy Schema v3、Review Evidence、确定性 Review Rules 与 Review Receipt v3。
+面向 GitLab Self-Managed Merge Request 的生产级、自托管 Codex 审核执行服务。**v3.0 是 Codex Safe 产品族的服务端 Enforcement 成员**：与本地 Review / Commit / PR 产品共用 commit-pinned `codex-safe-core`、Policy Schema v3、Review Evidence、确定性 Review Rules 与 Review Receipt v4。
 
 ## 产品族边界
 
@@ -166,9 +166,9 @@ Service 仍保留完整 Provider diff 元数据用于精确 `old/new` changed-li
 
 Service 只通过 GitLab Repository API，在精确 source `head_sha` 与 target `start_sha` 上读取有界源码窗口；不会 checkout 或执行被审核仓库代码。Core 消费这些有界 Evidence，但不负责 GitLab Provider 访问。
 
-## Review Receipt v3 与 SQLite schema 4
+## Review Receipt v4 与 SQLite schema 4
 
-SQLite schema **4** 在 `review_runs` 中保存 canonical GitLab-MR Review Receipt v3 与 fingerprint。Receipt、Run、Findings、Publication Plan 在同一个 `BEGIN IMMEDIATE` 事务内提交。
+SQLite schema **4** 在 `review_runs` 中保存 canonical GitLab-MR Review Receipt v4 与 fingerprint。Receipt、Run、Findings、Publication Plan 在同一个 `BEGIN IMMEDIATE` 事务内提交。
 
 Receipt 绑定：
 
