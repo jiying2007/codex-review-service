@@ -1,5 +1,6 @@
 'use strict';
 
+const{version:SERVICE_VERSION}=require('../package.json');
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
 function encodeProject(value){return encodeURIComponent(String(value));}
 function nextPageFromHeaders(headers,currentPage){const x=String(headers.get('x-next-page')||'').trim();if(x){const n=Number(x);return Number.isInteger(n)&&n>currentPage?n:null;}const link=String(headers.get('link')||'');for(const part of link.split(',')){if(!/;\s*rel="?next"?/i.test(part))continue;const match=part.match(/<([^>]+)>/);if(!match)return null;try{const n=Number(new URL(match[1]).searchParams.get('page'));return Number.isInteger(n)&&n>currentPage?n:null;}catch{return null;}}return 0;}
@@ -22,7 +23,7 @@ class GitLabClient{
   constructor(config){this.config=config;this.apiUrl=config.gitlabApiUrl;this.token=config.gitlabToken;this.statusName=config.statusName;this.limiter=new RateLimiter(config.gitlabRequestsPerSecond||20);this.circuit=new CircuitBreaker(config.gitlabCircuitFailureThreshold||8,config.gitlabCircuitResetMs||30000);}
   async request(method,pathname,{query,body,expected=[200],accept='json'}={}){
     this.circuit.before();await this.limiter.acquire();const url=new URL(this.apiUrl+pathname);if(query)for(const[key,value]of Object.entries(query))if(value!==undefined&&value!==null&&value!=='')url.searchParams.set(key,String(value));
-    let response;try{response=await fetch(url,{method,headers:{'PRIVATE-TOKEN':this.token,'User-Agent':'codex-review-service/1.1',...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(this.config.gitlabRequestTimeoutMs)});}catch(cause){const error=new Error(`GitLab ${method} ${pathname} network failure`);error.code='EGITLABNETWORK';error.cause=cause;this.circuit.failure(error);throw error;}
+    let response;try{response=await fetch(url,{method,headers:{'PRIVATE-TOKEN':this.token,'User-Agent':`codex-review-service/${SERVICE_VERSION}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(this.config.gitlabRequestTimeoutMs)});}catch(cause){const error=new Error(`GitLab ${method} ${pathname} network failure`);error.code='EGITLABNETWORK';error.cause=cause;this.circuit.failure(error);throw error;}
     const text=await response.text();if(!expected.includes(response.status)){const error=new Error(`GitLab ${method} ${pathname} failed with ${response.status}`);error.code='EGITLABHTTP';error.status=response.status;error.responseBody=text.slice(0,2000);error.retryAfterMs=parseRetryAfter(response.headers.get('retry-after'));this.circuit.failure(error);throw error;}
     let data=text;if(accept==='json'){if(!text)data=null;else try{data=JSON.parse(text);}catch(cause){const error=new Error(`GitLab ${method} ${pathname} returned invalid JSON`);error.code='EGITLABJSON';error.cause=cause;throw error;}}
     this.circuit.success();return{data,status:response.status,headers:response.headers};

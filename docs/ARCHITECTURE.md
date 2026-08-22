@@ -2,21 +2,21 @@
 
 ```text
 /etc/codex-review/config.json
-   │ projects + groups + deployment mode
+   │ canonical non-secret configuration
    ▼
 Project Scope Resolver ── GitLab Group Projects API
-   │ complete atomic project set
+   │ complete atomic Projects/Groups Set
    ▼
-GitLab Webhook
-   │ authenticated + idempotent + scope-checked
+Signed GitLab 19.1+ Webhook
+   │ HMAC + instance + idempotency + scope
    ▼
 SQLite WAL/FULL review queue
    │
    ├── Review Workers (different MRs parallel; same MR serialized)
-   │      ├── immutable MR snapshot (start_sha + head_sha)
-   │      ├── exact source project/ref/pipeline identity
+   │      ├── immutable snapshot: start_sha + head_sha
+   │      ├── source project/ref/pipeline identity
    │      ├── target policy @ start_sha
-   │      ├── provider diff completeness check
+   │      ├── provider diff completeness
    │      ├── bounded immutable context
    │      ├── deterministic analyzers
    │      └── Codex Safe Contract
@@ -31,43 +31,47 @@ SQLite WAL/FULL review queue
                        ├── summary upsert
                        ├── idempotent inline findings
                        ├── obsolete-thread resolution
-                       └── source/pipeline-bound commit status
+                       └── source/pipeline-bound status
 ```
+
+## Configuration boundary
+
+`config.json` is the single non-secret configuration source for Controller and Runner. Environment is reserved for GitLab/OpenAI credentials and an optional config-path override. There are no alternate project-scope, runner-mode, lifecycle, budget, concurrency, GitLab URL, or observability env paths.
 
 ## Deployment boundary
 
-**Standard Deployment** is the default product path: one Controller process with inline Codex. **Hardened Deployment** preserves the optional separate Runner/user boundary. Both modes use exactly the same Review, Gate, Queue and Outbox semantics.
+Standard and Hardened modes share all queue/review/gate/outbox behavior. Hardened adds a process/user credential boundary only; it does not fork business logic.
 
 ## Project-scope boundary
 
-Structured configuration can name explicit Project IDs and Group IDs. Group scope is expanded with GitLab's paginated Group Projects API and optional subgroup inclusion. The resulting IDs are merged and deduplicated into one mutable runtime Set shared by webhook scope checks and reconciliation.
+Only explicit Project IDs and Group IDs are supported. Group scope is expanded through paginated Group Projects API with optional subgroup inclusion. A refresh builds a complete next Set before mutating the active Set. Provider/pagination failure preserves the last complete Set and makes readiness unhealthy. Removed Projects immediately become unauthorized for new work and pending publication.
 
-Scope replacement is atomic: a refresh builds a complete next set first. If any provider request fails or pagination is incomplete, the last complete Set remains active and scope health becomes unhealthy. Readiness therefore prevents operators from confusing partial discovery with a complete configuration.
+## Webhook boundary
 
-Wildcard legacy scope is intentionally different: it accepts webhook projects reachable by the token but cannot provide exhaustive reconciliation.
+The receiver requires Standard Webhooks Signing Token semantics, raw-body HMAC verification, replay-window timestamp, expected GitLab instance, and durable delivery-ID idempotency. It performs no GitLab API or Codex work inside the request.
 
 ## Failure domains
 
-Review execution and GitLab publication are separate. A GitLab write timeout cannot trigger a second Codex review after the run has persisted. Publisher retries use stable Outbox keys and remote fingerprint discovery.
+Review execution and GitLab publication are separate. A GitLab write timeout cannot trigger a second Codex review after a run is persisted. Publisher retry uses persistent Outbox state, stable dedupe keys, remote fingerprint discovery, snapshot checks, and current Project Scope checks.
 
-Hardened Runner mode adds a third security/failure domain: Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no SCM mutation capability.
+Hardened Runner is a third security/failure domain: Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no SCM mutation capability.
 
 ## Storage boundary
 
-SQLite is the durable webhook/review queue, review metadata store and publication Outbox. It uses local-filesystem WAL with `synchronous=FULL` and supports one active Controller. HA requires replacing the storage boundary with equivalent transactional/idempotency/per-MR-serialization semantics rather than sharing SQLite over a network filesystem.
+SQLite is the durable webhook/review queue, review metadata store, and publication Outbox. It uses local-filesystem WAL + FULL and supports one active Controller. HA must replace this boundary with equivalent transaction/idempotency/per-MR serialization/recovery semantics; do not share SQLite over a network filesystem.
 
-## Review snapshot boundary
+## Snapshot boundary
 
-A review is identified by target `start_sha` and source `head_sha`. Context, policy and inline positions derive from those immutable identities. No stale result may publish.
+A review is identified by target `start_sha` + source `head_sha`. Policy, context, finding positions, and publication plan derive from those immutable identities. No stale result may publish.
 
 ## Provider boundary
 
-GitLab-specific behavior stays behind provider-facing modules: scope discovery, webhook semantics, MR/diff APIs, pipelines, discussions and statuses. Review construction, finding validation, policy, budgets and publication planning do not grant the model SCM credentials.
+GitLab-specific behavior stays behind provider-facing modules: scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, discussions, and statuses. Review construction, finding validation, deterministic gate, budgets, and publication planning remain provider-independent and model-unprivileged.
 
 ## Publication boundary
 
-Review Workers create deterministic publication plans and commit them with runs/findings. Publisher Workers execute them independently. Delayed `running` actions cannot overwrite terminal state.
+Review Workers produce a deterministic publication plan and commit it with runs/findings. Publisher Workers execute the plan independently. Delayed running actions cannot overwrite terminal state; out-of-scope/stale actions are canceled locally.
 
 ## Evolution rule
 
-Provider, project-scope, storage and Runner interfaces are intentional replacement boundaries. New HA/providers/model transports should replace a boundary cleanly rather than spread compatibility branches through the review engine.
+Provider, Project Scope, storage, and Runner are explicit replacement boundaries. Future HA/provider/model transports replace one boundary cleanly. Do not reintroduce compatibility branches throughout the review engine.

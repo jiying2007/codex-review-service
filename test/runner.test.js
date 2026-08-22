@@ -7,6 +7,7 @@ const os=require('node:os');
 const path=require('node:path');
 const http=require('node:http');
 const {runCodex,probeCodexCapabilities,unixRequest}=require('../src/codex');
+const {runnerConfig}=require('../src/runner-server');
 
 function withUnixServer(handler,fn){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-runner-test-'));
@@ -20,8 +21,11 @@ function withUnixServer(handler,fn){
     });
   });
 }
-
 function readJson(req){return new Promise((resolve,reject)=>{let text='';req.setEncoding('utf8');req.on('data',chunk=>text+=chunk);req.on('end',()=>{try{resolve(text?JSON.parse(text):{});}catch(error){reject(error);}});req.on('error',reject);});}
+function withConfig(value,fn){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-runner-config-')),file=path.join(dir,'config.json'),old=process.env.CODEX_REVIEW_CONFIG_FILE;fs.writeFileSync(file,JSON.stringify(value));process.env.CODEX_REVIEW_CONFIG_FILE=file;try{return fn();}finally{if(old===undefined)delete process.env.CODEX_REVIEW_CONFIG_FILE;else process.env.CODEX_REVIEW_CONFIG_FILE=old;fs.rmSync(dir,{recursive:true,force:true});}}
+
+test('isolated runner reads canonical config and keeps user-specific HOME by default',()=>withConfig({gitlab:{baseUrl:'https://gitlab.test',projects:[1]},review:{timeoutSeconds:77},codex:{path:'codex-x',home:'',model:'m',versionPolicy:'warn'},runner:{mode:'isolated',socket:'/run/test-runner.sock'}},()=>{const config=runnerConfig();assert.equal(config.socket,'/run/test-runner.sock');assert.equal(config.codexPath,'codex-x');assert.equal(config.codexHome,'');assert.equal(config.codexModel,'m');assert.equal(config.reviewTimeoutSeconds,77);}));
+test('runner refuses to start from inline deployment config',()=>withConfig({gitlab:{baseUrl:'https://gitlab.test',projects:[1]},runner:{mode:'inline'}},()=>assert.throws(()=>runnerConfig(),/must be isolated/)));
 
 test('controller capability probe uses Unix runner health endpoint',async()=>withUnixServer((req,res)=>{
   assert.equal(req.method,'GET');

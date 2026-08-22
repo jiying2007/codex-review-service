@@ -2,11 +2,37 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review service for GitLab Self-Managed merge requests. v1.2 keeps the v1.1 reliability/security core, but makes deployment and multi-repository scope much simpler.
+Production-grade, self-hosted Codex review service for GitLab Self-Managed merge requests. **v2.0 removes all v1 compatibility paths** and makes the operating model explicit: one canonical non-secret config file, signed GitLab webhooks, explicit Projects/Groups scope, durable SQLite/Outbox semantics, and optional isolated Codex Runner hardening.
+
+## Requirements
+
+- Node.js **22.13+**
+- GitLab Self-Managed **19.1+** with a Standard Webhooks Signing Token
+- GitLab API token with only the project/group/MR/repository/discussion/status permissions required by the configured scope
+- OpenAI Codex CLI authenticated as the service user, or as the isolated Runner user in Hardened mode
+
+## Configuration contract
+
+All non-secret product settings live in one file:
+
+```text
+/etc/codex-review/config.json
+```
+
+Copy [`config.example.json`](config.example.json) and edit it. The only supported environment inputs are:
+
+```text
+CODEX_REVIEW_CONFIG_FILE   # optional alternate config path
+GITLAB_API_TOKEN           # required secret
+GITLAB_WEBHOOK_SIGNING_TOKEN # required secret
+OPENAI_API_KEY             # optional Codex auth secret
+```
+
+There is no environment override for project scope, runner mode, concurrency, limits, lifecycle, observability, GitLab URL, or review policy ceilings. This prevents hidden configuration precedence.
 
 ## Standard Deployment
 
-The default deployment is intentionally simple: **one service process, one structured config file, and GitLab secrets in a protected environment file**. Codex runs inline under the service account.
+The default production path is one process with inline Codex:
 
 ```text
 GitLab → codex-review-service
@@ -16,36 +42,11 @@ GitLab → codex-review-service
             └─ Codex CLI (inline)
 ```
 
-Create `/etc/codex-review/config.json` from `config.example.json`:
-
-```json
-{
-  "gitlab": {
-    "baseUrl": "https://gitlab.example.internal",
-    "projects": [101, 102],
-    "groups": [
-      { "id": 20, "includeSubgroups": true }
-    ]
-  },
-  "review": { "concurrency": 2 },
-  "runner": { "mode": "inline" }
-}
-```
-
-`gitlab.projects` and discovered group projects are merged and deduplicated. GitLab's paginated Group Projects API is used for group expansion; archived projects are excluded and only projects with Merge Requests enabled are included. Group discovery is fail-closed: an incomplete/failed refresh does not replace the last complete scope and readiness becomes unhealthy.
-
-Keep secrets in `/etc/codex-review-service.env`:
-
-```text
-GITLAB_API_TOKEN=...
-GITLAB_WEBHOOK_SIGNING_TOKEN=whsec_...
-```
-
-Then install and start:
+Minimal install:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
-sudo mkdir -p /etc/codex-review /opt/codex-review-service
+sudo mkdir -p /etc/codex-review
 
 git clone https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
 cd /opt/codex-review-service
@@ -62,31 +63,36 @@ sudo systemctl enable --now codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Edit the two files before running Doctor or starting production. `/etc/codex-review/config.json` contains non-secret product settings; the environment file should contain credentials and only exceptional overrides. Group-readable `0640 root:codex-review` lets Doctor run under the exact service user without copying secrets to the command line.
+Edit `config.json` and the environment file before Doctor/startup.
 
 ## Multi-repository scope
 
-One Review Service instance can monitor and process many repositories concurrently.
+One service instance monitors many repositories through explicit Projects and/or Groups:
 
 ```json
 {
   "gitlab": {
+    "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102, 103],
     "groups": [
       { "id": 20, "includeSubgroups": true },
       { "id": 35, "includeSubgroups": false }
     ]
+  },
+  "review": {
+    "concurrency": 4
+  },
+  "runner": {
+    "mode": "inline"
   }
 }
 ```
 
-Different MRs can run in parallel up to `review.concurrency`; the same MR remains strictly serialized. Explicit project IDs plus group-discovered project IDs form one runtime allowlist used by webhook acceptance and periodic reconciliation.
-
-`GITLAB_PROJECT_ALLOWLIST` remains supported for existing deployments. When it is set, it intentionally overrides `gitlab.projects` and `gitlab.groups`. `GITLAB_PROJECT_ALLOWLIST=*` remains webhook-only and disables exhaustive reconciliation.
+Group Projects discovery is paginated, deduplicated, excludes archived projects, and only accepts a newly discovered scope after complete discovery. Failed/incomplete refresh keeps the last complete scope and makes readiness unhealthy. Different MRs can run concurrently; the same MR is always serialized.
 
 ## Hardened Deployment
 
-For higher-security environments, set:
+For a stronger credential/process boundary:
 
 ```json
 {
@@ -97,39 +103,37 @@ For higher-security environments, set:
 }
 ```
 
-Then run the optional `codex-review-runner.service` under a separate Unix user. The Controller owns GitLab credentials and SQLite; the Runner owns Codex/OpenAI credentials and communicates only over the local Unix socket. This is a defense-in-depth mode, not a prerequisite for normal production use.
+Run `codex-review-runner.service` under the separate Runner user. Both Controller and Runner read the same `config.json`. The Controller owns GitLab credentials and SQLite; the Runner owns Codex/OpenAI credentials and no GitLab credentials.
 
-## Reliability and review guarantees
+## Webhook
 
-- Webhook ACK is backed by SQLite `WAL + synchronous=FULL`.
-- Review execution and GitLab publication are separate failure domains through a transactional persistent Outbox.
-- Reviews bind to target `start_sha` + source `head_sha`; stale results cannot publish.
-- External status targets the correct source project/ref and exact `pipeline_id` when available.
-- Same MR serialized; different MRs can run concurrently.
-- GitLab requests are rate-limited and protected by a transient-failure circuit breaker.
-- Findings must map to exact changed lines; no silent line-number relocation.
-- Finding identity uses stable code anchors.
-- Provider/local coverage gaps fail closed; metadata-only/generated/known binary changes are classified separately.
-- Controller context is bounded and read from immutable target/source SHAs; reviewed code is never cloned or executed.
-- Target-branch deterministic rules and Codex findings share one Gate/Outbox lifecycle.
-- Codex token usage and optional MR/project budgets are persisted and enforced.
-- GitHub Actions dependencies are pinned to immutable commit SHAs.
-
-## GitLab webhook
-
-Use:
+Configure a GitLab 19.1+ Signing Token and enable **Merge request events** and **Note events** for:
 
 ```text
 https://review.example.internal/webhooks/gitlab
 ```
 
-Enable **Merge request events** and **Note events**. GitLab 19+ Standard Webhooks Signing Token is recommended. `/codex review` manual re-review requires Developer access by default.
+The receiver requires `webhook-id`, `webhook-timestamp`, `webhook-signature`, validates the HMAC over the exact raw body, enforces replay skew, validates `X-Gitlab-Instance`, deduplicates delivery IDs, and returns quickly after durable local enqueue. Plain-text `X-Gitlab-Token` authentication is not supported in v2.
+
+## Reliability and security invariants
+
+- webhook ACK is backed by SQLite `WAL + synchronous=FULL`;
+- Review execution and GitLab publication are separate durable failure domains through a transactional Outbox;
+- review identity binds target `start_sha` + source `head_sha`;
+- stale results and publications cannot write to a changed/removed scope;
+- GitLab status targets the source project/ref and exact `pipeline_id` when resolvable;
+- exact changed-line finding validation; no silent line relocation;
+- stable code-anchor finding identity;
+- provider/local coverage gaps fail closed;
+- immutable bounded context is fetched at exact SHAs without cloning/executing reviewed code;
+- deterministic target-policy analyzers share the same Gate/Outbox lifecycle as AI findings;
+- token usage and MR/project budgets are persisted/enforced;
+- GitLab API traffic is rate-limited and protected by Retry-After/circuit-breaker logic;
+- GitHub Actions dependencies are manually reviewed and pinned to immutable full SHAs.
 
 ## Repository review policy
 
-A repository can commit `.codex-review.json` on its target branch. The service reads it at `diff_refs.start_sha`, never from the unreviewed source branch. See `.codex-review.example.json`.
-
-Repository policy may narrow resource ceilings and add deterministic rules, but cannot weaken the global blocking threshold, confidence floor, credentials, Safe Contract, or service concurrency.
+Repositories may commit `.codex-review.json` on the target branch. The service reads it only from `diff_refs.start_sha`. See [`.codex-review.example.json`](.codex-review.example.json). Repository policy may narrow ceilings/add deterministic checks but cannot weaken global gate, confidence, credential, execution, or service-capacity boundaries.
 
 ## Health and operations
 
@@ -139,9 +143,13 @@ GET /health/ready
 GET /metrics
 ```
 
-Readiness includes GitLab, SQLite durability, workers, publishers, circuit state and project-scope discovery health. The Doctor command above also resolves configured groups and reports the final project count before production rollout.
+`npm run doctor` validates config, SQLite durability/schema, Codex/Runner capability, GitLab reachability, and complete Projects/Groups resolution without reviewing repository code.
 
 See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), and [CHANGELOG.md](CHANGELOG.md).
+
+## v1.x → v2.0 migration
+
+Move all non-secret environment settings into `/etc/codex-review/config.json`. Remove `GITLAB_PROJECT_ALLOWLIST`, `GITLAB_WEBHOOK_SECRET_TOKEN`, `CODEX_RUNNER_MODE`, `CODEX_RUNNER_SOCKET`, `GITLAB_BASE_URL`, tuning/budget/lifecycle env overrides, and OTLP env overrides. Configure a GitLab Signing Token and set only the supported secrets in the environment file. Run Doctor before re-enabling webhooks.
 
 ## Development
 

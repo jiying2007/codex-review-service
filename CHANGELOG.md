@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0 - 2026-08-22
+
+### Terminal configuration and repository-hygiene model
+
+- Made `/etc/codex-review/config.json` mandatory and the single source of all non-secret product configuration for both Controller and isolated Runner.
+- Reduced supported environment inputs to optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`.
+- Removed v1 compatibility paths: `GITLAB_PROJECT_ALLOWLIST`, wildcard webhook-only scope, non-secret environment overrides, implicit Runner mode/socket environment behavior, and Legacy `X-Gitlab-Token` webhook authentication.
+- Raised the supported GitLab baseline to 19.1+ and require Standard Webhooks Signing Token semantics.
+- Kept only explicit `gitlab.projects` / `gitlab.groups` scope with complete-discovery atomic replacement and out-of-scope publication cancellation.
+- Made Hardened Runner read the same canonical config file instead of a separate non-secret environment configuration surface.
+- Upgraded GitHub Actions checkout/setup-node to reviewed current major releases while preserving immutable full-SHA pins.
+- Removed Dependabot configuration because automated tag-oriented Actions PRs conflict with the repository's manual full-SHA supply-chain policy; Action upgrades are reviewed deliberately.
+- Rewrote bilingual deployment, operations, security, architecture and long-term-asset documentation around the zero-compatibility v2 contract.
+- Upgraded package version to 2.0.0 and added regression tests proving old environment settings no longer alter runtime configuration.
+
 ## 1.2.0 - 2026-08-22
 
 ### Simpler deployment and first-class multi-repository scope
