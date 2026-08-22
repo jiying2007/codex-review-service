@@ -1,0 +1,35 @@
+name: Family v3 service fixture finalizer
+
+on:
+  push:
+    branches: [feat/family-v3-service]
+    paths: [.github/workflows/v3-service-fixture-finalize.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { fetch-depth: 0 }
+      - name: Upgrade MR snapshot fixtures to real commit OIDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const p='test/service.test.js';
+          let s=fs.readFileSync(p,'utf8');
+          s=s.replace("function mr(overrides={}){return{project_id:7,source_project_id:7,target_project_id:7,iid:9,state:'opened',draft:false,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'},...overrides};}", "const BASE_SHA='b'.repeat(40),START_SHA='c'.repeat(40),HEAD_SHA='d'.repeat(40);\nfunction mr(overrides={}){return{project_id:7,source_project_id:7,target_project_id:7,iid:9,state:'opened',draft:false,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:BASE_SHA,start_sha:START_SHA,head_sha:HEAD_SHA},...overrides};}");
+          if(!s.includes("START_SHA='c'.repeat(40)")) throw new Error('fixture replacement did not apply');
+          fs.writeFileSync(p,s);
+          NODE
+          git rm .github/workflows/v3-service-fixture-finalize.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add test/service.test.js
+          git commit -m 'test: use real Git OIDs for Service Receipt v3'
+          git push origin HEAD:feat/family-v3-service
