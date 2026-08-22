@@ -1,8 +1,8 @@
 {
   "name": "codex-review-service",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Persistent, self-hosted Codex code review service for GitLab merge requests",
+  "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
   "type": "commonjs",
   "engines": {
