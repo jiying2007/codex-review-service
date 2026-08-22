@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    tags: ['v*']
 
 permissions:
   contents: read
@@ -36,16 +35,12 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           tag="v${version}"
           publish=true
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            test "$GITHUB_REF_NAME" = "$tag"
-            git fetch --no-tags origin main:refs/remotes/origin/main
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          else
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             previous_version=""
             if [[ "$GITHUB_EVENT_BEFORE" =~ ^[0-9a-f]{40}$ && ! "$GITHUB_EVENT_BEFORE" =~ ^0+$ ]]; then
               previous_version=$(git show "${GITHUB_EVENT_BEFORE}:package.json" 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)
             fi
-            if [[ "$previous_version" == "$version" && "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then publish=false; fi
+            if [[ "$previous_version" == "$version" ]]; then publish=false; fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -123,7 +118,7 @@ jobs:
           else
             gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="$GITHUB_SHA" >/dev/null
           fi
-      - name: Publish GitHub Release
+      - name: Publish immutable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
@@ -133,7 +128,7 @@ jobs:
           version="${{ needs.prepare.outputs.version }}"
           tgz="codex-review-service-${version}.tgz"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$tgz" SHA256SUMS --clobber
-          else
-            gh release create "$RELEASE_TAG" "$tgz" SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
+            echo "Release ${RELEASE_TAG} already exists; immutable assets will not be overwritten." >&2
+            exit 1
           fi
+          gh release create "$RELEASE_TAG" "$tgz" SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
