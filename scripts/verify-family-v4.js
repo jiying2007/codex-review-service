@@ -8,19 +8,19 @@ const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = 'e6e25b502aa35a079f660346785cf283fe293b6d';
+const expectedCore = '4dc4de836625a8b70084531eb3321734eca675d0';
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '3.0.0');
-assert.equal(core.SAFE_CORE_VERSION, 3);
+assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
-assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, 3);
-assert.equal(core.COMMIT_RECEIPT_SCHEMA_VERSION, 3);
+assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, 4);
+assert.equal(core.COMMIT_RECEIPT_SCHEMA_VERSION, 4);
+assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
 assert.equal(SCHEMA_VERSION, 4);
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
-assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin final Core 3.0.1 commit');
+assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin final Safe Core 4.0.0 main commit');
 
 assert.equal(fs.existsSync(path.join(root, '.codex-review.example.json')), false, 'legacy service-only policy example must not exist');
 const example = JSON.parse(fs.readFileSync(path.join(root, '.codex-safe.example.json'), 'utf8'));
@@ -65,7 +65,15 @@ const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', na
 for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLAB_WEBHOOK_SECRET_TOKEN','X-Gitlab-Token','.codex-review.json']) {
   assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `runtime compatibility residue forbidden: ${forbidden}`);
 }
-assert.match(fs.readFileSync(path.join(root, 'src', 'codex.js'), 'utf8'), /codex-safe-core\/codex-cli/);
+const codexSource = fs.readFileSync(path.join(root, 'src', 'codex.js'), 'utf8');
+const runnerSource = fs.readFileSync(path.join(root, 'src', 'runner-server.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf8');
+assert.match(codexSource, /codex-safe-core\/codex-cli/);
+assert.match(codexSource, /assertRunnerCapability/);
+assert.match(codexSource, /REVIEW_PROMPT_CONTRACT_VERSION/);
+assert.match(runnerSource, /capabilityEnvelope/);
+assert.match(runnerSource, /promptContractVersion/);
+assert.match(indexSource, /installFairScheduling/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /codex-safe-core\/review-rules/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /policy\?\.reviewRules \|\| \{\}/, 'deterministic analyzers must consume Policy v3 review.rules');
 assert.match(fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8'), /buildReviewEvidenceChunks/);
@@ -76,4 +84,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v3 runtime, package boundary, owner-only recovery and immutable release policy verified.');
+console.log('Codex Review Service Family v4 runtime, exact Core pin, fair scheduling, Runner contract, package boundary and immutable release policy verified.');
