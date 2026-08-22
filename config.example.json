@@ -55,7 +55,6 @@
     "pollIntervalMs": 1000,
     "maxQueueDepth": 200,
     "projectPolicyEnabled": true,
-    "projectPolicyFile": ".codex-review.json",
     "projectPolicyMaxBytes": 65536,
     "autoResolveObsolete": true,
     "triggerOnOpen": true,
