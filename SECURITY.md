@@ -51,9 +51,11 @@ MR title/description, filenames, diffs, source text, comments, generated content
 
 `.codex-review.json` is read only from immutable target `diff_refs.start_sha`, never the unreviewed source branch. Repository policy may narrow resource ceilings or add deterministic checks, but cannot weaken global blocking threshold, confidence floor, Safe Contract, credentials, project-scope rules or service concurrency.
 
-## Snapshot and publication safety
+## Snapshot, scope and publication safety
 
 Every review binds target `start_sha` and source `head_sha`. New snapshots supersede old work; stale Summary/Finding actions revalidate the current MR before writing. Delayed `running` status cannot overwrite terminal state, and superseded/closed reviews close as `canceled`.
+
+Publication also rechecks the current runtime Project Scope. If a repository leaves the configured Projects/Groups scope while an old review or Outbox action is still pending, that publication is canceled locally and no further GitLab mutation is performed for the removed project.
 
 Review results/findings and publication actions are committed together. Publisher Workers consume the persistent Outbox separately, so GitLab write retries/restarts do not implicitly rerun Codex.
 
@@ -81,9 +83,11 @@ Logs/traces remain metadata-only. Prometheus avoids project/repository/branch la
 
 ## Deployment hardening
 
-Run services as non-login users, keep environment files `0600`, terminate TLS at a trusted internal proxy, keep the Controller listener on loopback where possible, restrict webhook ingress to GitLab/trusted ingress, and keep health/metrics on trusted monitoring networks.
+Run services as non-login users, terminate TLS at a trusted internal proxy, keep the Controller listener on loopback where possible, restrict webhook ingress to GitLab/trusted ingress, and keep health/metrics on trusted monitoring networks.
 
-Hardened Runner mode should additionally restrict Runner egress to required OpenAI/Codex endpoints and prevent routing to the internal GitLab API.
+For Standard Deployment, `/etc/codex-review-service.env` may be `0640 root:codex-review`: the Controller account already needs these credentials, and this permits `node --env-file=... src/doctor.js` to validate the exact service environment without copying secrets to command arguments. Do not grant that group membership to unrelated users.
+
+For Hardened Deployment, keep the Runner credential file readable only by the system manager/root as appropriate; do not make the Controller account able to read Runner Codex/OpenAI credentials. Hardened Runner mode should additionally restrict Runner egress to required OpenAI/Codex endpoints and prevent routing to the internal GitLab API.
 
 ## Supply-chain controls
 
