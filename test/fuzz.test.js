@@ -1,0 +1,9 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');const{verifyWebhook,normalizeEvent}=require('../src/webhook');const{parseChangedLines}=require('../src/review');
+function cfg(){const key=Buffer.alloc(32,9);return{webhookSigningToken:`whsec_${key.toString('base64')}`,webhookSecretToken:'legacy',webhookMaxSkewSeconds:300,webhookExpectedInstance:'https://gitlab.test',requireInstanceHeader:true,botUsername:'bot',triggerOnOpen:true,triggerOnPush:true,triggerOnReopen:true,gitlabProjectAllowlist:new Set([7]),key};}
+
+test('malformed webhook headers and bodies never throw across fuzz corpus',()=>{const c=cfg();for(let i=0;i<250;i++){const body=crypto.randomBytes(i%64).toString('base64'),headers={'webhook-id':i%5===0?'bad\nvalue':`id-${i}`,'webhook-timestamp':String(i%3===0?'nan':1000+i),'webhook-signature':crypto.randomBytes(24).toString('hex'),'x-gitlab-instance':i%7===0?'not a url':'https://gitlab.test'};assert.doesNotThrow(()=>verifyWebhook(headers,body,c,1000*1000));}});
+
+test('event normalization does not trust random payload shapes',()=>{const c=cfg(),values=[null,{},[],{object_kind:'merge_request'},{project:{id:'x'},object_attributes:{iid:'bad'}},{object_kind:'note',project:{id:7},user:{id:1},merge_request:{iid:2},object_attributes:{action:'update',note:'/codex review'}}];for(const payload of values){if(payload===null)continue;const result=normalizeEvent(payload,{},c);assert.equal(typeof result.shouldReview,'boolean');}});
+
+test('unified diff parser remains bounded and deterministic on adversarial text',()=>{for(let i=0;i<200;i++){const lines=['@@ -1,1 +1,1 @@',...Array.from({length:i%40},(_,n)=>n%3===0?`+${'x'.repeat(n)}`:n%3===1?`-${'y'.repeat(n)}`:` ${'z'.repeat(n)}`)];const first=parseChangedLines(lines.join('\n')),second=parseChangedLines(lines.join('\n'));assert.deepEqual(first,second);assert.ok(first.new.length+first.old.length<=40);}});
