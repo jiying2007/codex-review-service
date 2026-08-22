@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0 - 2026-08-22
+
+### Codex Safe Family v3 convergence
+
+- Pinned `codex-safe-core` 3.0.1 at `e6e25b502aa35a079f660346785cf283fe293b6d` and delegated shared Codex/process Safe Runtime to Core for both inline and isolated Runner modes.
+- Hard-switched repository policy to target-branch `.codex-safe.json` Policy Schema v3; removed the Service-only `.codex-review.json` parser/file-name configuration and all Policy v2 fallback behavior.
+- Unified deterministic `review.rules` through Core, including forbidden-path and code-without-test gates, with Service findings retaining exact GitLab old/new changed-line anchors.
+- Replaced Service-owned diff chunking with Core coverage-preserving Review Evidence chunks while retaining immutable GitLab `start_sha`/`head_sha` provider evidence acquisition.
+- Added GitLab-MR Review Receipt v3 and SQLite schema 4; receipt, findings, run metadata, and publication Outbox are committed atomically.
+- Preserved durable multi-repository Project/Group discovery, per-MR serialization, transactional Outbox publication, rate limiting, circuit breaking, token budgets, and scope-removal publication cancellation.
+- Added Family v3 permanent boundary checks proving the exact Core pin, zero legacy runtime inputs, Policy/Receipt versions, schema 4, and deterministic rule wiring.
+- Added immutable release governance: Node 22.13/24 validation, explicit runtime TGZ allowlist, SHA256, provenance attestation, non-recursive tag creation, no release-asset overwrite, missing-tag recovery, and OWNER-only `/release-retry` recovery.
+
 ## 2.0.0 - 2026-08-22
 
 ### Terminal configuration and repository-hygiene model
