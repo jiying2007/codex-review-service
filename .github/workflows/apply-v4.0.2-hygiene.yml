@@ -1,0 +1,51 @@
+name: Apply v4.0.2 runtime hygiene
+
+on:
+  push:
+    branches: [v4.0.2-runtime-hygiene]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v4.0.2-runtime-hygiene
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Remove stale Receipt label and prepare 4.0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          let review=fs.readFileSync('src/review.js','utf8');
+          const stale='Review Receipt v3 projection is invalid';
+          if(!review.includes(stale)) throw new Error('stale Receipt v3 runtime label not found');
+          review=review.replace(stale,'Review Receipt projection is invalid');
+          fs.writeFileSync('src/review.js',review);
+          for(const file of ['package.json','package-lock.json']){
+            const data=JSON.parse(fs.readFileSync(file,'utf8')); data.version='4.0.2';
+            if(file==='package-lock.json'&&data.packages?.['']) data.packages[''].version='4.0.2';
+            fs.writeFileSync(file,JSON.stringify(data,null,2)+'\n');
+          }
+          let changelog=fs.readFileSync('CHANGELOG.md','utf8');
+          if(!changelog.includes('## 4.0.2')) changelog=changelog.replace('# Changelog\n','# Changelog\n\n## 4.0.2 - 2026-08-23\n\n### Runtime hygiene\n\n- Remove obsolete Review Receipt version labels from current runtime errors; Receipt v4 remains enforced by the canonical contract.\n');
+          fs.writeFileSync('CHANGELOG.md',changelog);
+          let verifier=fs.readFileSync('scripts/verify-family-v4.js','utf8');
+          verifier=verifier.replace("assert.equal(pkg.version, '4.0.1');","assert.equal(pkg.version, '4.0.2');");
+          const anchor="assert.match(fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8'), /buildReviewEvidenceChunks/);";
+          if(verifier.includes(anchor)&&!verifier.includes('obsolete Review Receipt version labels')) verifier=verifier.replace(anchor,"const reviewSource = fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8');\nassert.match(reviewSource, /buildReviewEvidenceChunks/);\nassert.doesNotMatch(reviewSource, /Review Receipt v[123]\\b/, 'Current Service runtime must not carry obsolete Review Receipt version labels.');");
+          fs.writeFileSync('scripts/verify-family-v4.js',verifier);
+          NODE
+          rm .github/workflows/apply-v4.0.2-hygiene.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/review.js package.json package-lock.json CHANGELOG.md scripts/verify-family-v4.js .github/workflows/apply-v4.0.2-hygiene.yml
+          git diff --cached --check
+          git commit -m "fix: remove stale Review Receipt runtime label"
+          git push origin HEAD:v4.0.2-runtime-hygiene
