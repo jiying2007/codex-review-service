@@ -15,14 +15,26 @@ Codex Review Service v3.0 is a single-node stateful service backed by SQLite `WA
 - **Standard Deployment**: one `codex-review-service` process with inline Codex.
 - **Hardened Deployment**: Controller + isolated Unix-socket Runner.
 
-Both use the same `/etc/codex-review/config.json`. Use exactly one active Controller per SQLite database; never place SQLite on NFS/SMB/network filesystems.
+System-level deployments explicitly use the same `/etc/codex-review/config.json`; direct user-mode execution follows XDG defaults. Use exactly one active Controller per SQLite database; never place SQLite on NFS/SMB/network filesystems.
 
 ## Configuration ownership
+
+Direct user-mode execution requires no root-owned paths:
+
+```text
+${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
+${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
+```
+
+`CODEX_REVIEW_CONFIG_FILE` explicitly overrides the config path. Relative XDG home values are ignored.
+
+System-level systemd deployment deliberately pins administrator-owned paths instead of relying on runtime defaults:
 
 ```text
 /etc/codex-review/config.json        non-secret product configuration
 /etc/codex-review-service.env        GitLab/OpenAI secrets only
 /etc/codex-review-runner.env         optional Runner OpenAI secret only
+/var/lib/codex-review                state (via config + StateDirectory)
 ```
 
 Supported process environment is intentionally narrow: optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`. Do not reintroduce non-secret environment overrides.

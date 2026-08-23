@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.3
+
+- Make direct runtime defaults rootless: config follows XDG config home and persistent state follows XDG state home.
+- Keep system-level deployment deterministic by explicitly pinning `/etc/codex-review/config.json` in both systemd units and `/var/lib/codex-review` in the production config example.
+- Add regression coverage for XDG overrides, relative-XDG fallback, and default state resolution.
+
+
 ## 4.0.2 - 2026-08-23
 
 ### Runtime hygiene

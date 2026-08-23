@@ -32,11 +32,13 @@ Core 负责跨产品共用的 Codex / Process / Policy / Review Evidence / Recei
 
 ## 唯一配置模型
 
-所有非 Secret 服务配置只来自：
+所有非 Secret 服务配置仍只来自一份 JSON。普通用户直接运行时默认：
 
 ```text
-/etc/codex-review/config.json
+${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ```
+
+系统级 systemd 部署显式固定为 `/etc/codex-review/config.json`。
 
 环境变量仅允许：
 

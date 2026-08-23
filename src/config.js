@@ -1,6 +1,7 @@
 'use strict';
 
 const fs=require('node:fs');
+const os=require('node:os');
 const path=require('node:path');
 const SEVERITIES=Object.freeze(['critical','high','medium','low','info']);
 const TOP_KEYS=new Set(['server','gitlab','webhook','review','codex','runner','publication','lifecycle','observability']);
@@ -28,7 +29,10 @@ function positiveIds(value,label){if(value===undefined)return[];if(!Array.isArra
 function parseGroups(value){if(value===undefined)return[];if(!Array.isArray(value)||value.length>1000)throw configError('gitlab.groups must be an array');const seen=new Set(),groups=[];for(const raw of value){const item=assertObject(raw,'gitlab.groups[]');assertKeys(item,new Set(['id','includeSubgroups']),'gitlab.groups[]');if(!Number.isInteger(item.id)||item.id<=0)throw configError('gitlab.groups[].id must be a positive integer');const includeSubgroups=boolValue(item.includeSubgroups,false,'gitlab.groups[].includeSubgroups'),key=`${item.id}:${includeSubgroups}`;if(!seen.has(key)){seen.add(key);groups.push({id:item.id,includeSubgroups});}}return groups;}
 function validateSigningToken(value){const token=String(value||'').trim();if(!token)throw new Error('GITLAB_WEBHOOK_SIGNING_TOKEN is required');if(!token.startsWith('whsec_'))throw new Error('GITLAB_WEBHOOK_SIGNING_TOKEN must start with whsec_');const encoded=token.slice(6),key=Buffer.from(encoded,'base64');if(key.length!==32||encoded.replace(/=+$/,'')!==key.toString('base64').replace(/=+$/,''))throw new Error('GITLAB_WEBHOOK_SIGNING_TOKEN must contain valid base64 for exactly 32 bytes');return token;}
 function requiredSecret(name){const value=String(process.env[name]||'').trim();if(!value)throw new Error(`${name} is required`);if(/[\r\n\0]/.test(value))throw new Error(`${name} is invalid`);return value;}
-function loadStructuredConfig(filePath=process.env.CODEX_REVIEW_CONFIG_FILE||'/etc/codex-review/config.json'){
+function resolveXdgHome(name,fallback,env=process.env){const configured=String(env[name]||'').trim();if(configured&&path.isAbsolute(configured))return path.normalize(configured);const home=String(env.HOME||os.homedir()||'').trim();if(!home||!path.isAbsolute(home))throw configError(`Unable to resolve user home for ${name}`);return path.join(home,...fallback);}
+function defaultConfigPath(env=process.env){return path.join(resolveXdgHome('XDG_CONFIG_HOME',['.config'],env),'codex-review','config.json');}
+function defaultStateDir(env=process.env){return path.join(resolveXdgHome('XDG_STATE_HOME',['.local','state'],env),'codex-review');}
+function loadStructuredConfig(filePath=process.env.CODEX_REVIEW_CONFIG_FILE||defaultConfigPath()){
   if(!fs.existsSync(filePath))throw configError(`Configuration file does not exist: ${filePath}`);
   let root;try{root=JSON.parse(fs.readFileSync(filePath,'utf8'));}catch(cause){const error=configError(`Configuration file is not valid JSON: ${filePath}`);error.cause=cause;throw error;}
   root=assertObject(root,'config');assertKeys(root,TOP_KEYS,'config');
@@ -39,7 +43,7 @@ function loadConfig(){
   const structured=loadStructuredConfig(),s=structured.value.server,g=structured.value.gitlab,w=structured.value.webhook,r=structured.value.review,c=structured.value.codex,runner=structured.value.runner,pub=structured.value.publication,life=structured.value.lifecycle,obs=structured.value.observability;
   const gitlabBaseUrl=normalizeBaseUrl(stringValue(g.baseUrl,'','gitlab.baseUrl'),'gitlab.baseUrl'),projects=new Set(positiveIds(g.projects,'gitlab.projects')),groups=parseGroups(g.groups);if(!projects.size&&!groups.length)throw configError('Configure at least one gitlab.projects or gitlab.groups entry');
   const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,'/run/codex-review-runner/runner.sock','runner.socket',2048);if(runnerMode==='isolated'&&!runnerSocket.startsWith('/'))throw configError('runner.socket must be an absolute Unix socket path');
-  const dataDir=path.resolve(stringValue(s.dataDir,'/var/lib/codex-review','server.dataDir',2048)),language=enumValue(r.language,'zh-CN','review.language',['zh-CN','en']),blockingSeverity=enumValue(r.blockingSeverity,'high','review.blockingSeverity',SEVERITIES);
+  const dataDir=path.resolve(stringValue(s.dataDir,defaultStateDir(),'server.dataDir',2048)),language=enumValue(r.language,'zh-CN','review.language',['zh-CN','en']),blockingSeverity=enumValue(r.blockingSeverity,'high','review.blockingSeverity',SEVERITIES);
   return Object.freeze({
     configFilePath:structured.path,gitlabProjectAllowlist:projects,gitlabGroups:Object.freeze(groups.map(Object.freeze)),
     host:stringValue(s.host,'127.0.0.1','server.host',255)||'127.0.0.1',port:intValue(s.port,8787,'server.port',1,65535),dataDir,dbPath:path.join(dataDir,'review-service.sqlite'),
@@ -56,4 +60,4 @@ function loadConfig(){
     otelEndpoint:stringValue(obs.otelEndpoint,'','observability.otelEndpoint',2048),otelServiceName:stringValue(obs.serviceName,'codex-review-service','observability.serviceName',255)||'codex-review-service',otelExportTimeoutMs:intValue(obs.exportTimeoutMs,3000,'observability.exportTimeoutMs',100,60000)
   });
 }
-module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,SEVERITIES,parseGroups,positiveIds,configError};
+module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError};

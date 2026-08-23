@@ -10,6 +10,7 @@ Type=simple
 User=codex-review-runner
 Group=codex-review
 WorkingDirectory=/opt/codex-review-service
+Environment=CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json
 EnvironmentFile=/etc/codex-review-runner.env
 ExecStart=/usr/bin/node /opt/codex-review-service/src/runner-server.js
 Restart=on-failure
