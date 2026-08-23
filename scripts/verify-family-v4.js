@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
 const expectedCore = '21be53cf90e586880c30a7a9bd56bb7cad5fa563';
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '4.0.2');
+assert.equal(pkg.version, '4.0.3');
 assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
@@ -93,4 +93,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.2 Family v4 runtime, coordinated Safe Core maintenance pin, lifecycle, Runner contract, package boundary and immutable release policy verified.');
+console.log('Codex Review Service 4.0.3 Family v4 runtime, coordinated Safe Core maintenance pin, rootless XDG defaults, lifecycle, Runner contract, package boundary and immutable release policy verified.');
