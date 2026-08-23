@@ -1,0 +1,54 @@
+name: Normalize XDG v4.0.3 PR
+on:
+  pull_request_target:
+    types: [opened]
+permissions:
+  contents: write
+jobs:
+  normalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'xdg-runtime-defaults-v4.0.3' && github.event.pull_request.author_association == 'OWNER'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: xdg-runtime-defaults-v4.0.3
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Normalize docs and release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('README.md'); s=p.read_text()
+          old="All non-secret service configuration comes only from:\n\n```text\n/etc/codex-review/config.json\n```"
+          if old in s:
+              s=s.replace(old,"All non-secret service configuration comes from one JSON file. Direct user-mode execution defaults to:\n\n```text\n${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json\n```\n\nSystem-level systemd deployment explicitly pins `/etc/codex-review/config.json`.")
+          p.write_text(s)
+          p=Path('README.zh-CN.md'); s=p.read_text()
+          old="所有非 Secret 服务配置只来自：\n\n```text\n/etc/codex-review/config.json\n```"
+          if old not in s: raise SystemExit('README.zh marker missing')
+          s=s.replace(old,"所有非 Secret 服务配置仍只来自一份 JSON。普通用户直接运行时默认：\n\n```text\n${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json\n```\n\n系统级 systemd 部署显式固定为 `/etc/codex-review/config.json`。")
+          p.write_text(s)
+          p=Path('OPERATIONS.md'); s=p.read_text()
+          s=s.replace('Both use the same `/etc/codex-review/config.json`.', 'System-level deployments explicitly use the same `/etc/codex-review/config.json`; direct user-mode execution follows XDG defaults.')
+          old="""## Configuration ownership\n\n```text\n/etc/codex-review/config.json        non-secret product configuration\n/etc/codex-review-service.env        GitLab/OpenAI secrets only\n/etc/codex-review-runner.env         optional Runner OpenAI secret only\n```"""
+          new="""## Configuration ownership\n\nDirect user-mode execution requires no root-owned paths:\n\n```text\n${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json\n${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/\n```\n\n`CODEX_REVIEW_CONFIG_FILE` explicitly overrides the config path. Relative XDG home values are ignored.\n\nSystem-level systemd deployment deliberately pins administrator-owned paths instead of relying on runtime defaults:\n\n```text\n/etc/codex-review/config.json        non-secret product configuration\n/etc/codex-review-service.env        GitLab/OpenAI secrets only\n/etc/codex-review-runner.env         optional Runner OpenAI secret only\n/var/lib/codex-review                state (via config + StateDirectory)\n```"""
+          if old in s: s=s.replace(old,new)
+          p.write_text(s)
+          p=Path('CHANGELOG.md'); s=p.read_text()
+          if '## 4.0.3' not in s:
+              s=s.replace('# Changelog\n', "# Changelog\n\n## 4.0.3\n\n- Make direct runtime defaults rootless: config follows XDG config home and persistent state follows XDG state home.\n- Keep system-level deployment deterministic by explicitly pinning `/etc/codex-review/config.json` in both systemd units and `/var/lib/codex-review` in the production config example.\n- Add regression coverage for XDG overrides, relative-XDG fallback, and default state resolution.\n\n")
+          p.write_text(s)
+          PY
+          npm version 4.0.3 --no-git-tag-version
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add README.md README.zh-CN.md OPERATIONS.md CHANGELOG.md package.json package-lock.json
+          git diff --cached --check
+          git commit -m 'release: prepare v4.0.3 rootless defaults'
+          git push origin HEAD:xdg-runtime-defaults-v4.0.3
