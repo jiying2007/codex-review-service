@@ -2,14 +2,14 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for GitLab Self-Managed merge requests. **v3.0 is the server-side enforcement member of the Codex Safe family** and consumes the same commit-pinned `codex-safe-core` runtime, Policy Schema v3, Review Evidence semantics, deterministic review rules, and Review Receipt v4 contract as the local products.
+Production-grade, self-hosted Codex review enforcement for GitLab Self-Managed merge requests. This repository is the server-side enforcement member of the **Codex Safe Family v4** and consumes one exact commit-pinned `codex-safe-core` 4 runtime with Safe Contract v2, Policy Schema v3, Review Evidence, deterministic Review Rules, and Review Receipt v4.
 
 ## Product-family boundary
 
 ```text
-                     codex-safe-core 3.0.1
+                     codex-safe-core 4
               Safe Contract v2 / Policy v3
-           Review Evidence / Rules / Receipt v3
+           Review Evidence / Rules / Receipt v4
                            │
        ┌───────────────────┼───────────────────┐
        │                   │                   │
@@ -28,25 +28,36 @@ Core owns shared Codex/process/policy/review-evidence/receipt semantics. This re
 - Node.js **22.13+**
 - GitLab Self-Managed **19.1+** with Standard Webhooks Signing Token
 - GitLab API token scoped only to required project/group/MR/repository/discussion/status operations
-- OpenAI Codex CLI authenticated as the service user, or as the isolated Runner user in Hardened mode
+- OpenAI Codex CLI authenticated as the execution user, or `OPENAI_API_KEY`
 
 ## Canonical configuration
 
-All non-secret service settings still live in exactly one JSON file. Direct user-mode execution defaults to:
+There is exactly one non-secret JSON configuration source. The location depends on how the process is launched; the schema and precedence do not.
+
+Direct user-mode execution defaults to:
 
 ```text
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ```
 
-Persistent state defaults to:
+If `server.dataDir` is omitted, persistent state defaults to:
 
 ```text
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-`CODEX_REVIEW_CONFIG_FILE` explicitly overrides the config path. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored; the standard `$HOME` fallbacks are used instead. System-level systemd deployment explicitly pins `/etc/codex-review/config.json`, while the production example explicitly uses `/var/lib/codex-review` for state.
+`CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored and fall back to the standard `$HOME` locations.
 
-Copy [`config.example.json`](config.example.json). Environment input is intentionally limited to credentials and the optional config path:
+System-level systemd deployment deliberately pins:
+
+```text
+/etc/codex-review/config.json
+/var/lib/codex-review
+```
+
+The production [`config.example.json`](config.example.json) explicitly uses `/var/lib/codex-review`, while both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime code does not detect root, sudo, or systemd.
+
+Supported environment input is intentionally narrow:
 
 ```text
 CODEX_REVIEW_CONFIG_FILE
@@ -59,12 +70,12 @@ There is no non-secret environment override layer.
 
 ## Direct user-mode run
 
-No root-owned runtime path is required. Create the XDG config directory, copy the example, and adjust `server.dataDir` or remove it to use the XDG state default:
+No root-owned runtime path is required:
 
 ```bash
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
 cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
-# edit config.json for your GitLab scope; remove server.dataDir for the XDG state default
+# Edit GitLab scope. Remove server.dataDir to use the XDG state default.
 
 export GITLAB_API_TOKEN=...
 export GITLAB_WEBHOOK_SIGNING_TOKEN=...
@@ -72,16 +83,16 @@ codex login
 npm start
 ```
 
-## Standard Deployment
+## System-level deployment
 
-The default production topology is one process:
+The default production topology is one Controller with inline Codex:
 
 ```text
 GitLab → codex-review-service
             ├─ SQLite WAL + synchronous=FULL
             ├─ Review Workers
             ├─ Transactional Publication Outbox
-            └─ Codex Safe Core → Codex CLI (inline)
+            └─ Codex Safe Core → Codex CLI
 ```
 
 ```bash
@@ -106,27 +117,25 @@ curl -fsS http://127.0.0.1:8787/health/ready
 
 ## Multi-repository scope
 
-One instance manages explicit Projects and/or Groups:
+One instance can manage explicit Projects and/or Groups:
 
 ```json
 {
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
-    "groups": [
-      { "id": 20, "includeSubgroups": true }
-    ]
+    "groups": [{ "id": 20, "includeSubgroups": true }]
   },
   "review": { "concurrency": 4 },
   "runner": { "mode": "inline" }
 }
 ```
 
-Group discovery is paginated and fail-closed. A newly discovered set replaces the active scope only after complete discovery; failed refresh keeps the last complete scope and makes readiness unhealthy. Different MRs may run concurrently while one MR remains serialized.
+Group discovery is paginated and fail-closed. The active scope changes only after complete discovery succeeds; a failed refresh retains the previous complete set and makes readiness unhealthy. Different MRs may run concurrently while each MR remains serialized.
 
-## Hardened Deployment
+## Hardened deployment
 
-For credential/process isolation:
+Set `runner.mode="isolated"` to separate GitLab credentials from Codex/OpenAI credentials:
 
 ```json
 {
@@ -137,7 +146,7 @@ For credential/process isolation:
 }
 ```
 
-Controller and Runner read the same canonical `config.json`. The Controller owns GitLab credentials and SQLite. The Runner owns Codex/OpenAI credentials, receives only bounded review input through the Unix socket, and has no GitLab credentials. Both execution modes use the same Safe Core runtime and Safe Contract.
+Controller and Runner consume the same canonical `config.json`. In system-level deployment both units explicitly point to `/etc/codex-review/config.json`; the Runner has no GitLab credential.
 
 ## Webhook contract
 
@@ -147,81 +156,29 @@ Configure GitLab 19.1+ **Merge request events** and **Note events** at:
 https://review.example.internal/webhooks/gitlab
 ```
 
-The receiver requires `webhook-id`, `webhook-timestamp`, `webhook-signature`, validates HMAC over the exact raw body, enforces timestamp skew, validates `X-Gitlab-Instance`, deduplicates delivery IDs, durably enqueues locally, and returns quickly.
+The receiver validates Standard Webhooks signing metadata, exact raw-body HMAC, replay window, expected GitLab instance, delivery identity, and resolved scope before durably enqueuing work.
 
 ## Repository Policy v3
 
-The only repository policy is target-branch **`.codex-safe.json`**. The service reads it from the exact `diff_refs.start_sha` and validates it with the pinned Core closed schema. See [`.codex-safe.example.json`](.codex-safe.example.json).
+The only repository policy is target-branch **`.codex-safe.json`**. It is read from the immutable target `diff_refs.start_sha` and validated by the pinned Core closed schema. Shared `review` policy is consumed by both local Review Safe and Review Service; service-only provider/context controls live under `reviewService`.
 
-Shared `review` policy is consumed by both local Review Safe and Review Service. Service-only provider/context controls live under `reviewService`.
+Repository policy may narrow ceilings and strengthen deterministic gates. It cannot weaken service-wide blocking/confidence/security/capacity boundaries.
 
-```json
-{
-  "schemaVersion": 3,
-  "review": {
-    "language": "zh-CN",
-    "maxDiffBytes": 524288,
-    "maxFindings": 30,
-    "severityThreshold": "low",
-    "confidenceThreshold": 0.7,
-    "rules": {
-      "requireTestsForCodeChanges": true,
-      "codePathPrefixes": ["src/"],
-      "testPathPrefixes": ["test/", "tests/"],
-      "forbiddenPathPrefixes": []
-    }
-  },
-  "reviewService": {
-    "maxContextBytes": 131072,
-    "maxContextFiles": 8,
-    "contextLines": 16,
-    "skipGeneratedFiles": true,
-    "blockUnreviewableFiles": false
-  }
-}
-```
+## Review evidence and receipts
 
-Repository policy may narrow resource ceilings and strengthen deterministic gates; it cannot weaken service-wide blocking/confidence/security/capacity boundaries.
+Provider patches are normalized into Core Review Evidence chunks without silent hunk truncation. Findings must resolve to exact changed lines; model line numbers are never repaired or relocated.
 
-## Review Evidence and exact-line semantics
+SQLite schema **4** stores the canonical GitLab-MR Review Receipt v4 projection and fingerprint with the run, findings, and publication plan in one durable transaction. SQLite remains the Service source of truth; Receipt v4 is the cross-product audit/provenance projection.
 
-GitLab hunk-only patches are normalized by the provider adapter into canonical unified-diff blocks, then passed to Core `buildReviewEvidenceChunks()`. `maxDiffBytes` is a per-review-evidence chunk budget. Changed hunks are never silently head/tail truncated: a hunk is reviewed or produces an explicit coverage gap.
+## Reliability invariants
 
-Service retains the complete provider diff metadata for exact `old/new` changed-line validation and stable anchors. Model findings are never relocated to nearby lines.
-
-## Immutable context
-
-Additional source windows are acquired by the Service through GitLab Repository API only at the captured source `head_sha` and target `start_sha`. Reviewed repository code is never checked out or executed by the service. Core receives the resulting bounded evidence but does not own GitLab provider access.
-
-## Review Receipt v4 and durability
-
-SQLite schema **4** stores a canonical GitLab-MR Review Receipt v4 projection and fingerprint in `review_runs`. Receipt, run, findings, and publication plan are committed in the same `BEGIN IMMEDIATE` transaction.
-
-The receipt binds:
-
-```text
-projectId + MR iid + startSha + headSha
-+ diff fingerprint + policy fingerprint
-+ quality/readiness/mechanical/coverage verdicts
-+ model + Codex version + timestamp
-```
-
-SQLite remains the Service source of truth; Receipt v3 is the cross-product audit/provenance projection, not a second storage system.
-
-## Reliability and security invariants
-
-- SQLite `WAL + synchronous=FULL` backs acknowledged local state;
-- review execution and GitLab publication are independent durable failure domains;
-- target `start_sha` + source `head_sha` identify the reviewed MR snapshot;
-- stale snapshots and projects removed from dynamic scope cannot publish;
-- status binds source project/ref and exact `pipeline_id` when resolvable;
-- exact changed-line validation with no relocation;
-- stable code-anchor finding identity;
-- provider/context/evidence coverage gaps fail closed;
-- deterministic `review.rules` semantics come from Safe Core;
-- token usage and MR/project budgets are persisted and enforced;
-- GitLab traffic is rate-limited and circuit-breaker protected;
-- GitHub Actions are pinned to immutable full commit SHAs.
+- SQLite local-filesystem `WAL + synchronous=FULL`;
+- review and GitLab publication are separate durable failure domains;
+- every review binds target `start_sha` + source `head_sha`;
+- stale or out-of-scope results cannot publish;
+- publication retry never reruns an already persisted review;
+- Project/Group discovery is atomic and fail-closed;
+- GitHub Actions are full-SHA pinned.
 
 ## Health and operations
 
@@ -231,7 +188,7 @@ GET /health/ready
 GET /metrics
 ```
 
-`npm run doctor` validates canonical config, SQLite durability/schema, Core-backed Codex/Runner capability, GitLab reachability, and complete Project/Group scope without executing reviewed code.
+`npm run doctor` validates canonical config, state/database readiness, Core-backed Codex/Runner capability, GitLab reachability, and complete Project/Group scope without executing reviewed repository code.
 
 See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), and [CHANGELOG.md](CHANGELOG.md).
 
@@ -245,4 +202,4 @@ npm pack --dry-run --ignore-scripts
 npm run release:check
 ```
 
-CI validates Node.js 22.13.0 and Node.js 24. A version change on `main` triggers the Release workflow, which repeats the dual-Node validation, creates exactly one `codex-review-service-<version>.tgz`, generates `SHA256SUMS`, creates GitHub build-provenance attestations, creates/validates the immutable `v<version>` tag, and publishes the GitHub Release.
+CI validates Node.js 22.13.0 and Node.js 24. Versioned releases generate an immutable TGZ, SPDX SBOM, SHA256 checksums, provenance attestation, and immutable `v<version>` tag/Release.

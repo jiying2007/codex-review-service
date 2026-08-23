@@ -2,41 +2,41 @@
 
 ## Family v4 contract
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v4 are owned by the commit-pinned `codex-safe-core` 4.0.0.
+- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic Review Rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
 - Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
-- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
-- Standard and isolated Runner modes execute the same Core runtime.
-
+- Standard and isolated Runner modes execute the same Core runtime and Safe Contract.
 
 ## Deployment trust levels
 
-Codex Review Service v3.0 supports two deployment levels with identical Review/Gate/Outbox semantics:
+Codex Review Service 4.x supports three execution contexts with one security/configuration model:
 
-- **Standard**: one Controller process owns GitLab credentials, SQLite, and inline Codex execution. The Codex child receives only a strict environment allowlist; GitLab credentials are excluded.
-- **Hardened**: Controller and Codex Runner are separate Unix users/processes over a local Unix socket. Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no GitLab credential.
+- **Direct user mode**: the invoking user owns the XDG config/state paths and Codex credentials.
+- **Standard system deployment**: one non-login Controller user owns GitLab credentials/state and runs inline Codex with a strict child environment allowlist.
+- **Hardened system deployment**: Controller and Codex Runner are separate Unix users/processes over a local Unix socket; Runner owns Codex/OpenAI credentials and no GitLab credential.
 
 ## Configuration boundary
 
-All non-secret product settings come from `/etc/codex-review/config.json`. The only supported environment inputs are optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`.
+There is exactly one non-secret JSON configuration source. Its default location is context-specific, not globally hard-coded:
 
-Unknown config sections/fields, invalid values, missing config, empty Project/Group scope, or invalid Signing Token fail startup. Do not reintroduce alternate env configuration paths.
+```text
+Direct user mode:
+${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
+
+System-level systemd:
+/etc/codex-review/config.json
+```
+
+Direct user state defaults to `${XDG_STATE_HOME:-$HOME/.local/state}/codex-review` when `server.dataDir` is omitted. Production system config explicitly uses `/var/lib/codex-review`.
+
+`CODEX_REVIEW_CONFIG_FILE` explicitly selects the config file. The only other supported process inputs are required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`. Unknown config sections/fields, invalid values, missing config, empty Project/Group scope, or invalid Signing Token fail startup. Do not reintroduce non-secret environment overrides, UID/root detection, or implicit alternate configuration sources.
 
 ## Webhook authentication
 
-v2 requires GitLab Self-Managed 19.1+ Signing Tokens. The receiver validates:
-
-- `webhook-id` delivery identity;
-- `webhook-timestamp` replay window;
-- `webhook-signature` HMAC-SHA256 over `{id}.{timestamp}.{rawBody}`;
-- multiple Standard Webhooks signatures safely;
-- `X-Gitlab-Instance` binding;
-- constant-time signature comparison.
-
-Plain-text `X-Gitlab-Token` is intentionally unsupported. Delivery IDs are persisted for idempotency. Webhook requests do no GitLab API or Codex work and return only after durable local enqueue.
+GitLab Self-Managed 19.1+ Standard Webhooks Signing Token semantics are required. The receiver validates delivery identity, timestamp replay window, HMAC-SHA256 over the exact raw body, multiple standard signatures safely, expected GitLab instance, and constant-time comparison. Plain-text `X-Gitlab-Token` is intentionally unsupported.
 
 ## Project scope
 
-Only explicit `gitlab.projects` and `gitlab.groups` are supported. Group discovery must exhaust pagination before a new scope is accepted. Failed/incomplete refresh keeps the last complete Set and marks readiness unhealthy. If a Project leaves scope, queued/new work is rejected and pending Outbox actions are canceled before any further GitLab mutation.
+Only explicit `gitlab.projects` and `gitlab.groups` are supported. Group discovery must exhaust pagination before a new scope is accepted. Failed/incomplete refresh keeps the last complete Set and marks readiness unhealthy. If a Project leaves scope, queued/new work is rejected and pending Outbox actions are canceled before another GitLab mutation.
 
 ## Codex Safe Contract
 
@@ -44,7 +44,7 @@ Codex runs in a fresh temporary directory with no approval prompts, ephemeral ex
 
 Untrusted MR title/description, filenames, diffs, source text, comments, generated content, target-policy extra instructions, and model output cannot grant tools/network/credentials or weaken Controller-owned deterministic policy.
 
-## Target policy and immutable context
+## Immutable policy and context
 
 `.codex-safe.json` is read only from immutable target `diff_refs.start_sha`. Repository policy may narrow ceilings/add deterministic checks but cannot weaken global blocking threshold, confidence floor, Safe Contract, credentials, Project Scope, or service capacity.
 
@@ -52,23 +52,13 @@ Bounded context is fetched through GitLab Repository API at exact source `head_s
 
 ## Durable acknowledgement and Outbox
 
-SQLite uses local-filesystem `WAL + synchronous=FULL`. Webhook enqueue commits before HTTP 202.
-
-Review runs/findings and publication plans commit in one transaction. Publisher Workers consume persistent Outbox actions independently, so GitLab write retries/restarts do not rerun an already persisted Codex review.
+SQLite uses local-filesystem `WAL + synchronous=FULL`. Webhook enqueue commits before HTTP 202. Review runs/findings and publication plans commit in one transaction. Publisher Workers consume persistent Outbox actions independently, so GitLab write retries/restarts do not rerun an already persisted Codex review.
 
 Stale Summary/Finding actions revalidate current MR snapshot; delayed `running` cannot overwrite terminal state; superseded/closed reviews terminate as `canceled`; out-of-scope actions are canceled locally.
 
-## Merge-gate correctness
+## Finding and gate correctness
 
-Every review binds target `start_sha` + source `head_sha`. External status is written to the correct source Project/ref and exact `pipeline_id` when resolvable. Genuine provider/local coverage gaps and unverifiable model output fail closed.
-
-## Finding validation
-
-Findings must satisfy the allowed schema, confidence floor, changed file, side, and **exact changed old/new line**. The Controller never relocates model line numbers. Finding identity uses code anchors rather than model-generated wording.
-
-## Cost and provider backpressure
-
-Codex usage is persisted per run. Optional MR/Project budgets fail closed when review cannot complete. GitLab API traffic is globally rate-limited, honors `Retry-After`, and uses a transient-failure circuit breaker.
+Every review binds target `start_sha` + source `head_sha`. Findings must satisfy the allowed schema, confidence floor, changed file, side, and exact changed old/new line. Controller never relocates model line numbers. External status is bound to the correct source Project/ref and exact `pipeline_id` when resolvable. Genuine provider/local coverage gaps and unverifiable model output fail closed.
 
 ## Storage and observability
 
@@ -78,15 +68,11 @@ Logs/traces remain metadata-only. Prometheus exposes counts/health without Proje
 
 ## Deployment hardening
 
-Run Controller/Runner as non-login users. Keep Secret env files tightly permissioned. Terminate TLS at a trusted internal proxy, keep Controller on loopback where possible, restrict webhook ingress to GitLab/trusted ingress, and expose health/metrics only to trusted monitoring networks.
-
-In Hardened mode restrict Runner egress to required OpenAI/Codex endpoints and prevent routing to internal GitLab. Both services read the same non-secret `config.json`.
+For system deployments, run Controller/Runner as non-login users, keep secret env files tightly permissioned, terminate TLS at trusted internal ingress, restrict webhook ingress to GitLab/trusted networks, and expose health/metrics only to trusted monitoring networks. In Hardened mode restrict Runner egress to required OpenAI/Codex endpoints and prevent routing to internal GitLab.
 
 ## Supply chain
 
-GitHub Actions are manually reviewed and pinned to immutable full commit SHAs. CI runs whitespace checks, syntax/contract/unit/integration/fuzz tests on Node 22.13.0 and 24, plus package dry-run. Automated tag-based GitHub Actions dependency PRs are intentionally disabled to avoid bypassing full-SHA review policy.
-
-Codex CLI versions are capability-checked and may be strictly pinned via `codex.versionPolicy` + `codex.allowedVersionPattern`.
+GitHub Actions are manually reviewed and pinned to immutable full commit SHAs. CI runs whitespace, syntax, contract, unit/integration/fuzz, Family v4 boundary checks, Node 22.13.0/24 validation, and package dry-run. Codex CLI versions are capability-checked and may be strictly pinned via canonical config.
 
 ## Reporting
 

@@ -2,53 +2,40 @@
 
 ## Family v4 contract
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v4 are owned by the commit-pinned `codex-safe-core` 4.0.0.
+- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic Review Rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
 - Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
-- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
-- Standard and isolated Runner modes execute the same Core runtime.
+- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3.
 
+## Configuration and deployment boundary
 
 ```text
-/etc/codex-review/config.json
-   │ canonical non-secret configuration
-   ▼
-Project Scope Resolver ── GitLab Group Projects API
-   │ complete atomic Projects/Groups Set
-   ▼
-Signed GitLab 19.1+ Webhook
-   │ HMAC + instance + idempotency + scope
-   ▼
-SQLite WAL/FULL review queue
-   │
-   ├── Review Workers (different MRs parallel; same MR serialized)
-   │      ├── immutable snapshot: start_sha + head_sha
-   │      ├── source project/ref/pipeline identity
-   │      ├── target policy @ start_sha
-   │      ├── provider diff completeness
-   │      ├── bounded immutable context
-   │      ├── deterministic analyzers
-   │      └── Codex Safe Contract
-   │                │
-   │                ├── Standard: inline Codex
-   │                └── Hardened: Unix socket → isolated Runner
-   │
-   └── one transaction: review run + findings + publication outbox
-                              │
-                              ▼
-                     Publication Workers
-                       ├── summary upsert
-                       ├── idempotent inline findings
-                       ├── obsolete-thread resolution
-                       └── source/pipeline-bound status
+Direct user mode                         System-level systemd
+${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
+  /codex-review/config.json                         │
+              │                                     │
+              └────────── canonical config.json ────┘
+                                   │
+                                   ▼
+                         Project Scope Resolver
+                                   │
+                                   ▼
+                       Signed GitLab 19.1+ Webhook
+                                   │
+                                   ▼
+                         SQLite WAL/FULL Queue
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+             Review Workers                Publication Workers
+                    │
+             Codex Safe Contract
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+   Standard inline      Hardened Runner
 ```
 
-## Configuration boundary
-
-`config.json` is the single non-secret configuration source for Controller and Runner. Environment is reserved for GitLab/OpenAI credentials and an optional config-path override. There are no alternate project-scope, runner-mode, lifecycle, budget, concurrency, GitLab URL, or observability env paths.
-
-## Deployment boundary
-
-Standard and Hardened modes share all queue/review/gate/outbox behavior. Hardened adds a process/user credential boundary only; it does not fork business logic.
+There is one configuration schema and one precedence model. Direct user mode defaults to XDG paths. System-level units explicitly pin `/etc/codex-review/config.json`; production config explicitly pins `/var/lib/codex-review` state. Runtime does not infer root, sudo, or systemd.
 
 ## Project-scope boundary
 
@@ -56,17 +43,17 @@ Only explicit Project IDs and Group IDs are supported. Group scope is expanded t
 
 ## Webhook boundary
 
-The receiver requires Standard Webhooks Signing Token semantics, raw-body HMAC verification, replay-window timestamp, expected GitLab instance, and durable delivery-ID idempotency. It performs no GitLab API or Codex work inside the request.
+The receiver requires Standard Webhooks Signing Token semantics, raw-body HMAC verification, replay-window timestamp, expected GitLab instance, durable delivery-ID idempotency, and resolved-scope authorization. It performs no GitLab API or Codex work inside the request.
 
 ## Failure domains
 
 Review execution and GitLab publication are separate. A GitLab write timeout cannot trigger a second Codex review after a run is persisted. Publisher retry uses persistent Outbox state, stable dedupe keys, remote fingerprint discovery, snapshot checks, and current Project Scope checks.
 
-Hardened Runner is a third security/failure domain: Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no SCM mutation capability.
+Hardened Runner is a separate security/failure domain: Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no SCM mutation capability.
 
 ## Storage boundary
 
-SQLite is the durable webhook/review queue, review metadata store, and publication Outbox. It uses local-filesystem WAL + FULL and supports one active Controller. HA must replace this boundary with equivalent transaction/idempotency/per-MR serialization/recovery semantics; do not share SQLite over a network filesystem.
+SQLite is the durable webhook/review queue, review metadata store, and publication Outbox. It uses local-filesystem WAL + FULL and supports one active Controller. Direct user mode defaults to XDG state storage when `server.dataDir` is omitted. Production system config explicitly uses `/var/lib/codex-review`. HA must replace this boundary with equivalent transaction/idempotency/per-MR serialization/recovery semantics; never share SQLite over a network filesystem.
 
 ## Snapshot boundary
 
@@ -82,4 +69,4 @@ Review Workers produce a deterministic publication plan and commit it with runs/
 
 ## Evolution rule
 
-Provider, Project Scope, storage, and Runner are explicit replacement boundaries. Future HA/provider/model transports replace one boundary cleanly. Do not reintroduce compatibility branches throughout the review engine.
+Provider, Project Scope, storage, and Runner are explicit replacement boundaries. Future HA/provider/model transports replace one boundary cleanly. Do not reintroduce compatibility branches, hidden configuration precedence, or deployment-mode guessing throughout the review engine.

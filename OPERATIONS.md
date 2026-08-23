@@ -2,49 +2,62 @@
 
 ## Family v4 contract
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v4 are owned by the commit-pinned `codex-safe-core` 4.0.0.
+- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
 - Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
 - The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
 - Standard and isolated Runner modes execute the same Core runtime.
 
-
 ## Deployment model
 
-Codex Review Service v3.0 is a single-node stateful service backed by SQLite `WAL + synchronous=FULL`. Review execution and GitLab publication are separate durable stages.
+Codex Review Service 4.x is a single-node stateful service backed by SQLite `WAL + synchronous=FULL`. Review execution and GitLab publication are separate durable stages.
 
-- **Standard Deployment**: one `codex-review-service` process with inline Codex.
-- **Hardened Deployment**: Controller + isolated Unix-socket Runner.
+- **Direct user mode**: runs as the invoking user with XDG config/state defaults and no root-owned path requirement.
+- **Standard system deployment**: one `codex-review-service` process with inline Codex.
+- **Hardened system deployment**: Controller + isolated Unix-socket Runner.
 
-System-level deployments explicitly use the same `/etc/codex-review/config.json`; direct user-mode execution follows XDG defaults. Use exactly one active Controller per SQLite database; never place SQLite on NFS/SMB/network filesystems.
+Use exactly one active Controller per SQLite database. Never place SQLite on NFS/SMB/network filesystems.
 
 ## Configuration ownership
 
-Direct user-mode execution requires no root-owned paths:
+There is one JSON configuration model, not one hard-coded filesystem location.
+
+Direct user mode:
 
 ```text
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-`CODEX_REVIEW_CONFIG_FILE` explicitly overrides the config path. Relative XDG home values are ignored.
+`CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative XDG home values are ignored and standard `$HOME` fallbacks are used.
 
-System-level systemd deployment deliberately pins administrator-owned paths instead of relying on runtime defaults:
+System-level systemd deployment explicitly owns:
 
 ```text
 /etc/codex-review/config.json        non-secret product configuration
 /etc/codex-review-service.env        GitLab/OpenAI secrets only
 /etc/codex-review-runner.env         optional Runner OpenAI secret only
-/var/lib/codex-review                state (via config + StateDirectory)
+/var/lib/codex-review                state (production config + StateDirectory)
 ```
 
-Supported process environment is intentionally narrow: optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`. Do not reintroduce non-secret environment overrides.
+Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`; runtime code does not detect root, sudo, or systemd.
 
-## Standard Deployment preflight
+Supported process environment remains intentionally narrow: optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`. Do not reintroduce non-secret environment overrides.
+
+## Direct user-mode preflight
+
+1. Install Node.js 22.13+ and the approved Codex CLI.
+2. Create `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json` from `config.example.json`.
+3. Remove `server.dataDir` if XDG state storage is desired; otherwise set an absolute writable path.
+4. Configure GitLab Project/Group scope and signing token.
+5. Authenticate Codex as the invoking user or export `OPENAI_API_KEY`.
+6. Run `npm run doctor`, then `npm start`.
+
+## Standard system deployment preflight
 
 1. Install Node.js 22.13+ and the approved Codex CLI.
 2. Require GitLab Self-Managed 19.1+ and configure a Signing Token.
 3. Create the `codex-review` non-login user.
-4. Install `config.json`, `/etc/codex-review-service.env`, and `codex-review-service.service`.
+4. Install `/etc/codex-review/config.json`, `/etc/codex-review-service.env`, and `codex-review-service.service`.
 5. Authenticate Codex as `codex-review` or provision `OPENAI_API_KEY`.
 6. Run:
 
@@ -61,9 +74,9 @@ sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/
 
 A scope refresh is atomic: all configured Group discovery must complete before the active Set changes. On provider/pagination failure, the previous complete Set remains active and readiness becomes unhealthy. If a project leaves the resolved scope, new jobs are rejected and pending Outbox actions are canceled locally before another GitLab mutation.
 
-## Hardened Deployment
+## Hardened deployment
 
-Set `runner.mode="isolated"` in `config.json`. Controller and Runner read the same file. Install `codex-review-runner.service`; keep GitLab credentials only on Controller and Codex/OpenAI credentials only on Runner.
+Set `runner.mode="isolated"` in `config.json`. Controller and Runner consume the same file. For system-level deployment both units explicitly point to `/etc/codex-review/config.json`; GitLab credentials stay only on Controller and Codex/OpenAI credentials only on Runner.
 
 Startup order:
 
@@ -114,28 +127,15 @@ curl -fsS http://127.0.0.1:8787/health/ready
 
 Back up SQLite before upgrades.
 
-## v1.x → v2.0 migration
-
-This is a deliberate breaking cleanup. Before deploying v2:
-
-1. copy all non-secret v1 environment settings into `config.json`;
-2. replace project allowlist/wildcard with explicit `gitlab.projects/groups`;
-3. configure a GitLab Signing Token;
-4. remove Legacy Secret Token configuration;
-5. set Runner mode/socket only in `config.json`;
-6. move lifecycle/budget/concurrency/Codex/OTLP settings into `config.json`;
-7. leave only v2-supported secrets in env files;
-8. run Doctor and confirm resolved Project count before restoring webhook traffic.
-
 ## Backup and restore
 
-Preferred online backup:
+For system-level deployment:
 
 ```bash
 sqlite3 /var/lib/codex-review/review-service.sqlite ".backup '/secure-backup/codex-review-$(date +%F-%H%M%S).sqlite'"
 ```
 
-For cold backup/restore stop Controller first. Codex authentication state is a separate credential asset.
+For direct user mode, use the configured `server.dataDir` or the XDG state default instead. For cold backup/restore stop Controller first. Codex authentication state is a separate credential asset.
 
 ## Monitoring
 
@@ -143,15 +143,11 @@ Alert on readiness failures, `codex_review_scope_healthy == 0`, unexpected Proje
 
 Logs/traces/metrics must remain metadata-only and avoid repository/branch labels.
 
-## Capacity
-
-Start with `review.concurrency=2` and `publication.concurrency=2`. Different MRs may run concurrently; the same MR stays serialized. Increase Review and Publisher capacity independently from measured usage.
-
 ## Common incidents
 
 ### Scope discovery failed
 
-Inspect GitLab connectivity, Group permissions and pagination settings. The service keeps the last complete scope and marks readiness unhealthy; do not manually replace it with a partial list.
+Inspect GitLab connectivity, Group permissions and pagination settings. The service keeps the last complete scope and marks readiness unhealthy.
 
 ### GitLab unavailable / rate-limited
 
@@ -173,10 +169,10 @@ Hardened only: inspect Runner service, socket ownership and Codex authentication
 
 The service fails closed. Investigate capacity/usage/evidence before raising limits.
 
-## GitHub repository governance
+## Repository governance
 
-CI action upgrades are manually reviewed and pinned to immutable full commit SHAs. Do not enable automated tag-based dependency PRs for Actions. Repository history uses squash merges for release-style `main`; branch cleanup is required after merged PRs.
+CI actions remain immutable full-SHA pinned. Repository history uses audited squash merges for release-style changes; merged feature branches are disposable and must be cleaned. Documentation-only/governance maintenance does not require product version churn when package/runtime semantics are unchanged.
 
 ## Release gate
 
-Before release require `git diff --check`, Node 22.13/24 CI, all config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no deprecated v1 configuration paths, no stale version strings, and no temporary migration/deployment artifacts.
+Before release require `git diff --check`, Node 22.13/24 CI, config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no current-doc legacy version labels, no temporary migration/deployment artifacts, and no runtime compatibility residue.
