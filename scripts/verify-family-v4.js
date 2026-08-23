@@ -11,6 +11,7 @@ const root = path.resolve(__dirname, '..');
 const expectedCore = '4dc4de836625a8b70084531eb3321734eca675d0';
 const pkg = require('../package.json');
 
+assert.equal(pkg.version, '4.0.1');
 assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
@@ -59,6 +60,8 @@ assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976
 assert.match(release, /tar -tzf "\$tgz"/, 'release must inspect the actual TGZ contents');
 assert.match(release, /release package contains development-only files/, 'release must fail on development-only package contents');
 assert.match(release, /src\/codex-safe-core\/\(ARCHITECTURE/, 'release package gate must reject non-provenance Core development docs');
+assert.match(release, /SBOM\.spdx\.json/, 'release must include SPDX SBOM');
+assert.match(release, /sha256sum "\$tgz" SBOM\.spdx\.json > SHA256SUMS/, 'checksums must cover TGZ and SBOM');
 
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
@@ -68,12 +71,16 @@ for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLA
 const codexSource = fs.readFileSync(path.join(root, 'src', 'codex.js'), 'utf8');
 const runnerSource = fs.readFileSync(path.join(root, 'src', 'runner-server.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf8');
+const serviceSource = fs.readFileSync(path.join(root, 'src', 'service.js'), 'utf8');
 assert.match(codexSource, /codex-safe-core\/codex-cli/);
 assert.match(codexSource, /assertRunnerCapability/);
 assert.match(codexSource, /REVIEW_PROMPT_CONTRACT_VERSION/);
 assert.match(runnerSource, /capabilityEnvelope/);
 assert.match(runnerSource, /promptContractVersion/);
 assert.match(indexSource, /installFairScheduling/);
+assert.match(serviceSource, /classifyFindingLifecycle/, 'ReviewService must consume the deterministic finding lifecycle ledger');
+assert.match(serviceSource, /review\.findingLifecycle\s*=\s*findingLifecycle/, 'lifecycle must be persisted in the review run result');
+assert.match(serviceSource, /Finding lifecycle:/, 'GitLab summary must expose lifecycle counts');
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /codex-safe-core\/review-rules/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /policy\?\.reviewRules \|\| \{\}/, 'deterministic analyzers must consume Policy v3 review.rules');
 assert.match(fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8'), /buildReviewEvidenceChunks/);
@@ -84,4 +91,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service Family v4 runtime, exact Core pin, fair scheduling, Runner contract, package boundary and immutable release policy verified.');
+console.log('Codex Review Service 4.0.1 Family v4 runtime, lifecycle, Runner contract, package boundary and immutable release policy verified.');
