@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.2 - 2026-08-23
+
+### Runtime hygiene
+
+- Remove obsolete Review Receipt version labels from current runtime errors; Receipt v4 remains enforced by the canonical contract.
+
 ## 4.0.1 - 2026-08-23
 
 ### Final Family v4 closure

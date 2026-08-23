@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
 const expectedCore = '4dc4de836625a8b70084531eb3321734eca675d0';
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '4.0.1');
+assert.equal(pkg.version, '4.0.2');
 assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
@@ -83,7 +83,9 @@ assert.match(serviceSource, /review\.findingLifecycle\s*=\s*findingLifecycle/, '
 assert.match(serviceSource, /Finding lifecycle:/, 'GitLab summary must expose lifecycle counts');
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /codex-safe-core\/review-rules/);
 assert.match(fs.readFileSync(path.join(root, 'src', 'analyzers.js'), 'utf8'), /policy\?\.reviewRules \|\| \{\}/, 'deterministic analyzers must consume Policy v3 review.rules');
-assert.match(fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8'), /buildReviewEvidenceChunks/);
+const reviewSource = fs.readFileSync(path.join(root, 'src', 'review.js'), 'utf8');
+assert.match(reviewSource, /buildReviewEvidenceChunks/);
+assert.doesNotMatch(reviewSource, /Review Receipt v[123]\b/, 'Current Service runtime must not carry obsolete Review Receipt version labels.');
 assert.match(fs.readFileSync(path.join(root, 'src', 'policy.js'), 'utf8'), /parsePolicyDocument/);
 
 for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md']) {
