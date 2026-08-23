@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.1 - 2026-08-23
+
+### Final Family v4 closure
+
+- Integrate the deterministic finding lifecycle ledger into the production ReviewService path and persisted run result.
+- Publish lifecycle counts (`new`, `persistent`, `resolved`, `regressed`) in the GitLab review summary.
+
 ## 4.0.0 - 2026-08-23
 
 ### Codex Safe Family v4 terminal baseline
