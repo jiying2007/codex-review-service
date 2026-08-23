@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/4dc4de836625a8b70084531eb3321734eca675d0/codex-safe.schema.json",
+  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/270fe1e5740f837a2359e50c0d943be8e7b3926d/codex-safe.schema.json",
   "schemaVersion": 3,
   "review": {
     "language": "zh-CN",
@@ -18,8 +18,8 @@
   },
   "reviewService": {
     "maxContextBytes": 131072,
-    "maxContextFiles": 8,
-    "contextLines": 16,
+    "maxContextFiles": 20,
+    "contextLines": 40,
     "skipGeneratedFiles": true,
     "blockUnreviewableFiles": false
   }
