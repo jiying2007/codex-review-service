@@ -26,10 +26,14 @@ test('current documentation preserves rootless and explicit-system path boundary
   const security=read('SECURITY.md');
   const longTerm=read('LONG_TERM_ASSET.md');
   const architecture=read('docs/ARCHITECTURE.md');
-  for(const text of [readme,readmeZh,operations,security,longTerm,architecture]){
-    assert.match(text,/XDG_CONFIG_HOME/, 'current deployment docs must document XDG config defaults');
-    assert.match(text,/\/etc\/codex-review\/config\.json/, 'current deployment docs must document explicit system config path');
+
+  for(const text of [readme,readmeZh,operations,security,architecture]){
+    assert.match(text,/XDG_CONFIG_HOME/, 'primary deployment docs must document the concrete XDG config default');
+    assert.match(text,/\/etc\/codex-review\/config\.json/, 'primary deployment docs must document the explicit system config path');
   }
+
+  assert.match(longTerm,/XDG config\/state defaults/, 'long-term invariants must preserve the rootless XDG semantic boundary');
+  assert.match(longTerm,/\/etc\/codex-review\/config\.json/, 'long-term invariants must preserve the explicit system config path');
   assert.match(readme,/Runtime (?:code )?does not (?:detect|infer) root, sudo, or systemd/);
   assert.match(longTerm,/Runtime does not infer root\/sudo\/systemd mode/);
   assert.match(architecture,/Runtime does not infer root, sudo, or systemd/);
