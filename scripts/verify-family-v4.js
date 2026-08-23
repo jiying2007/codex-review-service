@@ -8,7 +8,7 @@ const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = '270fe1e5740f837a2359e50c0d943be8e7b3926d';
+const expectedCore = 'cdd252468aa5c93f88a166772380e22beb9fcd44';
 const pkg = require('../package.json');
 
 assert.equal(pkg.version, '4.0.2');
@@ -21,7 +21,7 @@ assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
 assert.equal(SCHEMA_VERSION, 4);
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
-assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin Safe Core 4.0.1 maintenance commit');
+assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin coordinated Safe Core maintenance commit');
 
 assert.equal(fs.existsSync(path.join(root, '.codex-review.example.json')), false, 'legacy service-only policy example must not exist');
 const example = JSON.parse(fs.readFileSync(path.join(root, '.codex-safe.example.json'), 'utf8'));
@@ -93,4 +93,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.2 Family v4 runtime, Safe Core 4.0.1 maintenance pin, lifecycle, Runner contract, package boundary and immutable release policy verified.');
+console.log('Codex Review Service 4.0.2 Family v4 runtime, coordinated Safe Core maintenance pin, lifecycle, Runner contract, package boundary and immutable release policy verified.');
