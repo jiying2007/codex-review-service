@@ -27,7 +27,10 @@ test('ReviewService derives and persists finding lifecycle before publication pl
     findings: [finding('persist'), finding('regressed'), finding('new')],
     allFindings: [finding('persist'), finding('regressed'), finding('new')],
     coverageComplete: true,
-    deterministicViolationCount: 0
+    deterministicFindingCount: 0,
+    deterministicViolationCount: 0,
+    rejectedFindingCount: 0,
+    truncatedFindingCount: 0
   };
   const snapshot = {
     projectId: 7,
@@ -40,7 +43,12 @@ test('ReviewService derives and persists finding lifecycle before publication pl
     files: [{ path: 'src/a.js', skipped: false, old_path: 'src/a.js', new_path: 'src/a.js' }],
     diffRefs: {}
   };
-  const policy = { language: 'en', maxPublishedFindings: 10 };
+  const policy = {
+    language: 'en',
+    maxPublishedFindings: 10,
+    source: 'target:main',
+    fingerprint: 'f'.repeat(64)
+  };
   const job = { id: 9, project_id: 7, mr_iid: 11, status_project_id: 7, pipeline_id: null };
 
   const actions = service.planPublication(job, snapshot, review, policy);
