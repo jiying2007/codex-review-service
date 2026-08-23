@@ -28,8 +28,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 2
-      # actions/setup-node v7.0.0, pinned to the immutable release commit.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      # Post-v7.0.0 setup-node commit fixing GHSA-3jxr-9vmj-r5cp, full-SHA pinned.
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with:
           node-version: ${{ matrix.node }}
           cache: npm
