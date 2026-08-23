@@ -38,7 +38,13 @@ Core 负责跨产品共用的 Codex / Process / Policy / Review Evidence / Recei
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ```
 
-系统级 systemd 部署显式固定为 `/etc/codex-review/config.json`。
+持久状态默认：
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
+```
+
+`CODEX_REVIEW_CONFIG_FILE` 可显式覆盖配置路径。相对路径形式的 `XDG_CONFIG_HOME` / `XDG_STATE_HOME` 不采用，回退到标准 `$HOME` 路径。系统级 systemd 部署显式固定 `/etc/codex-review/config.json`，生产配置示例显式使用 `/var/lib/codex-review` 保存状态。
 
 环境变量仅允许：
 
@@ -50,6 +56,21 @@ OPENAI_API_KEY
 ```
 
 不存在非 Secret 环境覆盖层。
+
+## 普通用户直接运行
+
+默认不再依赖 root 拥有的目录：
+
+```bash
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
+cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
+# 修改 GitLab Scope；如希望使用 XDG State 默认目录，可删除 server.dataDir
+
+export GITLAB_API_TOKEN=...
+export GITLAB_WEBHOOK_SIGNING_TOKEN=...
+codex login
+npm start
+```
 
 ## Standard Deployment
 
@@ -114,7 +135,7 @@ Group discovery 支持分页并 fail-closed：只有完整发现成功后才原�
 }
 ```
 
-Controller 与 Runner 读取同一份 `config.json`。Controller 持有 GitLab 凭据与 SQLite；Runner 只持有 Codex/OpenAI 凭据，通过 Unix socket 接收有界审核输入，不持有 GitLab 凭据。两种模式执行完全相同的 Safe Core Runtime 与 Safe Contract。
+Controller 与 Runner 读取同一份 `config.json`。Controller 持有 GitLab 凭据与 SQLite；Runner 只持有 Codex/OpenAI 凭据，通过 Unix socket 接收有界审核输入，不持有 GitLab 凭据。系统级 Hardened 部署由两个 systemd unit 显式指向同一份 `/etc/codex-review/config.json`。两种模式执行完全相同的 Safe Core Runtime 与 Safe Contract。
 
 ## GitLab Webhook
 
