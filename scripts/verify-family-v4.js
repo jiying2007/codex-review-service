@@ -8,7 +8,7 @@ const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = '4dc4de836625a8b70084531eb3321734eca675d0';
+const expectedCore = '270fe1e5740f837a2359e50c0d943be8e7b3926d';
 const pkg = require('../package.json');
 
 assert.equal(pkg.version, '4.0.2');
@@ -21,7 +21,7 @@ assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
 assert.equal(SCHEMA_VERSION, 4);
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
-assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin final Safe Core 4.0.0 main commit');
+assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin Safe Core 4.0.1 maintenance commit');
 
 assert.equal(fs.existsSync(path.join(root, '.codex-review.example.json')), false, 'legacy service-only policy example must not exist');
 const example = JSON.parse(fs.readFileSync(path.join(root, '.codex-safe.example.json'), 'utf8'));
@@ -56,7 +56,7 @@ assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must n
 assert.match(release, /previous_version.*==.*version[\s\S]*git ls-remote --exit-code --refs origin "refs\/tags\/\$\{tag\}"[\s\S]*publish=false/, 'unchanged versions may be skipped only after the immutable tag exists');
 assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
 assert.match(release, /Release .* already exists; immutable assets will not be overwritten/, 'existing releases must fail closed');
-assert.match(release, /actions\/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373/, 'release provenance action must stay full-SHA pinned');
+assert.match(release, /actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8/, 'release provenance action must stay full-SHA pinned to v4.2.2');
 assert.match(release, /tar -tzf "\$tgz"/, 'release must inspect the actual TGZ contents');
 assert.match(release, /release package contains development-only files/, 'release must fail on development-only package contents');
 assert.match(release, /src\/codex-safe-core\/\(ARCHITECTURE/, 'release package gate must reject non-provenance Core development docs');
@@ -93,4 +93,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.1 Family v4 runtime, lifecycle, Runner contract, package boundary and immutable release policy verified.');
+console.log('Codex Review Service 4.0.2 Family v4 runtime, Safe Core 4.0.1 maintenance pin, lifecycle, Runner contract, package boundary and immutable release policy verified.');
