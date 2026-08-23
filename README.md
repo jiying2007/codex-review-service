@@ -32,11 +32,19 @@ Core owns shared Codex/process/policy/review-evidence/receipt semantics. This re
 
 ## Canonical configuration
 
-All non-secret service settings live in one file:
+All non-secret service settings still live in exactly one JSON file. Direct user-mode execution defaults to:
 
 ```text
-/etc/codex-review/config.json
+${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ```
+
+Persistent state defaults to:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
+```
+
+`CODEX_REVIEW_CONFIG_FILE` explicitly overrides the config path. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored; the standard `$HOME` fallbacks are used instead. System-level systemd deployment explicitly pins `/etc/codex-review/config.json`, while the production example explicitly uses `/var/lib/codex-review` for state.
 
 Copy [`config.example.json`](config.example.json). Environment input is intentionally limited to credentials and the optional config path:
 
@@ -48,6 +56,21 @@ OPENAI_API_KEY
 ```
 
 There is no non-secret environment override layer.
+
+## Direct user-mode run
+
+No root-owned runtime path is required. Create the XDG config directory, copy the example, and adjust `server.dataDir` or remove it to use the XDG state default:
+
+```bash
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
+cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
+# edit config.json for your GitLab scope; remove server.dataDir for the XDG state default
+
+export GITLAB_API_TOKEN=...
+export GITLAB_WEBHOOK_SIGNING_TOKEN=...
+codex login
+npm start
+```
 
 ## Standard Deployment
 
