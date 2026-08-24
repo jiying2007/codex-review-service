@@ -1,0 +1,38 @@
+name: Apply IM Feature Once
+
+on:
+  push:
+    branches:
+      - feature/im-notifications-4.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: "!contains(github.event.head_commit.message, '[im-final]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply bounded integration patch
+        run: python3 scripts/apply-im-feature.py
+      - name: Validate product
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run ci
+          npm pack --dry-run --ignore-scripts
+      - name: Commit validated feature
+        run: |
+          rm -f .github/workflows/apply-im-feature-once.yml .github/workflows/im-notifications-patch-once.yml scripts/apply-im-feature.py .im-notifications-trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add durable IM notifications and Docker deployment [im-final]"
+          git push origin HEAD:feature/im-notifications-4.1.0
