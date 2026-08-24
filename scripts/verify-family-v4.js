@@ -8,7 +8,7 @@ const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = '21be53cf90e586880c30a7a9bd56bb7cad5fa563';
+const expectedCore = '6c0417a376179c295433c18b1b077854d290243d';
 const pkg = require('../package.json');
 
 assert.equal(pkg.version, '4.0.4');
