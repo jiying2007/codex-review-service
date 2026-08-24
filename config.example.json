@@ -68,8 +68,7 @@
     "allowedVersionPattern": ""
   },
   "runner": {
-    "mode": "inline",
-    "socket": "/run/codex-review-runner/runner.sock"
+    "mode": "inline"
   },
   "publication": {
     "concurrency": 2,
