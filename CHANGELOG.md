@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.1.0 - 2026-08-24
+
+### Durable IM notifications and container deployment
+
+- Add deterministic Feishu/Lark and WeCom review cards with Project/Group routing and secret-ref based webhook credentials.
+- Add an independent durable `notification_outbox` extension with idempotency, bounded retries, terminal failed state, restart recovery, and notification metrics/readiness.
+- Persist successful Review evidence, GitLab publication actions, and IM notification actions in the same SQLite transaction; notification delivery failures never change the Review verdict or rerun Codex.
+- Add `review.blocked`, `review.failed`, `review.completed`, `service.degraded`, and `service.recovered` notification events with quiet defaults.
+- Add rootless Docker/Compose deployment with read-only root filesystem, dropped capabilities, healthcheck, resource bounds, persistent state/Codex home, and pinned Codex CLI default.
+- Add dedicated GitLab setup and bilingual IM notification documentation.
+
 ## 4.0.4 - 2026-08-24
 
 ### Terminal deployment and supply-chain polish
@@ -15,7 +26,6 @@
 - Make direct runtime defaults rootless: config follows XDG config home and persistent state follows XDG state home.
 - Keep system-level deployment deterministic by explicitly pinning `/etc/codex-review/config.json` in both systemd units and `/var/lib/codex-review` in the production config example.
 - Add regression coverage for XDG overrides, relative-XDG fallback, and default state resolution.
-
 
 ## 4.0.2 - 2026-08-23
 

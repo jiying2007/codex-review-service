@@ -1,0 +1,39 @@
+services:
+  codex-review-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        CODEX_VERSION: "0.149.1"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./config.json:/etc/codex-review/config.json:ro
+      - codex-review-state:/var/lib/codex-review
+      - codex-review-home:/home/codex-review
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 1G
+volumes:
+  codex-review-state:
+  codex-review-home:

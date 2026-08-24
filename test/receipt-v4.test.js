@@ -23,9 +23,9 @@ function withStore(fn) {
   finally { store.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-test('schema 4 contains canonical Review Receipt projection columns', () => withStore(store => {
-  assert.equal(SCHEMA_VERSION, 4);
-  assert.equal(store.schemaVersion(), 4);
+test('schema 5 contains canonical Review Receipt v4 projection columns', () => withStore(store => {
+  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(store.schemaVersion(), 5);
   const columns = new Set(store.db.prepare('PRAGMA table_info(review_runs)').all().map(row => row.name));
   assert.ok(columns.has('receipt_json'));
   assert.ok(columns.has('receipt_fingerprint'));
