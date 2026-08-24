@@ -48,9 +48,11 @@ for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex
 const userConfig = JSON.parse(fs.readFileSync(path.join(root, 'config.example.json'), 'utf8'));
 const systemConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'systemd', 'config.example.json'), 'utf8'));
 assert.equal(Object.hasOwn(userConfig.server || {}, 'dataDir'), false, 'root config example must use XDG state default');
+assert.equal(Object.hasOwn(userConfig.runner || {}, 'socket'), false, 'root config example must use rootless Runner socket default');
 assert.equal(systemConfig.server.dataDir, '/var/lib/codex-review', 'systemd config must explicitly pin system state');
-const normalizedSystem = structuredClone(systemConfig); delete normalizedSystem.server.dataDir;
-assert.deepEqual(normalizedSystem, userConfig, 'systemd config may differ from user config only by explicit dataDir');
+assert.equal(systemConfig.runner.socket, '/run/codex-review-runner/runner.sock', 'systemd config must explicitly pin RuntimeDirectory socket');
+const normalizedSystem = structuredClone(systemConfig); delete normalizedSystem.server.dataDir; delete normalizedSystem.runner.socket;
+assert.deepEqual(normalizedSystem, userConfig, 'systemd config may differ from user config only by explicit system state/socket paths');
 const verifyRelease = fs.readFileSync(path.join(root, 'VERIFY_RELEASE.md'), 'utf8');
 assert.match(verifyRelease, /sha256sum -c SHA256SUMS/);
 assert.match(verifyRelease, /gh attestation verify .* -R jiying2007\/codex-review-service/);
@@ -106,4 +108,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.4 Family v4 deployment, supply-chain, coordinated Safe Core pin, rootless XDG defaults and immutable release policy verified.');
+console.log('Codex Review Service 4.0.4 Family v4 deployment, supply-chain, coordinated Safe Core pin, fully rootless defaults and immutable release policy verified.');
