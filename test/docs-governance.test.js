@@ -6,9 +6,13 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const root=path.resolve(__dirname,'..');
-const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md'];
+const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','SUPPORT.md'];
 
 function read(name){return fs.readFileSync(path.join(root,name),'utf8');}
+
+test('permanent product documentation exists',()=>{
+  for(const name of docs) assert.ok(fs.existsSync(path.join(root,name)),`missing product document: ${name}`);
+});
 
 test('current documentation stays on Family v4 semantics',()=>{
   for(const name of docs){
@@ -19,22 +23,49 @@ test('current documentation stays on Family v4 semantics',()=>{
   }
 });
 
+test('README is a deployable product entry',()=>{
+  const en=read('README.md'),zh=read('README.zh-CN.md');
+  assert.match(en,/5-minute deployment path/i);
+  assert.match(zh,/5 分钟部署路径/);
+  for(const text of [en,zh]){
+    assert.match(text,/\/etc\/codex-review\/config\.json/);
+    assert.match(text,/\/webhooks\/gitlab/);
+    assert.match(text,/doctor/i);
+    assert.match(text,/health\/ready/);
+  }
+});
+
+test('deployment guides cover full rollout and lifecycle',()=>{
+  for(const name of ['docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']){
+    const text=read(name);
+    assert.match(text,/GITLAB_API_TOKEN/);
+    assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN/);
+    assert.match(text,/Merge request events/i);
+    assert.match(text,/Note events/i);
+    assert.match(text,/\/webhooks\/gitlab/);
+    assert.match(text,/doctor/i);
+    assert.match(text,/health\/ready/);
+    assert.match(text,/inline/i);
+    assert.match(text,/isolated/i);
+    assert.match(text,/upgrade|升级/i);
+    assert.match(text,/rollback|回滚/i);
+    assert.match(text,/projects|Project/);
+    assert.match(text,/groups|Group/);
+  }
+});
+
 test('current documentation preserves rootless and explicit-system path boundary',()=>{
-  const readme=read('README.md');
-  const readmeZh=read('README.zh-CN.md');
+  const deployment=read('docs/DEPLOYMENT.md');
+  const deploymentZh=read('docs/DEPLOYMENT.zh-CN.md');
   const operations=read('OPERATIONS.md');
   const security=read('SECURITY.md');
   const longTerm=read('LONG_TERM_ASSET.md');
   const architecture=read('docs/ARCHITECTURE.md');
 
-  for(const text of [readme,readmeZh,operations,security,architecture]){
-    assert.match(text,/XDG_CONFIG_HOME/, 'primary deployment docs must document the concrete XDG config default');
-    assert.match(text,/\/etc\/codex-review\/config\.json/, 'primary deployment docs must document the explicit system config path');
-  }
-
-  assert.match(longTerm,/XDG config\/state defaults/, 'long-term invariants must preserve the rootless XDG semantic boundary');
-  assert.match(longTerm,/\/etc\/codex-review\/config\.json/, 'long-term invariants must preserve the explicit system config path');
-  assert.match(readme,/Runtime (?:code )?does not (?:detect|infer) root, sudo, or systemd/);
+  for(const text of [deployment,deploymentZh,operations,security,architecture]) assert.match(text,/\/etc\/codex-review\/config\.json/, 'production docs must document explicit system config path');
+  for(const text of [operations,security,architecture]) assert.match(text,/XDG_CONFIG_HOME/, 'runtime-boundary docs must preserve concrete XDG config semantics');
+  assert.match(longTerm,/XDG config\/state defaults/, 'long-term invariants must preserve rootless XDG semantic boundary');
+  assert.match(longTerm,/\/etc\/codex-review\/config\.json/, 'long-term invariants must preserve explicit system config path');
   assert.match(longTerm,/Runtime does not infer root\/sudo\/systemd mode/);
   assert.match(architecture,/Runtime does not infer root, sudo, or systemd/);
 });
