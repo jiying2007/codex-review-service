@@ -6,7 +6,6 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
-const { NOTIFICATION_SCHEMA_VERSION } = require('../src/notification-store');
 
 const root = path.resolve(__dirname, '..');
 const expectedCore = '7ffbf6f1791e17ba74faf0922e7a702bdac72059';
@@ -19,8 +18,7 @@ assert.equal(core.POLICY_SCHEMA_VERSION, 3);
 assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, 4);
 assert.equal(core.COMMIT_RECEIPT_SCHEMA_VERSION, 4);
 assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
-assert.equal(SCHEMA_VERSION, 4, 'Review database schema remains v4');
-assert.equal(NOTIFICATION_SCHEMA_VERSION, 1, 'Notification extension schema must remain v1 for 4.1.0');
+assert.equal(SCHEMA_VERSION, 5, 'Review + notification durable database schema must be v5');
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
 assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin coordinated Safe Core maintenance commit');
@@ -39,9 +37,7 @@ const requiredPackageFiles = [
   'src/*.js', 'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js', 'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js', 'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js', 'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/CHANGELOG.md', 'src/codex-safe-core/LICENSE', 'src/codex-safe-core/README.md', 'src/codex-safe-core/README.zh-CN.md', 'src/codex-safe-core/SECURITY.md'
 ];
 assert.deepEqual(pkg.files, requiredPackageFiles, 'release package allowlist must remain explicit');
-for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github', 'src/codex-safe-core/package.json', 'src/codex-safe-core/ARCHITECTURE.md', 'src/codex-safe-core/CONTRIBUTING.md']) {
-  assert.equal(pkg.files.some(entry => entry === forbidden || entry.startsWith(`${forbidden}/`)), false, `release package must exclude ${forbidden}`);
-}
+for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github', 'src/codex-safe-core/package.json', 'src/codex-safe-core/ARCHITECTURE.md', 'src/codex-safe-core/CONTRIBUTING.md']) assert.equal(pkg.files.some(entry => entry === forbidden || entry.startsWith(`${forbidden}/`)), false, `release package must exclude ${forbidden}`);
 
 const userConfig = JSON.parse(fs.readFileSync(path.join(root, 'config.example.json'), 'utf8'));
 const systemConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'systemd', 'config.example.json'), 'utf8'));
@@ -63,15 +59,18 @@ assert.match(compose, /cap_drop: \["ALL"\]/);
 assert.match(compose, /\/health\/ready/);
 
 const notificationSource = fs.readFileSync(path.join(root, 'src', 'notification.js'), 'utf8');
-const notificationStore = fs.readFileSync(path.join(root, 'src', 'notification-store.js'), 'utf8');
+const dbSource = fs.readFileSync(path.join(root, 'src', 'db.js'), 'utf8');
 assert.match(notificationSource, /review\.blocked/);
 assert.match(notificationSource, /service\.degraded/);
 assert.match(notificationSource, /open\.feishu\.cn/);
 assert.match(notificationSource, /qyapi\.weixin\.qq\.com/);
 assert.doesNotMatch(notificationSource, /mustache/i, 'IM cards must remain deterministic, not user-templated');
-assert.match(notificationStore, /notification_outbox/);
-assert.match(notificationStore, /BEGIN IMMEDIATE|withTransaction/);
-assert.match(notificationStore, /saveRunWithOutbox/);
+assert.match(dbSource, /notification_outbox/);
+assert.match(dbSource, /saveRunWithOutbox/);
+assert.match(dbSource, /notificationActions/);
+assert.match(dbSource, /recoverNotifications/);
+assert.equal(fs.existsSync(path.join(root, 'src', 'notification-store.js')), false, 'notification-store compatibility/monkey-patch layer is forbidden');
+assert.equal(fs.existsSync(path.join(root, 'test', 'notification-store.test.js')), false, 'notification-store compatibility test is forbidden');
 
 const verifyRelease = fs.readFileSync(path.join(root, 'VERIFY_RELEASE.md'), 'utf8');
 assert.match(verifyRelease, /sha256sum -c SHA256SUMS/);
@@ -100,9 +99,7 @@ assert.match(release, /sha256sum "\$tgz" SBOM\.spdx\.json > SHA256SUMS/, 'checks
 
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
-for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLAB_WEBHOOK_SECRET_TOKEN','X-Gitlab-Token','.codex-review.json']) {
-  assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `runtime compatibility residue forbidden: ${forbidden}`);
-}
+for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLAB_WEBHOOK_SECRET_TOKEN','X-Gitlab-Token','.codex-review.json','service_extension_schema']) assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `runtime compatibility residue forbidden: ${forbidden}`);
 const codexSource = fs.readFileSync(path.join(root, 'src', 'codex.js'), 'utf8');
 const runnerSource = fs.readFileSync(path.join(root, 'src', 'runner-server.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(root, 'src', 'index.js'), 'utf8');
@@ -115,6 +112,10 @@ assert.match(runnerSource, /promptContractVersion/);
 assert.match(indexSource, /installFairScheduling/);
 assert.match(indexSource, /prepareNotificationRoutes/);
 assert.match(indexSource, /Notifier/);
+assert.doesNotMatch(indexSource, /installNotificationStore|setNotificationConfig|notificationSchemaVersion/);
+assert.match(serviceSource, /eventForReview/);
+assert.match(serviceSource, /eventForFailure/);
+assert.match(serviceSource, /notificationActions/);
 assert.match(serviceSource, /classifyFindingLifecycle/, 'ReviewService must consume the deterministic finding lifecycle ledger');
 assert.match(serviceSource, /review\.findingLifecycle\s*=\s*findingLifecycle/, 'lifecycle must be persisted in the review run result');
 assert.match(serviceSource, /Finding lifecycle:/, 'GitLab summary must expose lifecycle counts');
@@ -130,4 +131,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.1.0 Family v4 deployment, durable IM notification, Docker, supply-chain, exact Core pin, rootless defaults and immutable release policy verified.');
+console.log('Codex Review Service 4.1.0 Family v4 deployment, canonical durable IM notification, Docker, supply-chain, exact Core pin, rootless defaults and immutable release policy verified.');
