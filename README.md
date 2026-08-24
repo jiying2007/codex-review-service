@@ -24,7 +24,9 @@ Requirements:
 
 Full production instructions: [Deployment Guide](docs/DEPLOYMENT.md). GitLab UI setup: [GitLab Setup](docs/GITLAB_SETUP.md).
 
-## 5-minute systemd deployment
+## 5-minute deployment path
+
+The recommended path below is the systemd deployment.
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
