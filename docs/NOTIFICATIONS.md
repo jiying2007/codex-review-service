@@ -16,7 +16,7 @@ Default events are intentionally quiet: `review.blocked`, `review.failed`, and `
 
 ## Cards
 
-Cards are deterministic local renderings of validated review data. They include verdict, MR identity, short HEAD SHA, severity counts, duration, up to `topFindings`, and an MR link. They never include raw diff, prompts, secrets, full receipts, or unvalidated model claims.
+Cards are deterministic local renderings of validated review data. They include verdict, MR identity, short HEAD SHA, severity counts, duration, and up to `topFindings`; an MR link is rendered when that URL is already present in the durable event payload. Delivery never performs an extra reviewed-repository fetch just to enrich a card. Cards never include raw diff, prompts, secrets, full receipts, or unvalidated model claims.
 
 ## Retry and dead letter
 
