@@ -21,22 +21,22 @@ Use exactly one active Controller per SQLite database. Never place SQLite on NFS
 
 There is one JSON configuration model, not one hard-coded filesystem location.
 
-Direct user mode:
+Direct user mode uses the root `config.example.json` and defaults to:
 
 ```text
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-`CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative XDG home values are ignored and standard `$HOME` fallbacks are used.
+The root example intentionally omits `server.dataDir`. `CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative XDG home values are ignored and standard `$HOME` fallbacks are used.
 
-System-level systemd deployment explicitly owns:
+System-level systemd deployment uses `deploy/systemd/config.example.json` and explicitly owns:
 
 ```text
 /etc/codex-review/config.json        non-secret product configuration
 /etc/codex-review-service.env        GitLab/OpenAI secrets only
 /etc/codex-review-runner.env         optional Runner OpenAI secret only
-/var/lib/codex-review                state (production config + StateDirectory)
+/var/lib/codex-review                state (systemd config + StateDirectory)
 ```
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`; runtime code does not detect root, sudo, or systemd.
@@ -46,18 +46,19 @@ Supported process environment remains intentionally narrow: optional `CODEX_REVI
 ## Direct user-mode preflight
 
 1. Install Node.js 22.13+ and the approved Codex CLI.
-2. Create `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json` from `config.example.json`.
-3. Remove `server.dataDir` if XDG state storage is desired; otherwise set an absolute writable path.
-4. Configure GitLab Project/Group scope and signing token.
-5. Authenticate Codex as the invoking user or export `OPENAI_API_KEY`.
-6. Run `npm run doctor`, then `npm start`.
+2. Create `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json` from root `config.example.json`.
+3. Configure GitLab Project/Group scope and signing token.
+4. Authenticate Codex as the invoking user or export `OPENAI_API_KEY`.
+5. Run `npm run doctor`, then `npm start`.
+
+The default Runner mode is inline. A direct user-mode isolated Runner must explicitly configure an absolute socket path writable by both processes; `/run/codex-review-runner/runner.sock` belongs to the systemd deployment template.
 
 ## Standard system deployment preflight
 
 1. Install Node.js 22.13+ and the approved Codex CLI.
 2. Require GitLab Self-Managed 19.1+ and configure a Signing Token.
 3. Create the `codex-review` non-login user.
-4. Install `/etc/codex-review/config.json`, `/etc/codex-review-service.env`, and `codex-review-service.service`.
+4. Install `deploy/systemd/config.example.json` as `/etc/codex-review/config.json`, then install `/etc/codex-review-service.env` and `codex-review-service.service`.
 5. Authenticate Codex as `codex-review` or provision `OPENAI_API_KEY`.
 6. Run:
 
@@ -76,7 +77,7 @@ A scope refresh is atomic: all configured Group discovery must complete before t
 
 ## Hardened deployment
 
-Set `runner.mode="isolated"` in `config.json`. Controller and Runner consume the same file. For system-level deployment both units explicitly point to `/etc/codex-review/config.json`; GitLab credentials stay only on Controller and Codex/OpenAI credentials only on Runner.
+Set `runner.mode="isolated"` in the systemd config. Controller and Runner consume the same file. Both units explicitly point to `/etc/codex-review/config.json`; GitLab credentials stay only on Controller and Codex/OpenAI credentials only on Runner.
 
 Startup order:
 
@@ -125,7 +126,7 @@ sudo systemctl restart codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Back up SQLite before upgrades.
+Verify downloaded release artifacts before deployment as described in `VERIFY_RELEASE.md`. Back up SQLite before upgrades.
 
 ## Backup and restore
 
@@ -175,4 +176,4 @@ CI actions remain immutable full-SHA pinned. Repository history uses audited squ
 
 ## Release gate
 
-Before release require `git diff --check`, Node 22.13/24 CI, config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no current-doc legacy version labels, no temporary migration/deployment artifacts, and no runtime compatibility residue.
+Before release require `git diff --check`, Node 22.13/24 CI, config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no current-doc legacy version labels, no temporary migration/deployment artifacts, no runtime compatibility residue, and consumer-verifiable checksum/provenance instructions.
