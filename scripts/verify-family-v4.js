@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
 const expectedCore = '21be53cf90e586880c30a7a9bd56bb7cad5fa563';
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '4.0.3');
+assert.equal(pkg.version, '4.0.4');
 assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
@@ -31,8 +31,8 @@ assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 
 const requiredPackageFiles = [
   '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md',
-  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SECURITY.md', 'config.example.json',
-  'deploy/systemd/*.service', 'deploy/systemd/*.env.example', 'docs/ARCHITECTURE.md', 'src/*.js',
+  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
+  'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example', 'docs/ARCHITECTURE.md', 'src/*.js',
   'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js',
   'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js',
   'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js',
@@ -44,6 +44,19 @@ assert.deepEqual(pkg.files, requiredPackageFiles, 'release package allowlist mus
 for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github', 'src/codex-safe-core/package.json', 'src/codex-safe-core/ARCHITECTURE.md', 'src/codex-safe-core/CONTRIBUTING.md']) {
   assert.equal(pkg.files.some(entry => entry === forbidden || entry.startsWith(`${forbidden}/`)), false, `release package must exclude ${forbidden}`);
 }
+
+const userConfig = JSON.parse(fs.readFileSync(path.join(root, 'config.example.json'), 'utf8'));
+const systemConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'systemd', 'config.example.json'), 'utf8'));
+assert.equal(Object.hasOwn(userConfig.server || {}, 'dataDir'), false, 'root config example must use XDG state default');
+assert.equal(systemConfig.server.dataDir, '/var/lib/codex-review', 'systemd config must explicitly pin system state');
+const normalizedSystem = structuredClone(systemConfig); delete normalizedSystem.server.dataDir;
+assert.deepEqual(normalizedSystem, userConfig, 'systemd config may differ from user config only by explicit dataDir');
+const verifyRelease = fs.readFileSync(path.join(root, 'VERIFY_RELEASE.md'), 'utf8');
+assert.match(verifyRelease, /sha256sum -c SHA256SUMS/);
+assert.match(verifyRelease, /gh attestation verify .* -R jiying2007\/codex-review-service/);
+const renovate = JSON.parse(fs.readFileSync(path.join(root, 'renovate.json'), 'utf8'));
+assert.ok(renovate.extends.includes(':automergeDisabled'));
+assert.equal(renovate.minimumReleaseAge, '3 days');
 
 const releasePath = path.join(root, '.github', 'workflows', 'release.yml');
 assert.ok(fs.existsSync(releasePath), 'release workflow must exist');
@@ -93,4 +106,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.3 Family v4 runtime, coordinated Safe Core maintenance pin, rootless XDG defaults, lifecycle, Runner contract, package boundary and immutable release policy verified.');
+console.log('Codex Review Service 4.0.4 Family v4 deployment, supply-chain, coordinated Safe Core pin, rootless XDG defaults and immutable release policy verified.');
