@@ -1,0 +1,287 @@
+name: IM Notifications Patch Once
+
+on:
+  push:
+    branches: [feature/im-notifications-4.1.0]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[im-generated]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply implementation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re
+          root=Path('.')
+          def read(p): return (root/p).read_text()
+          def write(p,s):
+              p=root/p; p.parent.mkdir(parents=True,exist_ok=True); p.write_text(s)
+          def rep(p,a,b):
+              s=read(p)
+              if a not in s: raise SystemExit(f'missing replacement in {p}: {a[:80]}')
+              write(p,s.replace(a,b))
+
+          notification_js=r'''\
+          'use strict';
+
+          const EVENTS=Object.freeze(['review.completed','review.blocked','review.failed','service.degraded','service.recovered']);
+          function notifyError(message,code='ENOTIFY'){const error=new Error(message);error.code=code;return error;}
+          function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+          function counts(findings=[]){const out={critical:0,high:0,medium:0,low:0,info:0};for(const f of findings)if(Object.hasOwn(out,f.severity))out[f.severity]++;return out;}
+          function secretEnvName(ref){return `CODEX_REVIEW_NOTIFY_${String(ref).toUpperCase().replace(/[^A-Z0-9]+/g,'_')}_WEBHOOK`;}
+          function webhookFor(route,env=process.env){const name=secretEnvName(route.secretRef),value=String(env[name]||'').trim();if(!value)throw notifyError(`${name} is required for notification route ${route.name}`,'ENOTIFYSECRET');let url;try{url=new URL(value);}catch{throw notifyError(`${name} must be a valid HTTPS URL`,'ENOTIFYSECRET');}if(url.protocol!=='https:'||url.username||url.password||url.hash)throw notifyError(`${name} must be a credential-free HTTPS URL`,'ENOTIFYSECRET');const host=url.hostname.toLowerCase();if(route.provider==='feishu'&&!['open.feishu.cn','open.larksuite.com'].includes(host))throw notifyError(`${name} must use an official Feishu/Lark bot host`,'ENOTIFYSECRET');if(route.provider==='wecom'&&host!=='qyapi.weixin.qq.com')throw notifyError(`${name} must use qyapi.weixin.qq.com`,'ENOTIFYSECRET');return value;}
+          async function prepareNotificationRoutes(gitlab,config){if(!config.notificationEnabled)return Object.freeze({...config,notificationRoutesResolved:Object.freeze([])});const resolved=[];for(const route of config.notificationRoutes){const projectIds=new Set(route.projects);for(const groupId of route.groups){const page=await gitlab.paginated(`/groups/${encodeURIComponent(groupId)}/projects`,{include_subgroups:'true',archived:'false',with_merge_requests_enabled:'true',simple:'true'});if(!page?.complete)throw notifyError(`Notification route ${route.name} group ${groupId} discovery incomplete`,'ENOTIFYROUTE');for(const project of page.items||[]){const id=Number(project?.id||0);if(Number.isInteger(id)&&id>0)projectIds.add(id);}}if(!route.projects.length&&!route.groups.length)for(const id of config.gitlabProjectAllowlist||[])projectIds.add(Number(id));for(const id of projectIds)if(config.gitlabProjectAllowlist&&!config.gitlabProjectAllowlist.has(Number(id)))throw notifyError(`Notification route ${route.name} includes out-of-scope project ${id}`,'ENOTIFYROUTE');const finalRoute=Object.freeze({...route,projectIds:Object.freeze([...projectIds].sort((a,b)=>a-b))});webhookFor(finalRoute);resolved.push(finalRoute);}return Object.freeze({...config,notificationRoutesResolved:Object.freeze(resolved)});}
+          function eventForReview({job,mr,snapshot,review,durationMs,topFindings=3}){const type=review.verdict==='block'||review.verdict==='incomplete'?'review.blocked':'review.completed';return Object.freeze({type,projectId:Number(job.project_id),mrIid:Number(job.mr_iid),title:String(mr?.title||snapshot?.title||''),url:String(mr?.web_url||''),author:String(mr?.author?.name||mr?.author?.username||''),sourceBranch:String(snapshot?.sourceBranch||job.source_branch||''),targetBranch:String(snapshot?.targetBranch||mr?.target_branch||''),headSha:String(snapshot?.headSha||job.head_sha||''),verdict:String(review.verdict||''),coverageComplete:review.coverageComplete!==false,findingCounts:counts(review.findings),findingCount:Number(review.findings?.length||0),topFindings:(review.findings||[]).slice(0,topFindings).map(f=>({severity:f.severity,title:f.title,file:f.file,line:f.line})),durationMs:Number(durationMs||0)});}
+          function eventForFailure(job,code){return Object.freeze({type:'review.failed',projectId:Number(job.project_id),mrIid:Number(job.mr_iid),title:'',url:'',author:'',sourceBranch:String(job.source_branch||''),targetBranch:'',headSha:String(job.head_sha||''),verdict:'failed',coverageComplete:false,findingCounts:counts([]),findingCount:0,topFindings:[],durationMs:0,errorCode:String(code||'EUNKNOWN')});}
+          function systemEvent(type,details={}){if(!EVENTS.includes(type)||!type.startsWith('service.'))throw notifyError(`Unsupported system notification event: ${type}`,'ENOTIFYEVENT');return Object.freeze({type,projectId:0,mrIid:0,title:'Codex Review Service',url:'',author:'',sourceBranch:'',targetBranch:'',headSha:'',verdict:type==='service.recovered'?'recovered':'degraded',coverageComplete:false,findingCounts:counts([]),findingCount:0,topFindings:[],durationMs:0,details});}
+          function planNotificationActions(config,event,runKey){if(!config.notificationEnabled)return[];const actions=[];for(const route of config.notificationRoutesResolved||[]){const events=route.events.length?route.events:config.notificationEvents;if(!events.includes(event.type))continue;if(!event.type.startsWith('service.')&&!route.projectIds.includes(Number(event.projectId)))continue;actions.push({routeName:route.name,provider:route.provider,secretRef:route.secretRef,eventType:event.type,dedupeKey:`${runKey}:${route.name}:${event.type}`,payload:event});}return actions;}
+          function titleFor(event){if(event.type==='review.blocked')return'🔴 Codex Review Blocked';if(event.type==='review.failed')return'⚠️ Codex Review Failed';if(event.type==='service.degraded')return'⚠️ Codex Review Service Degraded';if(event.type==='service.recovered')return'🟢 Codex Review Service Recovered';return'🟢 Codex Review Completed';}
+          function summaryLines(event){const c=event.findingCounts||counts([]),lines=[];if(event.projectId)lines.push(`Project: ${event.projectId}`,`MR: !${event.mrIid}${event.title?` ${event.title}`:''}`);lines.push(`Verdict: ${event.verdict}`);if(event.headSha)lines.push(`HEAD: ${event.headSha.slice(0,12)}`);if(event.projectId)lines.push(`Findings: Critical ${c.critical} · High ${c.high} · Medium ${c.medium} · Low ${c.low}`);if(event.durationMs)lines.push(`Duration: ${(event.durationMs/1000).toFixed(1)}s`);if(event.errorCode)lines.push(`Error: ${event.errorCode}`);return lines;}
+          function feishuPayload(event){const elements=[{tag:'markdown',content:summaryLines(event).join('\n')}];if(event.topFindings?.length)elements.push({tag:'markdown',content:`**Top findings**\n${event.topFindings.map((f,i)=>`${i+1}. ${f.severity.toUpperCase()} · ${f.title} (${f.file}:${f.line})`).join('\n')}`});if(event.url)elements.push({tag:'action',actions:[{tag:'button',text:{tag:'plain_text',content:'View Merge Request'},url:event.url,type:'primary'}]});return{msg_type:'interactive',card:{header:{title:{tag:'plain_text',content:titleFor(event)}},elements}};}
+          function wecomPayload(event){const horizontal_content_list=summaryLines(event).slice(0,6).map(line=>{const idx=line.indexOf(':');return{keyname:idx>0?line.slice(0,idx):'Status',value:idx>0?line.slice(idx+1).trim():line};});const card={card_type:'text_notice',source:{desc:'Codex Review Service'},main_title:{title:titleFor(event),desc:event.title||''},horizontal_content_list};if(event.topFindings?.length)card.sub_title_text=event.topFindings.map((f,i)=>`${i+1}. [${f.severity}] ${f.title} ${f.file}:${f.line}`).join('\n').slice(0,512);if(event.url)card.jump_list=[{type:1,url:event.url,title:'View Merge Request'}];return{msgtype:'template_card',template_card:card};}
+          function payloadFor(provider,event){if(provider==='feishu')return feishuPayload(event);if(provider==='wecom')return wecomPayload(event);throw notifyError(`Unsupported notification provider: ${provider}`,'ENOTIFYPROVIDER');}
+          async function postWebhook(url,payload,timeoutMs){let response;try{response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(timeoutMs)});}catch(cause){const error=notifyError('Notification network request failed','ENOTIFYNETWORK');error.cause=cause;throw error;}let body={};try{body=await response.json();}catch{}if(!response.ok){const error=notifyError(`Notification HTTP ${response.status}`,'ENOTIFYHTTP');error.status=response.status;throw error;}if(Object.hasOwn(body,'errcode')&&Number(body.errcode)!==0)throw notifyError(`WeCom rejected notification: ${body.errcode}`,'ENOTIFYREMOTE');if((Object.hasOwn(body,'code')&&Number(body.code)!==0)||(Object.hasOwn(body,'StatusCode')&&Number(body.StatusCode)!==0))throw notifyError('Feishu rejected notification','ENOTIFYREMOTE');return body;}
+          function retryableNotification(error){if(!error)return true;if(error.code==='ENOTIFYHTTP'){const s=Number(error.status);return[408,409,425,429].includes(s)||s>=500;}return['ENOTIFYNETWORK'].includes(error.code);}
+          function notificationDelay(config,item){const base=Math.min(config.notificationRetryMaxDelayMs,config.notificationRetryBaseDelayMs*(2**Math.max(0,item.attempt-1)));return Math.round(base*(0.85+Math.random()*0.3));}
+          class Notifier{constructor({config,store,logger=console,env=process.env}){this.config=config;this.store=store;this.logger=logger;this.env=env;this.stopping=false;this.workers=[];this.routes=new Map((config.notificationRoutesResolved||[]).map(r=>[r.name,r]));}async execute(item){const route=this.routes.get(item.route_name);if(!route)throw notifyError(`Notification route disappeared: ${item.route_name}`,'ENOTIFYROUTE');const url=webhookFor(route,this.env),payload=payloadFor(route.provider,item.payload);await postWebhook(url,payload,this.config.notificationRequestTimeoutMs);return{remoteId:`${route.provider}:${route.name}`};}async process(item){try{const result=await this.execute(item);this.store.finishNotification(item.id,result.remoteId);this.logger.info?.({event:'notification_delivered',outboxId:item.id,route:item.route_name,provider:item.provider,eventType:item.event_type,attempt:item.attempt});}catch(error){const retry=item.attempt<this.config.maxNotificationAttempts&&retryableNotification(error)&&!this.stopping;this.logger.warn?.({event:retry?'notification_retry':'notification_failed',outboxId:item.id,route:item.route_name,provider:item.provider,eventType:item.event_type,attempt:item.attempt,code:error.code||'ENOTIFY',status:error.status||null});if(retry)this.store.retryNotification(item.id,error.code||'ENOTIFY',notificationDelay(this.config,item));else this.store.failNotification(item.id,error.code||'ENOTIFY');}}async workerLoop(id){while(!this.stopping){const item=this.store.claimNotification();if(!item){await sleep(this.config.notificationPollIntervalMs);continue;}await this.process(item);}}start(){if(!this.config.notificationEnabled||this.workers.length)return this.workers;this.workers=Array.from({length:this.config.notificationConcurrency},(_,i)=>this.workerLoop(i+1).catch(error=>{this.logger.error?.({event:'notifier_crashed',workerId:i+1,code:error.code||'ENOTIFIER'});throw error;}));return this.workers;}async stop(){this.stopping=true;await Promise.allSettled(this.workers);}}
+          module.exports={EVENTS,Notifier,prepareNotificationRoutes,eventForReview,eventForFailure,systemEvent,planNotificationActions,payloadFor,feishuPayload,wecomPayload,secretEnvName,webhookFor,retryableNotification,notificationDelay,postWebhook};
+          '''
+          write('src/notification.js',notification_js)
+
+          # Config schema + parser.
+          rep('src/config.js',"const TOP_KEYS=new Set(['server','gitlab','webhook','review','codex','runner','publication','lifecycle','observability']);","const TOP_KEYS=new Set(['server','gitlab','webhook','review','codex','runner','publication','notifications','lifecycle','observability']);")
+          rep('src/config.js',"  publication:new Set(['concurrency','pollIntervalMs','maxAttempts']),","  publication:new Set(['concurrency','pollIntervalMs','maxAttempts']),\n  notifications:new Set(['enabled','concurrency','pollIntervalMs','maxAttempts','retryBaseDelayMs','retryMaxDelayMs','requestTimeoutMs','topFindings','events','routes']),")
+          marker="function validateSigningToken(value)"
+          insert=r'''const NOTIFICATION_EVENTS=Object.freeze(['review.completed','review.blocked','review.failed','service.degraded','service.recovered']);
+          function parseNotificationEvents(value,label='notifications.events'){if(value===undefined)return['review.blocked','review.failed','service.degraded'];if(!Array.isArray(value)||value.length>NOTIFICATION_EVENTS.length)throw configError(`${label} must be an array`);const out=[];for(const raw of value){const item=stringValue(raw,'',label,64);if(!NOTIFICATION_EVENTS.includes(item))throw configError(`${label} contains unsupported event: ${item}`);if(!out.includes(item))out.push(item);}return out;}
+          function parseNotificationRoutes(value){if(value===undefined)return[];if(!Array.isArray(value)||value.length>100)throw configError('notifications.routes must be an array');const names=new Set(),routes=[];for(const raw of value){const item=assertObject(raw,'notifications.routes[]');assertKeys(item,new Set(['name','provider','secretRef','projects','groups','events']),'notifications.routes[]');const name=stringValue(item.name,'','notifications.routes[].name',64);if(!/^[a-zA-Z0-9._-]+$/.test(name)||names.has(name))throw configError('notifications.routes[].name must be unique and use [a-zA-Z0-9._-]');names.add(name);const provider=enumValue(item.provider,'','notifications.routes[].provider',['feishu','wecom']),secretRef=stringValue(item.secretRef,'','notifications.routes[].secretRef',64);if(!/^[a-zA-Z0-9._-]+$/.test(secretRef))throw configError('notifications.routes[].secretRef is invalid');routes.push(Object.freeze({name,provider,secretRef,projects:Object.freeze(positiveIds(item.projects,'notifications.routes[].projects')),groups:Object.freeze(positiveIds(item.groups,'notifications.routes[].groups')),events:Object.freeze(parseNotificationEvents(item.events,'notifications.routes[].events'))}));}return routes;}
+          '''
+          s=read('src/config.js'); s=s.replace(marker,insert+marker); write('src/config.js',s)
+          rep('src/config.js',"c=structured.value.codex,runner=structured.value.runner,pub=structured.value.publication,life=structured.value.lifecycle,obs=structured.value.observability;","c=structured.value.codex,runner=structured.value.runner,pub=structured.value.publication,n=structured.value.notifications,life=structured.value.lifecycle,obs=structured.value.observability;")
+          rep('src/config.js',"    publisherConcurrency:intValue(pub.concurrency,2,'publication.concurrency',1,8),publisherPollIntervalMs:intValue(pub.pollIntervalMs,500,'publication.pollIntervalMs',50,60000),maxPublishAttempts:intValue(pub.maxAttempts,8,'publication.maxAttempts',1,50),","    publisherConcurrency:intValue(pub.concurrency,2,'publication.concurrency',1,8),publisherPollIntervalMs:intValue(pub.pollIntervalMs,500,'publication.pollIntervalMs',50,60000),maxPublishAttempts:intValue(pub.maxAttempts,8,'publication.maxAttempts',1,50),\n    notificationEnabled:boolValue(n.enabled,false,'notifications.enabled'),notificationConcurrency:intValue(n.concurrency,2,'notifications.concurrency',1,8),notificationPollIntervalMs:intValue(n.pollIntervalMs,500,'notifications.pollIntervalMs',50,60000),maxNotificationAttempts:intValue(n.maxAttempts,8,'notifications.maxAttempts',1,50),notificationRetryBaseDelayMs:intValue(n.retryBaseDelayMs,5000,'notifications.retryBaseDelayMs',100,600000),notificationRetryMaxDelayMs:intValue(n.retryMaxDelayMs,1800000,'notifications.retryMaxDelayMs',1000,86400000),notificationRequestTimeoutMs:intValue(n.requestTimeoutMs,10000,'notifications.requestTimeoutMs',1000,120000),notificationTopFindings:intValue(n.topFindings,3,'notifications.topFindings',0,10),notificationEvents:Object.freeze(parseNotificationEvents(n.events)),notificationRoutes:Object.freeze(parseNotificationRoutes(n.routes)),")
+          rep('src/config.js',"  });\n}\nmodule.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,defaultRunnerSocket,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError};","  });\n}\nmodule.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,defaultRunnerSocket,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError,parseNotificationEvents,parseNotificationRoutes,NOTIFICATION_EVENTS};")
+          # Fail closed if enabled without route after config is built.
+          rep('src/config.js',"  const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,defaultRunnerSocket(),'runner.socket',2048);","  const notificationEnabled=boolValue(n.enabled,false,'notifications.enabled'),notificationRoutes=parseNotificationRoutes(n.routes);if(notificationEnabled&&!notificationRoutes.length)throw configError('notifications.enabled requires at least one notifications.routes entry');\n  const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,defaultRunnerSocket(),'runner.socket',2048);")
+          rep('src/config.js',"notificationEnabled:boolValue(n.enabled,false,'notifications.enabled')","notificationEnabled")
+          rep('src/config.js',"notificationRoutes:Object.freeze(parseNotificationRoutes(n.routes))","notificationRoutes:Object.freeze(notificationRoutes)")
+
+          # DB schema 5 and durable notification outbox.
+          rep('src/db.js','const SCHEMA_VERSION = 4;','const SCHEMA_VERSION = 5;')
+          rep('src/db.js',"      CREATE TABLE IF NOT EXISTS publication_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,action_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);","      CREATE TABLE IF NOT EXISTS publication_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,action_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);\n      CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL DEFAULT 0,mr_iid INTEGER NOT NULL DEFAULT 0,route_name TEXT NOT NULL,provider TEXT NOT NULL,secret_ref TEXT NOT NULL,event_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);")
+          rep('src/db.js',"CREATE INDEX IF NOT EXISTS idx_outbox_run ON publication_outbox(run_id,id);PRAGMA user_version=${SCHEMA_VERSION};","CREATE INDEX IF NOT EXISTS idx_outbox_run ON publication_outbox(run_id,id);CREATE INDEX IF NOT EXISTS idx_notification_status_available ON notification_outbox(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_notification_run ON notification_outbox(run_id,id);PRAGMA user_version=${SCHEMA_VERSION};")
+          rep('src/db.js',"  publicationDepth(){return Number(this.db.prepare(\"SELECT COUNT(*) count FROM publication_outbox WHERE status='pending'\").get().count);}","  publicationDepth(){return Number(this.db.prepare(\"SELECT COUNT(*) count FROM publication_outbox WHERE status='pending'\").get().count);}\n  notificationDepth(){return Number(this.db.prepare(\"SELECT COUNT(*) count FROM notification_outbox WHERE status='pending'\").get().count);}")
+          rep('src/db.js',"  recoverPublications(){return this.db.prepare(\"UPDATE publication_outbox SET status='pending',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='publishing'\").run(new Date().toISOString()).changes;}","  recoverPublications(){return this.db.prepare(\"UPDATE publication_outbox SET status='pending',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='publishing'\").run(new Date().toISOString()).changes;}\n  recoverNotifications(){return this.db.prepare(\"UPDATE notification_outbox SET status='pending',started_at=NULL,error_code='ESERVICERESTART',available_at=? WHERE status='delivering'\").run(new Date().toISOString()).changes;}")
+          rep('src/db.js',"  getJob(id){return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id)||null;}","  claimNotification(){return this.withTransaction(()=>{const now=new Date().toISOString(),row=this.db.prepare(`SELECT * FROM notification_outbox WHERE status='pending' AND available_at<=? ORDER BY id LIMIT 1`).get(now);if(!row)return null;const result=this.db.prepare(\"UPDATE notification_outbox SET status='delivering',started_at=?,attempt=attempt+1 WHERE id=? AND status='pending'\").run(now,row.id);if(result.changes!==1)return null;const value=this.db.prepare('SELECT * FROM notification_outbox WHERE id=?').get(row.id);value.payload=parseJson(value.payload_json);return value;});}\n  getJob(id){return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id)||null;}")
+          rep('src/db.js',"  saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null){","  saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null,notificationActions=[]){")
+          rep('src/db.js',"for(const action of actions||[])insertAction.run(runId,action.projectId,action.mrIid,action.type,action.dedupeKey,json(action.payload),now,now);return runId;});}","for(const action of actions||[])insertAction.run(runId,action.projectId,action.mrIid,action.type,action.dedupeKey,json(action.payload),now,now);const insertNotify=this.db.prepare(`INSERT OR IGNORE INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)`);for(const action of notificationActions||[])insertNotify.run(runId,action.payload?.projectId||0,action.payload?.mrIid||0,action.routeName,action.provider,action.secretRef,action.eventType,action.dedupeKey,json(action.payload),now,now);return runId;});}")
+          rep('src/db.js',"  finishPublication(id,remoteId=null){","  enqueueNotification({runId=null,routeName,provider,secretRef,eventType,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare(`INSERT INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)`).run(runId,payload?.projectId||0,payload?.mrIid||0,routeName,provider,secretRef,eventType,dedupeKey,json(payload),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}\n  finishNotification(id,remoteId=null){this.db.prepare(\"UPDATE notification_outbox SET status='delivered',remote_id=?,error_code=NULL,finished_at=? WHERE id=?\").run(remoteId,new Date().toISOString(),id);}\n  retryNotification(id,errorCode,delayMs){this.db.prepare(\"UPDATE notification_outbox SET status='pending',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='delivering'\").run(errorCode,isoAfter(delayMs),id);}\n  failNotification(id,errorCode){this.db.prepare(\"UPDATE notification_outbox SET status='failed',error_code=?,finished_at=? WHERE id=?\").run(errorCode,new Date().toISOString(),id);}\n  finishPublication(id,remoteId=null){")
+          rep('src/db.js',"stats(){const jobs=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM review_jobs GROUP BY status').all().map(r=>[r.status,Number(r.count)])),publications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM publication_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),usage=","stats(){const jobs=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM review_jobs GROUP BY status').all().map(r=>[r.status,Number(r.count)])),publications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM publication_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),notifications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM notification_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),usage=")
+          rep('src/db.js',"return{jobs,publications,webhookCount:","return{jobs,publications,notifications,webhookCount:")
+
+          # Service creates deterministic events and durable notification actions.
+          rep('src/service.js',"const{classifyFindingLifecycle}=require('./finding-ledger');","const{classifyFindingLifecycle}=require('./finding-ledger');\nconst{eventForReview,eventForFailure,planNotificationActions}=require('./notification');")
+          rep('src/service.js',"const actions=this.planPublication(job,snapshot,review,policy),receiptProjection=createServiceReviewReceipt(snapshot,review,policy);this.store.saveRunWithOutbox(job.id,review,Date.now()-started,policy,actions,receiptProjection);","const durationMs=Date.now()-started,actions=this.planPublication(job,snapshot,review,policy),receiptProjection=createServiceReviewReceipt(snapshot,review,policy),notificationEvent=eventForReview({job,mr,snapshot,review,durationMs,topFindings:this.config.notificationTopFindings}),notificationActions=planNotificationActions(this.config,notificationEvent,`run:${job.id}:${snapshot.headSha}`);this.store.saveRunWithOutbox(job.id,review,durationMs,policy,actions,receiptProjection,notificationActions);")
+          rep('src/service.js',"this.store.finishJob(job.id,'failed',code);this.enqueueStatus(job,'failed',code==='EPROJECTPOLICY'?'Codex review policy is invalid':code==='ETOKENBUDGET'?'Codex review token budget exhausted':'Codex review service failed');","this.store.finishJob(job.id,'failed',code);this.enqueueStatus(job,'failed',code==='EPROJECTPOLICY'?'Codex review policy is invalid':code==='ETOKENBUDGET'?'Codex review token budget exhausted':'Codex review service failed');const failureEvent=eventForFailure(job,code);for(const action of planNotificationActions(this.config,failureEvent,`job:${job.id}`))this.store.enqueueNotification(action);")
+
+          # Startup integration, notifier lifecycle, route discovery and system alerts.
+          rep('src/index.js',"const{createHttpServer}=require('./http');const{probeCodexCapabilities}=require('./codex');","const{createHttpServer}=require('./http');const{probeCodexCapabilities}=require('./codex');const{Notifier,prepareNotificationRoutes,systemEvent,planNotificationActions}=require('./notification');")
+          rep('src/index.js',"config=applyProjectScope(config,scopeManager);logger.info({event:'project_scope_ready'","config=applyProjectScope(config,scopeManager);config=await prepareNotificationRoutes(gitlab,config);logger.info({event:'project_scope_ready'")
+          rep('src/index.js',"recoveredPublications=store.recoverPublications();","recoveredPublications=store.recoverPublications(),recoveredNotifications=store.recoverNotifications();")
+          rep('src/index.js',"if(recoveredPublications)logger.info({event:'publications_recovered',count:recoveredPublications});","if(recoveredPublications)logger.info({event:'publications_recovered',count:recoveredPublications});if(recoveredNotifications)logger.info({event:'notifications_recovered',count:recoveredNotifications});")
+          rep('src/index.js',"publisher=new Publisher({config,store,gitlab,logger});service.startWorkers();publisher.start();const server=createHttpServer({config,store,service,publisher,gitlab,telemetry,logger,startedAt});","publisher=new Publisher({config,store,gitlab,logger}),notifier=new Notifier({config,store,logger});service.startWorkers();publisher.start();notifier.start();const server=createHttpServer({config,store,service,publisher,notifier,gitlab,telemetry,logger,startedAt});")
+          rep('src/index.js',"publishers:config.publisherConcurrency,schemaVersion","publishers:config.publisherConcurrency,notifiers:config.notificationEnabled?config.notificationConcurrency:0,schemaVersion")
+          old="const periodic=()=>config.gitlabGroups.length?scopeManager.refresh().then(snapshot=>{logger.info({event:'project_scope_refreshed',mode:snapshot.mode,totalProjects:snapshot.totalProjects,discoveredProjects:snapshot.discoveredProjects});return reconcileOnce();}).catch(error=>logger.error({event:'project_scope_refresh_failed',code:error.code||'EPROJECTSCOPE'})):reconcileOnce();"
+          new="const enqueueSystem=event=>{for(const action of planNotificationActions(config,event,`system:${event.type}:${Date.now()}`))store.enqueueNotification(action);};let scopeWasHealthy=true;const periodic=()=>config.gitlabGroups.length?scopeManager.refresh().then(async snapshot=>{config=applyProjectScope(config,scopeManager);config=await prepareNotificationRoutes(gitlab,config);service.config=config;publisher.config=config;notifier.config=config;if(!scopeWasHealthy){enqueueSystem(systemEvent('service.recovered',{component:'project_scope'}));scopeWasHealthy=true;}logger.info({event:'project_scope_refreshed',mode:snapshot.mode,totalProjects:snapshot.totalProjects,discoveredProjects:snapshot.discoveredProjects});return reconcileOnce();}).catch(error=>{if(scopeWasHealthy){enqueueSystem(systemEvent('service.degraded',{component:'project_scope',code:error.code||'EPROJECTSCOPE'}));scopeWasHealthy=false;}logger.error({event:'project_scope_refresh_failed',code:error.code||'EPROJECTSCOPE'});}):reconcileOnce();"
+          rep('src/index.js',old,new)
+          rep('src/index.js',"await service.stop();await publisher.stop();await telemetry.flush();","await service.stop();await publisher.stop();await notifier.stop();await telemetry.flush();")
+
+          # Readiness and metrics.
+          rep('src/http.js',"function renderMetrics(store,service,publisher,telemetry,startedAt)","function renderMetrics(store,service,publisher,notifier,telemetry,startedAt)")
+          rep('src/http.js',"'# TYPE codex_review_publishers gauge',`codex_review_publishers ${publisher?.workers?.length||0}`","'# TYPE codex_review_publishers gauge',`codex_review_publishers ${publisher?.workers?.length||0}`,'# TYPE codex_review_notifiers gauge',`codex_review_notifiers ${notifier?.workers?.length||0}`,'# TYPE codex_review_notification_queue_depth gauge',`codex_review_notification_queue_depth ${stats.notifications?.pending||0}`")
+          rep('src/http.js',"lines.push('# TYPE codex_review_webhook_events gauge'","lines.push('# TYPE codex_review_notifications gauge');for(const status of Object.keys(stats.notifications||{}).sort())if(/^[a-z_]+$/.test(status))lines.push(`codex_review_notifications{status=\"${status}\"} ${stats.notifications[status]}`);lines.push('# TYPE codex_review_webhook_events gauge'")
+          rep('src/http.js',"function createReadiness({config,store,service,publisher,gitlab})","function createReadiness({config,store,service,publisher,notifier,gitlab})")
+          rep('src/http.js',"publisherOk=!publisher?.stopping&&publisher?.workers?.length===config.publisherConcurrency,","publisherOk=!publisher?.stopping&&publisher?.workers?.length===config.publisherConcurrency,notifierOk=!config.notificationEnabled||(!notifier?.stopping&&notifier?.workers?.length===config.notificationConcurrency),")
+          rep('src/http.js',"ready=gitlabOk&&dbOk&&synchronousFull&&workerOk&&publisherOk&&circuit!=='open'&&scopeOk;","ready=gitlabOk&&dbOk&&synchronousFull&&workerOk&&publisherOk&&notifierOk&&circuit!=='open'&&scopeOk;")
+          rep('src/http.js',"expectedPublishers:config.publisherConcurrency,queueDepth:store.queueDepth(),publicationDepth:store.publicationDepth(),schemaVersion","expectedPublishers:config.publisherConcurrency,notifiers:notifier?.workers?.length||0,expectedNotifiers:config.notificationEnabled?config.notificationConcurrency:0,queueDepth:store.queueDepth(),publicationDepth:store.publicationDepth(),notificationDepth:store.notificationDepth(),schemaVersion")
+          rep('src/http.js',"function createHttpServer({config,store,service,publisher,gitlab,telemetry,logger=console,startedAt=Date.now()}){const readiness=createReadiness({config,store,service,publisher,gitlab});","function createHttpServer({config,store,service,publisher,notifier,gitlab,telemetry,logger=console,startedAt=Date.now()}){const readiness=createReadiness({config,store,service,publisher,notifier,gitlab});")
+          rep('src/http.js',"renderMetrics(store,service,publisher,telemetry,startedAt)","renderMetrics(store,service,publisher,notifier,telemetry,startedAt)")
+
+          # Config examples.
+          notify={"enabled":False,"concurrency":2,"pollIntervalMs":500,"maxAttempts":8,"retryBaseDelayMs":5000,"retryMaxDelayMs":1800000,"requestTimeoutMs":10000,"topFindings":3,"events":["review.blocked","review.failed","service.degraded"],"routes":[{"name":"embedded-review","provider":"feishu","secretRef":"embedded","projects":[101,102],"groups":[],"events":["review.blocked","review.failed"]},{"name":"service-alerts","provider":"wecom","secretRef":"service_alerts","projects":[],"groups":[],"events":["service.degraded","service.recovered"]}]}
+          for p in ['config.example.json','deploy/systemd/config.example.json']:
+              data=json.loads(read(p)); data['notifications']=notify; write(p,json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+          # Env secrets.
+          env=read('.env.example')+"\n# Optional IM notification webhook secrets. secretRef maps to CODEX_REVIEW_NOTIFY_<REF>_WEBHOOK.\n# CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/...\n# CODEX_REVIEW_NOTIFY_SERVICE_ALERTS_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...\n";write('.env.example',env)
+
+          # Docker deployment.
+          write('deploy/docker/Dockerfile',r'''FROM node:22.23.2-bookworm-slim
+          ARG CODEX_VERSION=0.149.1
+          RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini && rm -rf /var/lib/apt/lists/* \
+              && npm install -g "@openai/codex@${CODEX_VERSION}" \
+              && useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
+          WORKDIR /app
+          COPY package.json package-lock.json ./
+          RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          COPY src ./src
+          COPY config.example.json ./config.example.json
+          RUN mkdir -p /var/lib/codex-review /etc/codex-review && chown -R codex-review:codex-review /var/lib/codex-review /home/codex-review
+          USER codex-review
+          ENV CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json
+          EXPOSE 8787
+          ENTRYPOINT ["/usr/bin/tini","--"]
+          CMD ["node","src/index.js"]
+          ''')
+          write('deploy/docker/compose.yaml',r'''services:
+            codex-review-service:
+              build:
+                context: ../..
+                dockerfile: deploy/docker/Dockerfile
+                args:
+                  CODEX_VERSION: "0.149.1"
+              restart: unless-stopped
+              read_only: true
+              tmpfs:
+                - /tmp:size=256m,mode=1777
+              cap_drop: ["ALL"]
+              security_opt:
+                - no-new-privileges:true
+              ports:
+                - "127.0.0.1:8787:8787"
+              volumes:
+                - ./config.json:/etc/codex-review/config.json:ro
+                - codex-review-state:/var/lib/codex-review
+                - codex-review-home:/home/codex-review
+              env_file:
+                - .env
+              healthcheck:
+                test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+                interval: 30s
+                timeout: 5s
+                retries: 3
+                start_period: 20s
+              deploy:
+                resources:
+                  limits:
+                    cpus: "4.0"
+                    memory: 8G
+                  reservations:
+                    cpus: "1.0"
+                    memory: 1G
+          volumes:
+            codex-review-state:
+            codex-review-home:
+          ''')
+          write('deploy/docker/README.md',"""# Docker deployment\n\n1. Copy `config.example.json` to `deploy/docker/config.json` and set `server.host` to `0.0.0.0` and `server.dataDir` to `/var/lib/codex-review`.\n2. Copy `.env.example` to `deploy/docker/.env`; add GitLab credentials and any `CODEX_REVIEW_NOTIFY_<REF>_WEBHOOK` secrets.\n3. Build and start with `docker compose -f deploy/docker/compose.yaml up -d --build`.\n4. Authenticate Codex in the persisted home volume or provide `OPENAI_API_KEY`.\n5. Verify `curl -fsS http://127.0.0.1:8787/health/ready`.\n\nThe image is non-root, drops Linux capabilities, uses a read-only root filesystem and persists only service state and the Codex home. The default build pins `@openai/codex` 0.149.1; startup still performs the Safe Contract capability probe.\n""")
+
+          # Documentation.
+          write('docs/NOTIFICATIONS.md',r'''# IM Notifications
+
+          Codex Review Service can deliver deterministic review cards to Feishu/Lark and WeCom group robots. Notifications are an attention channel only: SQLite remains the durable service source of truth and GitLab remains the review system of record.
+
+          ## Reliability model
+
+          A completed review is persisted with GitLab publication actions and notification actions in the same SQLite transaction. `notification_outbox` has independent retries, idempotency keys and terminal failed state. Notification failure never changes a review verdict and never reruns Codex.
+
+          ## Configuration
+
+          Enable `notifications.enabled` and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route chooses `feishu` or `wecom`, a `secretRef`, and optional event filtering.
+
+          `secretRef: "embedded"` resolves only from `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK`. Webhook URLs are never stored in JSON or SQLite. Feishu routes require official `open.feishu.cn`/`open.larksuite.com` bot URLs; WeCom routes require `qyapi.weixin.qq.com`.
+
+          Default events are intentionally noisy-event safe: `review.blocked`, `review.failed`, and `service.degraded`. Add `review.completed` explicitly for audit channels.
+
+          ## Cards
+
+          Cards are deterministic local renderings of validated review data. They include verdict, MR identity, short HEAD SHA, severity counts, duration, up to `topFindings`, and an MR link. They never include raw diff, prompts, secrets, full receipts, or unvalidated model claims.
+
+          ## Retry and dead letter
+
+          Retry applies only to network errors, HTTP 408/409/425/429 and 5xx. Permanent provider/configuration errors fail closed into `notification_outbox.status=failed`. Prometheus metrics expose queue and delivery state.
+          ''')
+          write('docs/NOTIFICATIONS.zh-CN.md',r'''# IM 通知
+
+          Codex Review Service 支持把确定性 Review 卡片推送到飞书/Lark与企业微信群机器人。IM 只负责吸引注意力：SQLite 仍是 Service durable source of truth，GitLab 仍是 Review system of record。
+
+          ## 可靠性模型
+
+          Review 完成后，GitLab publication actions 与 notification actions 在同一个 SQLite transaction 中持久化。`notification_outbox` 独立重试、独立幂等、独立进入 failed 终态；通知失败不会改变 Review Verdict，也绝不会重新运行 Codex。
+
+          ## 配置
+
+          开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu` 或 `wecom`、`secretRef` 与可选事件过滤。
+
+          `secretRef: "embedded"` 只从 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` 读取。Webhook URL 不进入 JSON 或 SQLite。飞书只允许官方 `open.feishu.cn`/`open.larksuite.com` Bot URL；企业微信只允许 `qyapi.weixin.qq.com`。
+
+          默认事件保持克制：`review.blocked`、`review.failed`、`service.degraded`。需要审计群时显式增加 `review.completed`。
+
+          ## 卡片
+
+          卡片完全由本地确定性 formatter 生成，只使用已验证 Review Data，包括 Verdict、MR、短 HEAD、Severity 数量、耗时、最多 `topFindings` 条 Finding 和 MR 链接。不会推送 raw diff、Prompt、Secret、完整 Receipt，也不会让 AI 自由生成卡片文案。
+
+          ## 重试与 Dead Letter
+
+          仅网络错误、HTTP 408/409/425/429 与 5xx 自动重试。Provider/配置永久错误进入 `notification_outbox.status=failed`，Prometheus Metrics 暴露通知 Queue 与终态。
+          ''')
+          write('docs/GITLAB_SETUP.md',"# GitLab setup\n\n1. Create a Group or Project Access Token with only required API scope.\n2. Configure Project IDs and/or Group IDs in `config.json`.\n3. Configure GitLab 19.1+ Standard Webhooks Signing Token and set the same `GITLAB_WEBHOOK_SIGNING_TOKEN`.\n4. Add webhook URL `https://<host>/webhooks/gitlab` with Merge request events and Note events.\n5. Run `npm run doctor`, then verify `/health/ready`.\n6. Create or update a test MR and confirm GitLab status/summary/discussions.\n7. If IM notifications are enabled, confirm the configured Feishu/WeCom route receives the deterministic card.\n")
+          write('docs/GITLAB_SETUP.zh-CN.md',"# GitLab 接入\n\n1. 创建只包含必要 API 权限的 Group/Project Access Token。\n2. 在 `config.json` 配置 Project ID 和/或 Group ID。\n3. 配置 GitLab 19.1+ Standard Webhooks Signing Token，并使用同一个 `GITLAB_WEBHOOK_SIGNING_TOKEN`。\n4. 添加 Webhook `https://<host>/webhooks/gitlab`，开启 Merge request events 与 Note events。\n5. 运行 `npm run doctor`，再确认 `/health/ready`。\n6. 创建或更新测试 MR，验证 GitLab Status/Summary/Discussion。\n7. 如已启用 IM 通知，确认飞书/企业微信 Route 收到确定性卡片。\n")
+
+          # README links and scope statement.
+          for p,anchor in [('README.md','## Health and operations'),('README.zh-CN.md','## Health / Doctor')]:
+              s=read(p); note=("## IM notifications\n\nOptional Feishu/Lark and WeCom notification routes use a separate durable outbox with deterministic cards, retries and idempotency. Notification failure never changes the Review verdict. See [IM Notifications](docs/NOTIFICATIONS.md) and [GitLab Setup](docs/GITLAB_SETUP.md).\n\n" if p=='README.md' else "## IM 通知\n\n可选飞书/Lark与企业微信通知使用独立 durable outbox、确定性卡片、重试与幂等。通知失败绝不改变 Review Verdict。见 [IM 通知](docs/NOTIFICATIONS.zh-CN.md) 与 [GitLab 接入](docs/GITLAB_SETUP.zh-CN.md)。\n\n")
+              if anchor not in s: raise SystemExit(f'missing readme anchor {p}')
+              write(p,s.replace(anchor,note+anchor))
+
+          # Package/release metadata 4.1.0 and docker/docs allowlist.
+          pkg=json.loads(read('package.json')); pkg['version']='4.1.0'; files=pkg['files'];
+          for item in ['deploy/docker/Dockerfile','deploy/docker/compose.yaml','deploy/docker/README.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md']:
+              if item not in files: files.append(item)
+          write('package.json',json.dumps(pkg,indent=2)+'\n')
+          lock=json.loads(read('package-lock.json')); lock['version']='4.1.0'; lock['packages']['']['version']='4.1.0'; write('package-lock.json',json.dumps(lock,indent=2)+'\n')
+          changelog=read('CHANGELOG.md'); write('CHANGELOG.md',changelog.replace('# Changelog\n','# Changelog\n\n## 4.1.0 - 2026-08-24\n\n- Add durable Feishu/Lark and WeCom notification routes with deterministic cards, retry/idempotency, dead-letter state and notification metrics.\n- Add rootless Docker/Compose deployment and dedicated GitLab/IM setup guides.\n'))
+
+          # Permanent tests.
+          write('test/notification.test.js',r'''\
+          'use strict';
+          const test=require('node:test');const assert=require('node:assert/strict');
+          const{eventForReview,planNotificationActions,feishuPayload,wecomPayload,secretEnvName,retryableNotification}=require('../src/notification');
+          test('deterministic review cards and routing',()=>{const config={notificationEnabled:true,notificationTopFindings:3,notificationEvents:['review.blocked'],notificationRoutesResolved:[{name:'embedded',provider:'feishu',secretRef:'x',events:['review.blocked'],projectIds:[101]}]},job={project_id:101,mr_iid:7,head_sha:'a'.repeat(40)},mr={title:'Fix race',web_url:'https://gitlab.example/mr/7',author:{name:'Lei'}},snapshot={headSha:'a'.repeat(40),sourceBranch:'fix',targetBranch:'main'},review={verdict:'block',coverageComplete:true,findings:[{severity:'high',title:'Race',file:'a.c',line:4}]};const event=eventForReview({job,mr,snapshot,review,durationMs:1500,topFindings:3});assert.equal(event.type,'review.blocked');const actions=planNotificationActions(config,event,'run:1');assert.equal(actions.length,1);assert.equal(actions[0].dedupeKey,'run:1:embedded:review.blocked');assert.equal(feishuPayload(event).msg_type,'interactive');assert.equal(wecomPayload(event).msgtype,'template_card');});
+          test('secret refs and retry classification are closed',()=>{assert.equal(secretEnvName('service-alerts'),'CODEX_REVIEW_NOTIFY_SERVICE_ALERTS_WEBHOOK');assert.equal(retryableNotification({code:'ENOTIFYNETWORK'}),true);assert.equal(retryableNotification({code:'ENOTIFYREMOTE'}),false);});
+          ''')
+          write('test/docker-governance.test.js',r'''\
+          'use strict';const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');
+          test('docker deployment remains rootless and bounded',()=>{const docker=fs.readFileSync('deploy/docker/Dockerfile','utf8'),compose=fs.readFileSync('deploy/docker/compose.yaml','utf8');assert.match(docker,/ARG CODEX_VERSION=0\.149\.1/);assert.match(docker,/USER codex-review/);assert.match(compose,/read_only: true/);assert.match(compose,/cap_drop: \["ALL"\]/);assert.match(compose,/\/health\/ready/);});
+          ''')
+          # Update governance assertions.
+          rep('scripts/verify-family-v4.js',"assert.equal(pkg.version, '4.0.4');","assert.equal(pkg.version, '4.1.0');")
+          rep('scripts/verify-family-v4.js','assert.equal(SCHEMA_VERSION, 4);','assert.equal(SCHEMA_VERSION, 5);')
+          rep('scripts/verify-family-v4.js',"'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'src/*.js',","'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'docs/NOTIFICATIONS.md', 'docs/NOTIFICATIONS.zh-CN.md', 'docs/GITLAB_SETUP.md', 'docs/GITLAB_SETUP.zh-CN.md',\n  'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md', 'src/*.js',")
+          rep('scripts/verify-family-v4.js',"Codex Review Service 4.0.4 Family v4 deployment","Codex Review Service 4.1.0 Family v4 deployment")
+          rep('test/docs-governance.test.js',"const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md'];","const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md'];")
+          PY
+      - name: Validate
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run ci
+          npm pack --dry-run --ignore-scripts
+      - name: Commit validated implementation
+        run: |
+          rm -f .github/workflows/im-notifications-patch-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add durable IM notifications and Docker deployment [im-generated]"
+          git push origin HEAD:feature/im-notifications-4.1.0
