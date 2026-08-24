@@ -6,19 +6,21 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
+const { NOTIFICATION_SCHEMA_VERSION } = require('../src/notification-store');
 
 const root = path.resolve(__dirname, '..');
 const expectedCore = '7ffbf6f1791e17ba74faf0922e7a702bdac72059';
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '4.0.4');
+assert.equal(pkg.version, '4.1.0');
 assert.equal(core.SAFE_CORE_VERSION, 4);
 assert.equal(core.SAFE_CONTRACT_VERSION, 2);
 assert.equal(core.POLICY_SCHEMA_VERSION, 3);
 assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, 4);
 assert.equal(core.COMMIT_RECEIPT_SCHEMA_VERSION, 4);
 assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
-assert.equal(SCHEMA_VERSION, 4);
+assert.equal(SCHEMA_VERSION, 4, 'Review database schema remains v4');
+assert.equal(NOTIFICATION_SCHEMA_VERSION, 1, 'Notification extension schema must remain v1 for 4.1.0');
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
 assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin coordinated Safe Core maintenance commit');
@@ -30,16 +32,11 @@ assert.ok(example.review && example.reviewService);
 assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 
 const requiredPackageFiles = [
-  '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md',
-  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
+  '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md', 'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
   'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example',
-  'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'src/*.js',
-  'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js',
-  'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js',
-  'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js',
-  'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/CHANGELOG.md',
-  'src/codex-safe-core/LICENSE', 'src/codex-safe-core/README.md', 'src/codex-safe-core/README.zh-CN.md',
-  'src/codex-safe-core/SECURITY.md'
+  'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md',
+  'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'docs/NOTIFICATIONS.md', 'docs/NOTIFICATIONS.zh-CN.md', 'docs/GITLAB_SETUP.md', 'docs/GITLAB_SETUP.zh-CN.md',
+  'src/*.js', 'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js', 'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js', 'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js', 'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/CHANGELOG.md', 'src/codex-safe-core/LICENSE', 'src/codex-safe-core/README.md', 'src/codex-safe-core/README.zh-CN.md', 'src/codex-safe-core/SECURITY.md'
 ];
 assert.deepEqual(pkg.files, requiredPackageFiles, 'release package allowlist must remain explicit');
 for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex-safe-core/test', 'src/codex-safe-core/.github', 'src/codex-safe-core/package.json', 'src/codex-safe-core/ARCHITECTURE.md', 'src/codex-safe-core/CONTRIBUTING.md']) {
@@ -54,6 +51,28 @@ assert.equal(systemConfig.server.dataDir, '/var/lib/codex-review', 'systemd conf
 assert.equal(systemConfig.runner.socket, '/run/codex-review-runner/runner.sock', 'systemd config must explicitly pin RuntimeDirectory socket');
 const normalizedSystem = structuredClone(systemConfig); delete normalizedSystem.server.dataDir; delete normalizedSystem.runner.socket;
 assert.deepEqual(normalizedSystem, userConfig, 'systemd config may differ from user config only by explicit system state/socket paths');
+assert.equal(userConfig.notifications.enabled, false, 'notifications must be opt-in by default');
+assert.ok(Array.isArray(userConfig.notifications.routes) && userConfig.notifications.routes.length >= 2, 'Feishu/WeCom route examples are required');
+
+const docker = fs.readFileSync(path.join(root, 'deploy', 'docker', 'Dockerfile'), 'utf8');
+const compose = fs.readFileSync(path.join(root, 'deploy', 'docker', 'compose.yaml'), 'utf8');
+assert.match(docker, /USER codex-review/);
+assert.match(docker, /ARG CODEX_VERSION=0\.149\.1/);
+assert.match(compose, /read_only: true/);
+assert.match(compose, /cap_drop: \["ALL"\]/);
+assert.match(compose, /\/health\/ready/);
+
+const notificationSource = fs.readFileSync(path.join(root, 'src', 'notification.js'), 'utf8');
+const notificationStore = fs.readFileSync(path.join(root, 'src', 'notification-store.js'), 'utf8');
+assert.match(notificationSource, /review\.blocked/);
+assert.match(notificationSource, /service\.degraded/);
+assert.match(notificationSource, /open\.feishu\.cn/);
+assert.match(notificationSource, /qyapi\.weixin\.qq\.com/);
+assert.doesNotMatch(notificationSource, /mustache/i, 'IM cards must remain deterministic, not user-templated');
+assert.match(notificationStore, /notification_outbox/);
+assert.match(notificationStore, /BEGIN IMMEDIATE|withTransaction/);
+assert.match(notificationStore, /saveRunWithOutbox/);
+
 const verifyRelease = fs.readFileSync(path.join(root, 'VERIFY_RELEASE.md'), 'utf8');
 assert.match(verifyRelease, /sha256sum -c SHA256SUMS/);
 assert.match(verifyRelease, /gh attestation verify .* -R jiying2007\/codex-review-service/);
@@ -94,6 +113,8 @@ assert.match(codexSource, /REVIEW_PROMPT_CONTRACT_VERSION/);
 assert.match(runnerSource, /capabilityEnvelope/);
 assert.match(runnerSource, /promptContractVersion/);
 assert.match(indexSource, /installFairScheduling/);
+assert.match(indexSource, /prepareNotificationRoutes/);
+assert.match(indexSource, /Notifier/);
 assert.match(serviceSource, /classifyFindingLifecycle/, 'ReviewService must consume the deterministic finding lifecycle ledger');
 assert.match(serviceSource, /review\.findingLifecycle\s*=\s*findingLifecycle/, 'lifecycle must be persisted in the review run result');
 assert.match(serviceSource, /Finding lifecycle:/, 'GitLab summary must expose lifecycle counts');
@@ -104,9 +125,9 @@ assert.match(reviewSource, /buildReviewEvidenceChunks/);
 assert.doesNotMatch(reviewSource, /Review Receipt v[123]\b/, 'Current Service runtime must not carry obsolete Review Receipt version labels.');
 assert.match(fs.readFileSync(path.join(root, 'src', 'policy.js'), 'utf8'), /parsePolicyDocument/);
 
-for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','SUPPORT.md']) {
+for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md','SUPPORT.md']) {
   const text = fs.readFileSync(path.join(root, doc), 'utf8');
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.4 Family v4 deployment, product documentation, supply-chain, coordinated Safe Core pin, fully rootless defaults and immutable release policy verified.');
+console.log('Codex Review Service 4.1.0 Family v4 deployment, durable IM notification, Docker, supply-chain, exact Core pin, rootless defaults and immutable release policy verified.');
