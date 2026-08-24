@@ -1,8 +1,7 @@
 {
   "server": {
     "host": "127.0.0.1",
-    "port": 8787,
-    "dataDir": "/var/lib/codex-review"
+    "port": 8787
   },
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
