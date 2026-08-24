@@ -8,7 +8,7 @@ const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = '6c0417a376179c295433c18b1b077854d290243d';
+const expectedCore = '7ffbf6f1791e17ba74faf0922e7a702bdac72059';
 const pkg = require('../package.json');
 
 assert.equal(pkg.version, '4.0.4');
@@ -31,8 +31,9 @@ assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 
 const requiredPackageFiles = [
   '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md',
-  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
-  'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example', 'docs/ARCHITECTURE.md', 'src/*.js',
+  'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
+  'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example',
+  'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'src/*.js',
   'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js',
   'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js',
   'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js',
@@ -103,9 +104,9 @@ assert.match(reviewSource, /buildReviewEvidenceChunks/);
 assert.doesNotMatch(reviewSource, /Review Receipt v[123]\b/, 'Current Service runtime must not carry obsolete Review Receipt version labels.');
 assert.match(fs.readFileSync(path.join(root, 'src', 'policy.js'), 'utf8'), /parsePolicyDocument/);
 
-for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md']) {
+for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','SUPPORT.md']) {
   const text = fs.readFileSync(path.join(root, doc), 'utf8');
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.0.4 Family v4 deployment, supply-chain, coordinated Safe Core pin, fully rootless defaults and immutable release policy verified.');
+console.log('Codex Review Service 4.0.4 Family v4 deployment, product documentation, supply-chain, coordinated Safe Core pin, fully rootless defaults and immutable release policy verified.');

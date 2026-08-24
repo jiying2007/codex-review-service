@@ -2,55 +2,134 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for GitLab Self-Managed merge requests. This repository is the server-side enforcement member of the **Codex Safe Family v4** and consumes one exact commit-pinned `codex-safe-core` 4 runtime with Safe Contract v2, Policy Schema v3, Review Evidence, deterministic Review Rules, and Review Receipt v4.
+Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. One service instance can manage multiple Projects and/or Groups.
 
-## Product-family boundary
+## Start here
 
-```text
-                     codex-safe-core 4
-              Safe Contract v2 / Policy v3
-           Review Evidence / Rules / Receipt v4
-                           │
-       ┌───────────────────┼───────────────────┐
-       │                   │                   │
-Codex Review Safe   Codex Commit Safe    Codex PR Safe
-       │
-       └───────────────────────────────┐
-                                       ▼
-                              Codex Review Service
-                              GitLab server enforcement
-```
+Use this product when you want server-side MR review that runs independently of developer workstations and publishes deterministic GitLab status/discussions.
 
-Core owns shared Codex/process/policy/review-evidence/receipt semantics. This repository owns GitLab provider behavior, immutable MR evidence acquisition, SQLite durability, review scheduling, publication Outbox, GitLab status/discussions, observability, and deployment.
+Recommended first deployment:
 
-## Requirements
+> **systemd + inline Runner + one local SQLite database**
 
-- Node.js **22.13+**
-- GitLab Self-Managed **19.1+** with Standard Webhooks Signing Token
-- GitLab API token scoped only to required project/group/MR/repository/discussion/status operations
+Use isolated Runner mode only when GitLab credentials and Codex/OpenAI credentials must be separated into different Unix users/processes.
+
+Requirements:
+
+- Node.js 22.13+
+- GitLab Self-Managed 19.1+
+- GitLab Standard Webhooks Signing Token
+- a scoped GitLab API token
 - OpenAI Codex CLI authenticated as the execution user, or `OPENAI_API_KEY`
 
-## Canonical configuration
+Full production instructions: [Deployment Guide](docs/DEPLOYMENT.md).
 
-There is exactly one non-secret JSON configuration schema. The file location depends on deployment; runtime semantics do not.
+## 5-minute deployment path
 
-Direct user-mode execution defaults to:
+```bash
+sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
+sudo mkdir -p /etc/codex-review
 
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
+git clone --branch v4.0.4 --recurse-submodules \
+  https://github.com/jiying2007/codex-review-service.git \
+  /opt/codex-review-service
+cd /opt/codex-review-service
+npm ci --ignore-scripts --no-audit --no-fund
+npm run core:init
+
+sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
+sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
+sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 ```
 
-When `server.dataDir` is omitted, persistent state defaults to:
+Then configure exactly these first:
 
-```text
-${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
+1. `gitlab.baseUrl`;
+2. `gitlab.projects` and/or `gitlab.groups`;
+3. `GITLAB_API_TOKEN`;
+4. `GITLAB_WEBHOOK_SIGNING_TOKEN`.
+
+Authenticate Codex and validate before startup:
+
+```bash
+sudo -u codex-review -H codex login
+sudo -u codex-review /usr/bin/node \
+  --env-file=/etc/codex-review-service.env \
+  src/doctor.js
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now codex-review-service
+curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-The root [`config.example.json`](config.example.json) is intentionally user-neutral and omits `server.dataDir`, so copying it does not introduce a root-owned path. `CODEX_REVIEW_CONFIG_FILE` can explicitly select another config file. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored and fall back to standard `$HOME` locations.
+Do not enable GitLab webhooks until Doctor and readiness pass.
 
-System-level systemd deployment uses [`deploy/systemd/config.example.json`](deploy/systemd/config.example.json), which explicitly pins state to `/var/lib/codex-review`; both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime code does not detect root, sudo, or systemd.
+## Connect GitLab
 
-Supported environment input is intentionally narrow:
+Expose the service through trusted HTTPS ingress/reverse proxy and configure GitLab 19.1+ webhook:
+
+```text
+https://<review-host>/webhooks/gitlab
+```
+
+Enable:
+
+- Merge request events
+- Note events
+
+Use the same Standard Webhooks Signing Token represented by `GITLAB_WEBHOOK_SIGNING_TOKEN`.
+
+## Multi-repository scope
+
+One instance can manage explicit Projects:
+
+```json
+"projects": [101, 102, 103],
+"groups": []
+```
+
+or an entire Group hierarchy:
+
+```json
+"projects": [],
+"groups": [{ "id": 20, "includeSubgroups": true }]
+```
+
+or both. Group discovery is paginated and fail-closed; incomplete discovery never replaces the last complete scope.
+
+## How developers use it
+
+```text
+developer opens/updates GitLab MR
+          ↓
+GitLab signed webhook
+          ↓
+Codex Review Service queue
+          ↓
+immutable MR evidence + target .codex-safe.json
+          ↓
+deterministic rules + Codex review
+          ↓
+SQLite Review Receipt + Publication Outbox
+          ↓
+GitLab status / summary / discussions
+```
+
+No per-developer extension is required for server review.
+
+## Configuration ownership
+
+System deployment:
+
+```text
+/etc/codex-review/config.json      non-secret product configuration
+/etc/codex-review-service.env      secrets only
+/var/lib/codex-review              SQLite/state
+```
+
+Direct user mode instead uses XDG config/state defaults. There is one JSON schema and no root/sudo/systemd runtime detection.
+
+Only these process inputs are supported:
 
 ```text
 CODEX_REVIEW_CONFIG_FILE
@@ -59,123 +138,13 @@ GITLAB_WEBHOOK_SIGNING_TOKEN
 OPENAI_API_KEY
 ```
 
-There is no non-secret environment override layer.
+## Repository policy
 
-## Direct user-mode run
+Reviewed repositories may commit target-branch `.codex-safe.json` Policy Schema v3. Repository policy may narrow limits or strengthen rules, but cannot weaken service-wide security, blocking/confidence or capacity boundaries.
 
-No root-owned config or state path is required:
+## Operations
 
-```bash
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
-cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
-# Edit the copied config for your GitLab scope.
-
-export GITLAB_API_TOKEN=...
-export GITLAB_WEBHOOK_SIGNING_TOKEN=...
-codex login
-npm start
-```
-
-The default Runner mode is `inline`. If you intentionally run isolated Runner mode outside systemd, set `runner.socket` to an absolute path writable by both Controller and Runner. The `/run/codex-review-runner/runner.sock` value in the systemd template is a system-level deployment choice, not a generic runtime fallback.
-
-## System-level deployment
-
-The default production topology is one Controller with inline Codex:
-
-```text
-GitLab → codex-review-service
-            ├─ SQLite WAL + synchronous=FULL
-            ├─ Review Workers
-            ├─ Transactional Publication Outbox
-            └─ Codex Safe Core → Codex CLI
-```
-
-```bash
-sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
-sudo mkdir -p /etc/codex-review
-
-git clone --recurse-submodules https://github.com/jiying2007/codex-review-service.git /opt/codex-review-service
-cd /opt/codex-review-service
-npm ci --ignore-scripts --no-audit --no-fund
-npm run core:init
-
-sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
-sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
-sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
-
-sudo -u codex-review -H codex login
-sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
-sudo systemctl daemon-reload
-sudo systemctl enable --now codex-review-service
-curl -fsS http://127.0.0.1:8787/health/ready
-```
-
-## Multi-repository scope
-
-One instance can manage explicit Projects and/or Groups:
-
-```json
-{
-  "gitlab": {
-    "baseUrl": "https://gitlab.example.internal",
-    "projects": [101, 102],
-    "groups": [{ "id": 20, "includeSubgroups": true }]
-  },
-  "review": { "concurrency": 4 },
-  "runner": { "mode": "inline" }
-}
-```
-
-Group discovery is paginated and fail-closed. The active scope changes only after complete discovery succeeds; a failed refresh retains the previous complete set and makes readiness unhealthy. Different MRs may run concurrently while each MR remains serialized.
-
-## Hardened deployment
-
-Set `runner.mode="isolated"` in the systemd config to separate GitLab credentials from Codex/OpenAI credentials:
-
-```json
-{
-  "runner": {
-    "mode": "isolated",
-    "socket": "/run/codex-review-runner/runner.sock"
-  }
-}
-```
-
-Controller and Runner consume the same canonical `config.json`. In system-level deployment both units explicitly point to `/etc/codex-review/config.json`; the Runner has no GitLab credential.
-
-## Webhook contract
-
-Configure GitLab 19.1+ **Merge request events** and **Note events** at:
-
-```text
-https://review.example.internal/webhooks/gitlab
-```
-
-The receiver validates Standard Webhooks signing metadata, exact raw-body HMAC, replay window, expected GitLab instance, delivery identity, and resolved scope before durably enqueuing work.
-
-## Repository Policy v3
-
-The only repository policy is target-branch **`.codex-safe.json`**. It is read from the immutable target `diff_refs.start_sha` and validated by the pinned Core closed schema. Shared `review` policy is consumed by both local Review Safe and Review Service; service-only provider/context controls live under `reviewService`.
-
-Repository policy may narrow ceilings and strengthen deterministic gates. It cannot weaken service-wide blocking/confidence/security/capacity boundaries.
-
-## Review evidence and receipts
-
-Provider patches are normalized into Core Review Evidence chunks without silent hunk truncation. Findings must resolve to exact changed lines; model line numbers are never repaired or relocated.
-
-SQLite schema **4** stores the canonical GitLab-MR Review Receipt v4 projection and fingerprint with the run, findings, and publication plan in one durable transaction. SQLite remains the Service source of truth; Receipt v4 is the cross-product audit/provenance projection.
-
-## Reliability invariants
-
-- SQLite local-filesystem `WAL + synchronous=FULL`;
-- review and GitLab publication are separate durable failure domains;
-- every review binds target `start_sha` + source `head_sha`;
-- stale or out-of-scope results cannot publish;
-- publication retry never reruns an already persisted review;
-- Project/Group discovery is atomic and fail-closed;
-- GitHub Actions are full-SHA pinned.
-
-## Health and operations
+Health endpoints:
 
 ```text
 GET /health/live
@@ -183,18 +152,37 @@ GET /health/ready
 GET /metrics
 ```
 
-`npm run doctor` validates canonical config, state/database readiness, Core-backed Codex/Runner capability, GitLab reachability, and complete Project/Group scope without executing reviewed repository code.
+Use `npm run doctor` before initial rollout and after meaningful configuration/auth changes.
 
-See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), [VERIFY_RELEASE.md](VERIFY_RELEASE.md), and [CHANGELOG.md](CHANGELOG.md).
+- Full deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Operations/upgrade/backup/incidents: [OPERATIONS.md](OPERATIONS.md)
+- Support checklist: [SUPPORT.md](SUPPORT.md)
+- Security: [SECURITY.md](SECURITY.md)
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Release verification: [VERIFY_RELEASE.md](VERIFY_RELEASE.md)
 
-## Development and release
+## Hardened isolated Runner
 
-```bash
-npm ci --ignore-scripts --no-audit --no-fund
-npm run core:init
-npm run ci
-npm pack --dry-run --ignore-scripts
-npm run release:check
+For credential separation set:
+
+```json
+"runner": {
+  "mode": "isolated",
+  "socket": "/run/codex-review-runner/runner.sock"
+}
 ```
 
-CI validates Node.js 22.13.0 and Node.js 24. Versioned releases generate an immutable TGZ, SPDX SBOM, SHA256 checksums, provenance attestation, and immutable `v<version>` tag/Release. Verify downloaded release artifacts as documented in [VERIFY_RELEASE.md](VERIFY_RELEASE.md).
+and deploy `codex-review-runner.service` as the separate `codex-review-runner` user. See the Deployment Guide; inline is the recommended default unless this isolation is required.
+
+## Development
+
+```bash
+git submodule update --init --recursive
+npm ci --ignore-scripts --no-audit --no-fund
+npm run ci
+npm pack --dry-run --ignore-scripts
+```
+
+## License
+
+MIT
