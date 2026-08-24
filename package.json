@@ -1,65 +1,25 @@
 {
   "name": "codex-review-service",
-  "version": "4.0.4",
+  "version": "4.1.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
   "type": "commonjs",
-  "engines": {
-    "node": ">=22.13.0"
-  },
+  "engines": { "node": ">=22.13.0" },
   "files": [
-    ".codex-safe.example.json",
-    ".env.example",
-    "CHANGELOG.md",
-    "LICENSE",
-    "LONG_TERM_ASSET.md",
-    "OPERATIONS.md",
-    "README.md",
-    "README.zh-CN.md",
-    "SUPPORT.md",
-    "SECURITY.md",
-    "VERIFY_RELEASE.md",
-    "config.example.json",
-    "deploy/systemd/config.example.json",
-    "deploy/systemd/*.service",
-    "deploy/systemd/*.env.example",
-    "docs/ARCHITECTURE.md",
-    "docs/DEPLOYMENT.md",
-    "docs/DEPLOYMENT.zh-CN.md",
-    "src/*.js",
-    "src/codex-safe-core/index.js",
-    "src/codex-safe-core/safe-contract.js",
-    "src/codex-safe-core/codex-cli.js",
-    "src/codex-safe-core/process-runner.js",
-    "src/codex-safe-core/context-builder.js",
-    "src/codex-safe-core/policy.js",
-    "src/codex-safe-core/review-rules.js",
-    "src/codex-safe-core/git-repository.js",
-    "src/codex-safe-core/codex-safe.schema.json",
-    "src/codex-safe-core/CHANGELOG.md",
-    "src/codex-safe-core/LICENSE",
-    "src/codex-safe-core/README.md",
-    "src/codex-safe-core/README.zh-CN.md",
-    "src/codex-safe-core/SECURITY.md"
+    ".codex-safe.example.json", ".env.example", "CHANGELOG.md", "LICENSE", "LONG_TERM_ASSET.md", "OPERATIONS.md", "README.md", "README.zh-CN.md", "SUPPORT.md", "SECURITY.md", "VERIFY_RELEASE.md", "config.example.json",
+    "deploy/systemd/config.example.json", "deploy/systemd/*.service", "deploy/systemd/*.env.example",
+    "deploy/docker/Dockerfile", "deploy/docker/compose.yaml", "deploy/docker/README.md",
+    "docs/ARCHITECTURE.md", "docs/DEPLOYMENT.md", "docs/DEPLOYMENT.zh-CN.md", "docs/NOTIFICATIONS.md", "docs/NOTIFICATIONS.zh-CN.md", "docs/GITLAB_SETUP.md", "docs/GITLAB_SETUP.zh-CN.md",
+    "src/*.js", "src/codex-safe-core/index.js", "src/codex-safe-core/safe-contract.js", "src/codex-safe-core/codex-cli.js", "src/codex-safe-core/process-runner.js", "src/codex-safe-core/context-builder.js", "src/codex-safe-core/policy.js", "src/codex-safe-core/review-rules.js", "src/codex-safe-core/git-repository.js", "src/codex-safe-core/codex-safe.schema.json", "src/codex-safe-core/CHANGELOG.md", "src/codex-safe-core/LICENSE", "src/codex-safe-core/README.md", "src/codex-safe-core/README.zh-CN.md", "src/codex-safe-core/SECURITY.md"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",
-    "precheck": "npm run core:init",
-    "pretest": "npm run core:init",
-    "start": "node src/index.js",
-    "start:runner": "node src/runner-server.js",
-    "doctor": "node src/doctor.js",
+    "precheck": "npm run core:init", "pretest": "npm run core:init",
+    "start": "node src/index.js", "start:runner": "node src/runner-server.js", "doctor": "node src/doctor.js",
     "check": "node --check src/*.js && node --check src/codex-safe-core/*.js && node --check test/*.test.js && node --check scripts/*.js && node scripts/verify-family-v4.js && node scripts/release.js verify",
-    "test": "node --test test/*.test.js",
-    "ci": "npm run check && npm test",
-    "release:prepare": "node scripts/release.js prepare",
-    "release:verify": "node scripts/release.js verify",
-    "release:check": "node scripts/release.js check",
-    "release:push": "node scripts/release.js push"
+    "test": "node --test test/*.test.js", "ci": "npm run check && npm test",
+    "release:prepare": "node scripts/release.js prepare", "release:verify": "node scripts/release.js verify", "release:check": "node scripts/release.js check", "release:push": "node scripts/release.js push"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/jiying2007/codex-review-service.git"
-  }
+  "repository": { "type": "git", "url": "https://github.com/jiying2007/codex-review-service.git" }
 }
