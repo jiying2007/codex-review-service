@@ -32,7 +32,7 @@ Core 负责跨产品共用的 Codex / Process / Policy / Review Evidence / Recei
 
 ## 唯一配置语义
 
-所有非 Secret 配置始终只来自一份 JSON；不同运行方式只决定该文件的位置，不产生第二套配置模型或隐藏优先级。
+所有非 Secret 配置始终只来自一份 JSON Schema；不同运行方式只决定文件位置，不产生第二套配置模型或隐藏优先级。
 
 普通用户直接运行时默认：
 
@@ -46,16 +46,9 @@ ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-`CODEX_REVIEW_CONFIG_FILE` 可显式选择其他配置文件。相对路径形式的 `XDG_CONFIG_HOME` / `XDG_STATE_HOME` 不采用，回退到标准 `$HOME` 路径。
+根目录 [`config.example.json`](config.example.json) 是普通用户友好的中性模板，刻意不设置 `server.dataDir`，复制后不会重新引入 root 拥有目录。`CODEX_REVIEW_CONFIG_FILE` 可显式选择其他配置文件；相对路径形式的 `XDG_CONFIG_HOME` / `XDG_STATE_HOME` 不采用，回退到标准 `$HOME` 路径。
 
-系统级 systemd 部署则显式固定：
-
-```text
-/etc/codex-review/config.json
-/var/lib/codex-review
-```
-
-生产 `config.example.json` 显式使用 `/var/lib/codex-review`，Controller 与 Runner 两个 systemd unit 都显式设置 `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`。Runtime 不检测 root、sudo 或 systemd。
+系统级 systemd 部署使用 [`deploy/systemd/config.example.json`](deploy/systemd/config.example.json)，该模板显式把状态固定到 `/var/lib/codex-review`；Controller 与 Runner 两个 systemd unit 都显式设置 `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`。Runtime 不检测 root、sudo 或 systemd。
 
 支持的环境变量严格限制为：
 
@@ -75,13 +68,15 @@ OPENAI_API_KEY
 ```bash
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
 cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
-# 修改 GitLab Scope；删除 server.dataDir 可使用 XDG State 默认目录
+# 修改复制后的 GitLab Scope。
 
 export GITLAB_API_TOKEN=...
 export GITLAB_WEBHOOK_SIGNING_TOKEN=...
 codex login
 npm start
 ```
+
+默认 Runner 模式是 `inline`。如果明确要在 systemd 之外直接运行 isolated Runner，请自行把 `runner.socket` 配置为 Controller 与 Runner 都可写的绝对路径；systemd 模板中的 `/run/codex-review-runner/runner.sock` 是系统级部署选择，不是通用 Runtime fallback。
 
 ## 系统级部署
 
@@ -104,7 +99,7 @@ cd /opt/codex-review-service
 npm ci --ignore-scripts --no-audit --no-fund
 npm run core:init
 
-sudo install -m 0644 config.example.json /etc/codex-review/config.json
+sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
 sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
 sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 
@@ -135,7 +130,7 @@ Group discovery 支持分页并 fail-closed：只有完整发现成功后才原�
 
 ## Hardened Deployment
 
-设置 `runner.mode="isolated"`，把 GitLab 凭据与 Codex/OpenAI 凭据隔离到不同用户/进程。Controller 与 Runner 读取同一份 canonical `config.json`；系统级部署下两个 unit 都显式指向 `/etc/codex-review/config.json`，Runner 不持有 GitLab 凭据。
+在 systemd 配置中设置 `runner.mode="isolated"`，把 GitLab 凭据与 Codex/OpenAI 凭据隔离到不同用户/进程。Controller 与 Runner 读取同一份 canonical `config.json`；系统级部署下两个 unit 都显式指向 `/etc/codex-review/config.json`，Runner 不持有 GitLab 凭据。
 
 ## GitLab Webhook
 
@@ -171,7 +166,7 @@ GET /metrics
 
 `npm run doctor` 验证 canonical config、状态/数据库、Core-backed Codex/Runner capability、GitLab 可达性与完整 Project/Group Scope，不执行被审核仓库代码。
 
-详见 [OPERATIONS.md](OPERATIONS.md)、[SECURITY.md](SECURITY.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[LONG_TERM_ASSET.md](LONG_TERM_ASSET.md)、[CHANGELOG.md](CHANGELOG.md)。
+详见 [OPERATIONS.md](OPERATIONS.md)、[SECURITY.md](SECURITY.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[LONG_TERM_ASSET.md](LONG_TERM_ASSET.md)、[VERIFY_RELEASE.md](VERIFY_RELEASE.md)、[CHANGELOG.md](CHANGELOG.md)。
 
 ## 开发与发布
 
@@ -183,4 +178,4 @@ npm pack --dry-run --ignore-scripts
 npm run release:check
 ```
 
-CI 同时验证 Node.js 22.13.0 与 Node.js 24。版本发布生成 immutable TGZ、SPDX SBOM、SHA256、provenance attestation 与 immutable `v<version>` Tag/Release。
+CI 同时验证 Node.js 22.13.0 与 Node.js 24。版本发布生成 immutable TGZ、SPDX SBOM、SHA256、provenance attestation 与 immutable `v<version>` Tag/Release。下载后的产物按 [VERIFY_RELEASE.md](VERIFY_RELEASE.md) 同时验证 checksum 与 provenance。
