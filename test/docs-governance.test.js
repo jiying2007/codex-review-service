@@ -6,7 +6,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 
 const root=path.resolve(__dirname,'..');
-const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','SUPPORT.md'];
+const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md','deploy/docker/README.md','SUPPORT.md'];
 
 function read(name){return fs.readFileSync(path.join(root,name),'utf8');}
 
@@ -25,13 +25,15 @@ test('current documentation stays on Family v4 semantics',()=>{
 
 test('README is a deployable product entry',()=>{
   const en=read('README.md'),zh=read('README.zh-CN.md');
-  assert.match(en,/5-minute deployment path/i);
-  assert.match(zh,/5 分钟部署路径/);
+  assert.match(en,/5[- ]minute[\s\S]{0,40}deploy/i);
+  assert.match(zh,/5 分钟[^\n]{0,40}部署/);
   for(const text of [en,zh]){
     assert.match(text,/\/etc\/codex-review\/config\.json/);
     assert.match(text,/\/webhooks\/gitlab/);
     assert.match(text,/doctor/i);
     assert.match(text,/health\/ready/);
+    assert.match(text,/Docker|Compose/i);
+    assert.match(text,/notification|通知/i);
   }
 });
 
@@ -51,6 +53,33 @@ test('deployment guides cover full rollout and lifecycle',()=>{
     assert.match(text,/rollback|回滚/i);
     assert.match(text,/projects|Project/);
     assert.match(text,/groups|Group/);
+  }
+});
+
+test('notification docs preserve attention-only durable boundary',()=>{
+  for(const name of ['docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md']){
+    const text=read(name);
+    assert.match(text,/notification_outbox/);
+    assert.match(text,/Feishu|飞书/i);
+    assert.match(text,/WeCom|企业微信/i);
+    assert.match(text,/review\.blocked/);
+    assert.match(text,/review\.failed/);
+    assert.match(text,/service\.degraded/);
+    assert.match(text,/retry|重试/i);
+    assert.match(text,/idempot|幂等/i);
+    assert.match(text,/never changes? a review verdict|不会改变 Review Verdict|绝不改变 Review Verdict/i);
+  }
+});
+
+test('GitLab setup documents end-to-end acceptance',()=>{
+  for(const name of ['docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md']){
+    const text=read(name);
+    assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN/);
+    assert.match(text,/\/webhooks\/gitlab/);
+    assert.match(text,/Merge request events/i);
+    assert.match(text,/Note events/i);
+    assert.match(text,/health\/ready/);
+    assert.match(text,/Feishu|飞书|WeCom|企业微信/i);
   }
 });
 
