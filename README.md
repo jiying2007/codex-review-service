@@ -32,7 +32,7 @@ Core owns shared Codex/process/policy/review-evidence/receipt semantics. This re
 
 ## Canonical configuration
 
-There is exactly one non-secret JSON configuration source. The location depends on how the process is launched; the schema and precedence do not.
+There is exactly one non-secret JSON configuration schema. The file location depends on deployment; runtime semantics do not.
 
 Direct user-mode execution defaults to:
 
@@ -40,22 +40,15 @@ Direct user-mode execution defaults to:
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ```
 
-If `server.dataDir` is omitted, persistent state defaults to:
+When `server.dataDir` is omitted, persistent state defaults to:
 
 ```text
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-`CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored and fall back to the standard `$HOME` locations.
+The root [`config.example.json`](config.example.json) is intentionally user-neutral and omits `server.dataDir`, so copying it does not introduce a root-owned path. `CODEX_REVIEW_CONFIG_FILE` can explicitly select another config file. Relative `XDG_CONFIG_HOME` / `XDG_STATE_HOME` values are ignored and fall back to standard `$HOME` locations.
 
-System-level systemd deployment deliberately pins:
-
-```text
-/etc/codex-review/config.json
-/var/lib/codex-review
-```
-
-The production [`config.example.json`](config.example.json) explicitly uses `/var/lib/codex-review`, while both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime code does not detect root, sudo, or systemd.
+System-level systemd deployment uses [`deploy/systemd/config.example.json`](deploy/systemd/config.example.json), which explicitly pins state to `/var/lib/codex-review`; both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime code does not detect root, sudo, or systemd.
 
 Supported environment input is intentionally narrow:
 
@@ -70,18 +63,20 @@ There is no non-secret environment override layer.
 
 ## Direct user-mode run
 
-No root-owned runtime path is required:
+No root-owned config or state path is required:
 
 ```bash
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review"
 cp config.example.json "${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json"
-# Edit GitLab scope. Remove server.dataDir to use the XDG state default.
+# Edit the copied config for your GitLab scope.
 
 export GITLAB_API_TOKEN=...
 export GITLAB_WEBHOOK_SIGNING_TOKEN=...
 codex login
 npm start
 ```
+
+The default Runner mode is `inline`. If you intentionally run isolated Runner mode outside systemd, set `runner.socket` to an absolute path writable by both Controller and Runner. The `/run/codex-review-runner/runner.sock` value in the systemd template is a system-level deployment choice, not a generic runtime fallback.
 
 ## System-level deployment
 
@@ -104,7 +99,7 @@ cd /opt/codex-review-service
 npm ci --ignore-scripts --no-audit --no-fund
 npm run core:init
 
-sudo install -m 0644 config.example.json /etc/codex-review/config.json
+sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
 sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
 sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 
@@ -135,7 +130,7 @@ Group discovery is paginated and fail-closed. The active scope changes only afte
 
 ## Hardened deployment
 
-Set `runner.mode="isolated"` to separate GitLab credentials from Codex/OpenAI credentials:
+Set `runner.mode="isolated"` in the systemd config to separate GitLab credentials from Codex/OpenAI credentials:
 
 ```json
 {
@@ -190,7 +185,7 @@ GET /metrics
 
 `npm run doctor` validates canonical config, state/database readiness, Core-backed Codex/Runner capability, GitLab reachability, and complete Project/Group scope without executing reviewed repository code.
 
-See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), and [CHANGELOG.md](CHANGELOG.md).
+See [OPERATIONS.md](OPERATIONS.md), [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [LONG_TERM_ASSET.md](LONG_TERM_ASSET.md), [VERIFY_RELEASE.md](VERIFY_RELEASE.md), and [CHANGELOG.md](CHANGELOG.md).
 
 ## Development and release
 
@@ -202,4 +197,4 @@ npm pack --dry-run --ignore-scripts
 npm run release:check
 ```
 
-CI validates Node.js 22.13.0 and Node.js 24. Versioned releases generate an immutable TGZ, SPDX SBOM, SHA256 checksums, provenance attestation, and immutable `v<version>` tag/Release.
+CI validates Node.js 22.13.0 and Node.js 24. Versioned releases generate an immutable TGZ, SPDX SBOM, SHA256 checksums, provenance attestation, and immutable `v<version>` tag/Release. Verify downloaded release artifacts as documented in [VERIFY_RELEASE.md](VERIFY_RELEASE.md).
