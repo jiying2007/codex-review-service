@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.0.4 - 2026-08-24
+
+### Terminal deployment and supply-chain polish
+
+- Make the root `config.example.json` user-neutral so direct execution naturally uses the XDG state default without requiring users to delete a system path first.
+- Add `deploy/systemd/config.example.json` as the explicit system-level deployment template with `/var/lib/codex-review` state while both systemd units continue to pin `/etc/codex-review/config.json`.
+- Repin the Service and policy-schema provenance to the coordinated Safe Core maintenance commit.
+- Add consumer-side SHA256 plus GitHub artifact-attestation verification guidance and review-only Renovate dependency governance.
+- Permanently verify that user/system config examples differ only by the explicit system state directory.
+
 ## 4.0.3
 
 - Make direct runtime defaults rootless: config follows XDG config home and persistent state follows XDG state home.

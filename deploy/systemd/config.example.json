@@ -1,7 +1,8 @@
 {
   "server": {
     "host": "127.0.0.1",
-    "port": 8787
+    "port": 8787,
+    "dataDir": "/var/lib/codex-review"
   },
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
@@ -68,7 +69,8 @@
     "allowedVersionPattern": ""
   },
   "runner": {
-    "mode": "inline"
+    "mode": "inline",
+    "socket": "/run/codex-review-runner/runner.sock"
   },
   "publication": {
     "concurrency": 2,

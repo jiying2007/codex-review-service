@@ -32,6 +32,7 @@ function requiredSecret(name){const value=String(process.env[name]||'').trim();i
 function resolveXdgHome(name,fallback,env=process.env){const configured=String(env[name]||'').trim();if(configured&&path.isAbsolute(configured))return path.normalize(configured);const home=String(env.HOME||os.homedir()||'').trim();if(!home||!path.isAbsolute(home))throw configError(`Unable to resolve user home for ${name}`);return path.join(home,...fallback);}
 function defaultConfigPath(env=process.env){return path.join(resolveXdgHome('XDG_CONFIG_HOME',['.config'],env),'codex-review','config.json');}
 function defaultStateDir(env=process.env){return path.join(resolveXdgHome('XDG_STATE_HOME',['.local','state'],env),'codex-review');}
+function defaultRunnerSocket(env=process.env){const runtime=String(env.XDG_RUNTIME_DIR||'').trim();return runtime&&path.isAbsolute(runtime)?path.join(path.normalize(runtime),'codex-review','runner.sock'):path.join(defaultStateDir(env),'runner.sock');}
 function loadStructuredConfig(filePath=process.env.CODEX_REVIEW_CONFIG_FILE||defaultConfigPath()){
   if(!fs.existsSync(filePath))throw configError(`Configuration file does not exist: ${filePath}`);
   let root;try{root=JSON.parse(fs.readFileSync(filePath,'utf8'));}catch(cause){const error=configError(`Configuration file is not valid JSON: ${filePath}`);error.cause=cause;throw error;}
@@ -42,7 +43,7 @@ function loadStructuredConfig(filePath=process.env.CODEX_REVIEW_CONFIG_FILE||def
 function loadConfig(){
   const structured=loadStructuredConfig(),s=structured.value.server,g=structured.value.gitlab,w=structured.value.webhook,r=structured.value.review,c=structured.value.codex,runner=structured.value.runner,pub=structured.value.publication,life=structured.value.lifecycle,obs=structured.value.observability;
   const gitlabBaseUrl=normalizeBaseUrl(stringValue(g.baseUrl,'','gitlab.baseUrl'),'gitlab.baseUrl'),projects=new Set(positiveIds(g.projects,'gitlab.projects')),groups=parseGroups(g.groups);if(!projects.size&&!groups.length)throw configError('Configure at least one gitlab.projects or gitlab.groups entry');
-  const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,'/run/codex-review-runner/runner.sock','runner.socket',2048);if(runnerMode==='isolated'&&!runnerSocket.startsWith('/'))throw configError('runner.socket must be an absolute Unix socket path');
+  const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,defaultRunnerSocket(),'runner.socket',2048);if(runnerMode==='isolated'&&!runnerSocket.startsWith('/'))throw configError('runner.socket must be an absolute Unix socket path');
   const dataDir=path.resolve(stringValue(s.dataDir,defaultStateDir(),'server.dataDir',2048)),language=enumValue(r.language,'zh-CN','review.language',['zh-CN','en']),blockingSeverity=enumValue(r.blockingSeverity,'high','review.blockingSeverity',SEVERITIES);
   return Object.freeze({
     configFilePath:structured.path,gitlabProjectAllowlist:projects,gitlabGroups:Object.freeze(groups.map(Object.freeze)),
@@ -60,4 +61,4 @@ function loadConfig(){
     otelEndpoint:stringValue(obs.otelEndpoint,'','observability.otelEndpoint',2048),otelServiceName:stringValue(obs.serviceName,'codex-review-service','observability.serviceName',255)||'codex-review-service',otelExportTimeoutMs:intValue(obs.exportTimeoutMs,3000,'observability.exportTimeoutMs',100,60000)
   });
 }
-module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError};
+module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,defaultRunnerSocket,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError};
