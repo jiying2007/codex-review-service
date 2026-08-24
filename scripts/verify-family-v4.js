@@ -32,7 +32,7 @@ assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 const requiredPackageFiles = [
   '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md', 'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
   'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example',
-  'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md',
+  'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md', 'deploy/docker/config.example.json',
   'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'docs/NOTIFICATIONS.md', 'docs/NOTIFICATIONS.zh-CN.md', 'docs/GITLAB_SETUP.md', 'docs/GITLAB_SETUP.zh-CN.md',
   'src/*.js', 'src/codex-safe-core/index.js', 'src/codex-safe-core/safe-contract.js', 'src/codex-safe-core/codex-cli.js', 'src/codex-safe-core/process-runner.js', 'src/codex-safe-core/context-builder.js', 'src/codex-safe-core/policy.js', 'src/codex-safe-core/review-rules.js', 'src/codex-safe-core/git-repository.js', 'src/codex-safe-core/codex-safe.schema.json', 'src/codex-safe-core/CHANGELOG.md', 'src/codex-safe-core/LICENSE', 'src/codex-safe-core/README.md', 'src/codex-safe-core/README.zh-CN.md', 'src/codex-safe-core/SECURITY.md'
 ];
@@ -41,12 +41,16 @@ for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex
 
 const userConfig = JSON.parse(fs.readFileSync(path.join(root, 'config.example.json'), 'utf8'));
 const systemConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'systemd', 'config.example.json'), 'utf8'));
+const dockerConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'docker', 'config.example.json'), 'utf8'));
 assert.equal(Object.hasOwn(userConfig.server || {}, 'dataDir'), false, 'root config example must use XDG state default');
 assert.equal(Object.hasOwn(userConfig.runner || {}, 'socket'), false, 'root config example must use rootless Runner socket default');
 assert.equal(systemConfig.server.dataDir, '/var/lib/codex-review', 'systemd config must explicitly pin system state');
 assert.equal(systemConfig.runner.socket, '/run/codex-review-runner/runner.sock', 'systemd config must explicitly pin RuntimeDirectory socket');
 const normalizedSystem = structuredClone(systemConfig); delete normalizedSystem.server.dataDir; delete normalizedSystem.runner.socket;
 assert.deepEqual(normalizedSystem, userConfig, 'systemd config may differ from user config only by explicit system state/socket paths');
+assert.equal(dockerConfig.server.host, '0.0.0.0', 'Docker config must listen inside the container');
+assert.equal(dockerConfig.server.dataDir, '/var/lib/codex-review', 'Docker config must persist state in its volume');
+assert.equal(dockerConfig.notifications.enabled, false, 'notifications must remain opt-in in Docker');
 assert.equal(userConfig.notifications.enabled, false, 'notifications must be opt-in by default');
 assert.ok(Array.isArray(userConfig.notifications.routes) && userConfig.notifications.routes.length >= 2, 'Feishu/WeCom route examples are required');
 
@@ -69,6 +73,7 @@ assert.match(dbSource, /notification_outbox/);
 assert.match(dbSource, /saveRunWithOutbox/);
 assert.match(dbSource, /notificationActions/);
 assert.match(dbSource, /recoverNotifications/);
+assert.match(dbSource, /finishJobWithNotifications/, 'failed review terminal state and IM notification enqueue must remain atomic');
 assert.equal(fs.existsSync(path.join(root, 'src', 'notification-store.js')), false, 'notification-store compatibility/monkey-patch layer is forbidden');
 assert.equal(fs.existsSync(path.join(root, 'test', 'notification-store.test.js')), false, 'notification-store compatibility test is forbidden');
 
@@ -116,6 +121,7 @@ assert.doesNotMatch(indexSource, /installNotificationStore|setNotificationConfig
 assert.match(serviceSource, /eventForReview/);
 assert.match(serviceSource, /eventForFailure/);
 assert.match(serviceSource, /notificationActions/);
+assert.match(serviceSource, /finishJobWithNotifications/);
 assert.match(serviceSource, /classifyFindingLifecycle/, 'ReviewService must consume the deterministic finding lifecycle ledger');
 assert.match(serviceSource, /review\.findingLifecycle\s*=\s*findingLifecycle/, 'lifecycle must be persisted in the review run result');
 assert.match(serviceSource, /Finding lifecycle:/, 'GitLab summary must expose lifecycle counts');
