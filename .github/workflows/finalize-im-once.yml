@@ -1,0 +1,61 @@
+name: Finalize IM Once
+on:
+  push:
+    branches: [feature/im-notifications-4.1.0]
+permissions:
+  contents: write
+jobs:
+  finalize:
+    if: "!contains(github.event.head_commit.message, '[im-final]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { fetch-depth: 0, submodules: recursive }
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with: { node-version: '22', cache: npm }
+      - name: Harden failure atomicity and Docker config
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          def R(p): return Path(p).read_text()
+          def W(p,s): Path(p).parent.mkdir(parents=True,exist_ok=True); Path(p).write_text(s)
+          def rep(p,a,b):
+            s=R(p)
+            if a not in s: raise SystemExit(f'missing in {p}: {a[:100]}')
+            W(p,s.replace(a,b))
+          # Failure status + IM notification enqueue must be one durable transaction.
+          rep('src/db.js',"  finishJob(id,status,errorCode=null){this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,new Date().toISOString(),id);}","  finishJob(id,status,errorCode=null){this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,new Date().toISOString(),id);}\n  finishJobWithNotifications(id,status,errorCode,actions=[]){return this.withTransaction(()=>{const now=new Date().toISOString();this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,now,id);const insert=this.db.prepare(\"INSERT OR IGNORE INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(NULL,?,?,?,?,?,?,?,?,'pending',?,?)\");for(const action of actions||[])insert.run(action.payload?.projectId||0,action.payload?.mrIid||0,action.routeName,action.provider,action.secretRef,action.eventType,action.dedupeKey,json(action.payload),now,now);return actions.length;});}")
+          old="job=this.store.getJob(job.id)||job;this.store.finishJob(job.id,'failed',code);this.enqueueStatus(job,'failed',code==='EPROJECTPOLICY'?'Codex review policy is invalid':code==='ETOKENBUDGET'?'Codex review token budget exhausted':'Codex review service failed');const notificationEvent=eventForFailure(job,code);for(const action of planNotificationActions(this.config,notificationEvent,`job:${job.id}`))this.store.enqueueNotification(action);"
+          new="job=this.store.getJob(job.id)||job;const notificationEvent=eventForFailure(job,code),notificationActions=planNotificationActions(this.config,notificationEvent,`job:${job.id}`);this.store.finishJobWithNotifications(job.id,'failed',code,notificationActions);this.enqueueStatus(job,'failed',code==='EPROJECTPOLICY'?'Codex review policy is invalid':code==='ETOKENBUDGET'?'Codex review token budget exhausted':'Codex review service failed');"
+          rep('src/service.js',old,new)
+          # Docker-specific canonical config: no manual host/dataDir editing required.
+          data=json.loads(R('deploy/systemd/config.example.json'));data['server']['host']='0.0.0.0';data['server']['dataDir']='/var/lib/codex-review';W('deploy/docker/config.example.json',json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+          rep('deploy/docker/README.md','1. Copy `config.example.json` to `deploy/docker/config.json` and set `server.host` to `0.0.0.0` and `server.dataDir` to `/var/lib/codex-review`.','1. Copy `deploy/docker/config.example.json` to `deploy/docker/config.json`. The Docker template already listens on `0.0.0.0` and persists state in `/var/lib/codex-review`.')
+          pkg=json.loads(R('package.json'))
+          if 'deploy/docker/config.example.json' not in pkg['files']:
+            i=pkg['files'].index('deploy/docker/README.md')+1;pkg['files'].insert(i,'deploy/docker/config.example.json')
+          W('package.json',json.dumps(pkg,indent=2)+'\n')
+          # Keep package-lock metadata only; package contents don't affect lock deps.
+          rep('scripts/verify-family-v4.js',"'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md', 'src/*.js',","'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md', 'deploy/docker/config.example.json', 'src/*.js',")
+          rep('test/docker-governance.test.js',"assert.match(compose,/\\/health\\/ready/);","assert.match(compose,/\\/health\\/ready/);const config=JSON.parse(fs.readFileSync('deploy/docker/config.example.json','utf8'));assert.equal(config.server.host,'0.0.0.0');assert.equal(config.server.dataDir,'/var/lib/codex-review');")
+          # Regression test that failure notification enqueue is atomic and idempotent.
+          s=R('test/db.test.js')
+          if 'finishJobWithNotifications' not in s:
+            s += "\ntest('failed job and notification outbox commit atomically',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-db-'));const store=new Store(path.join(dir,'db.sqlite'));try{const id=store.enqueue({projectId:1,mrIid:2,trigger:'push',dedupeKey:'atomic',maxQueueDepth:10});store.finishJobWithNotifications(id,'failed','EFAIL',[{routeName:'ops',provider:'wecom',secretRef:'ops',eventType:'review.failed',dedupeKey:'job:atomic:ops:review.failed',payload:{projectId:1,mrIid:2}}]);assert.equal(store.getJob(id).status,'failed');assert.equal(store.notificationDepth(),1);store.finishJobWithNotifications(id,'failed','EFAIL',[{routeName:'ops',provider:'wecom',secretRef:'ops',eventType:'review.failed',dedupeKey:'job:atomic:ops:review.failed',payload:{projectId:1,mrIid:2}}]);assert.equal(store.notificationDepth(),1);}finally{store.close();fs.rmSync(dir,{recursive:true,force:true});}});\n"
+            W('test/db.test.js',s)
+          PY
+      - name: Validate
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run ci
+          npm pack --dry-run --ignore-scripts
+      - name: Commit
+        run: |
+          rm -f .github/workflows/finalize-im-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: close IM notification durability and Docker defaults [im-final]'
+          git push origin HEAD:feature/im-notifications-4.1.0
