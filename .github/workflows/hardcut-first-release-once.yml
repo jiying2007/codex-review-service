@@ -52,10 +52,10 @@ jobs:
           p=Path('scripts/verify-family-v4.js')
           s=p.read_text()
           marker="const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));"
-          gate="""const dbSource = fs.readFileSync(path.join(root, 'src', 'db.js'), 'utf8');\nassert.doesNotMatch(dbSource, /ALTER TABLE|hasColumn\\(|migrate\\(/, 'first-release database must not retain migration compatibility');\nassert.match(dbSource, /EDBSCHEMA/, 'database schema mismatch must fail closed');\n"""
-          if gate not in s:
+          assertions="""assert.doesNotMatch(dbSource, /ALTER TABLE|hasColumn\\(|migrate\\(/, 'first-release database must not retain migration compatibility');\nassert.match(dbSource, /EDBSCHEMA/, 'database schema mismatch must fail closed');\n"""
+          if assertions not in s:
             if marker not in s: raise SystemExit('verify marker missing')
-            s=s.replace(marker,gate+marker,1)
+            s=s.replace(marker,assertions+marker,1)
           p.write_text(s)
 
           p=Path('OPERATIONS.md')
