@@ -1,6 +1,6 @@
 'use strict';
 
-const {MINIMUM_GITLAB_VERSION,MODERN_GITLAB_PROFILE_MINIMUM_VERSION}=require('./product-contract');
+const {MINIMUM_GITLAB_VERSION,MODERN_GITLAB_PROFILE_MINIMUM_VERSION,STANDARD_WEBHOOK_MINIMUM_GITLAB_VERSION}=require('./product-contract');
 
 function parseVersion(value){
   const match=String(value||'').trim().match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -36,13 +36,29 @@ function selectGitLabCapabilities(version){
     error.minimumVersion=MINIMUM_GITLAB_VERSION;
     throw error;
   }
-  const modern=versionAtLeast(version,MODERN_GITLAB_PROFILE_MINIMUM_VERSION);
+  const modernDiff=versionAtLeast(version,MODERN_GITLAB_PROFILE_MINIMUM_VERSION);
+  const standardWebhook=versionAtLeast(version,STANDARD_WEBHOOK_MINIMUM_GITLAB_VERSION);
   return Object.freeze({
     version,
-    profile:modern?'modern':'classic',
-    mergeRequestDiffs:modern?'diffs':'changes',
-    diffCompleteness:modern?'versions-real-size':'changes-overflow',
+    profile:modernDiff?'modern':'classic',
+    mergeRequestDiffs:modernDiff?'diffs':'changes',
+    diffCompleteness:modernDiff?'versions-real-size':'changes-overflow',
+    webhookAuth:standardWebhook?'standard-hmac':'classic-token',
+    webhookDeliveryIdentity:standardWebhook?'provider-id':'body-sha256',
+    webhookReplayWindow:standardWebhook,
+    webhookInstanceHeader:standardWebhook,
   });
 }
 
-module.exports={parseVersion,compareVersions,versionAtLeast,selectGitLabCapabilities};
+function applyGitLabCapabilities(config,capabilities){
+  const classic=capabilities.webhookAuth==='classic-token';
+  const secret=classic?config.webhookClassicToken:config.webhookSigningToken;
+  if(!secret){
+    const error=new Error(classic?'GITLAB_WEBHOOK_CLASSIC_TOKEN is required for this GitLab version':'GITLAB_WEBHOOK_SIGNING_TOKEN is required for this GitLab version');
+    error.code='EWEBHOOKSECRET';
+    throw error;
+  }
+  return Object.freeze({...config,gitlabCapabilities:capabilities,webhookAuthMode:capabilities.webhookAuth,requireInstanceHeader:classic?false:config.requireInstanceHeader});
+}
+
+module.exports={parseVersion,compareVersions,versionAtLeast,selectGitLabCapabilities,applyGitLabCapabilities};
