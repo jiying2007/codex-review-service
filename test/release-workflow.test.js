@@ -8,9 +8,12 @@ test('release builds the canonical production Dockerfile',()=>{
   assert.match(release,/docker buildx build[\s\S]*--file deploy\/docker\/Dockerfile[\s\S]*--platform linux\/amd64,linux\/arm64[\s\S]*--push/);
 });
 
-test('release retry is anchored to exactly one unreleased immutable tag',()=>{
+test('release retry is anchored to an explicit or uniquely unreleased immutable tag',()=>{
   assert.match(release,/release_sha:/);
-  assert.match(release,/Multiple unreleased immutable tags exist; refusing ambiguous \/release-retry/);
+  assert.match(release,/RELEASE_RETRY_REQUEST/);
+  assert.match(release,/Usage: \/release-retry \[vMAJOR\.MINOR\.PATCH\]/);
+  assert.match(release,/Requested immutable tag .* does not exist/);
+  assert.match(release,/Multiple unreleased immutable tags exist; use \/release-retry vMAJOR\.MINOR\.PATCH/);
   assert.match(release,/No unreleased immutable tag exists for \/release-retry/);
   assert.match(release,/git rev-list -n 1 "\$tag"/);
   assert.match(release,/ref: \$\{\{ needs\.prepare\.outputs\.release_sha \}\}/);

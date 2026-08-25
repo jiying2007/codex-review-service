@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. Codex Review Service 5.0.0 requires Node.js >=24.19.0 <25, GitLab Self-Managed >=19.1.0, Database Schema 5 and Config Schema 1.
+Read `product-contract.json` before deployment. Codex Review Service 5.0.1 requires Node.js >=24.19.0 <25, GitLab Self-Managed >=19.1.0, Database Schema 5 and Config Schema 1.
 
 Safe Core remains exact commit-pinned. Do not replace the gitlink or copy a different Core runtime into a release package.
 

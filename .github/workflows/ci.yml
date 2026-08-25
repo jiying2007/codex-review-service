@@ -46,12 +46,17 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Build production image
-        run: docker build --build-arg SERVICE_VERSION=5.0.0 --build-arg VCS_REF="$GITHUB_SHA" -t codex-review-service:ci -f deploy/docker/Dockerfile .
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./product-contract.json').serviceVersion")"
+          docker build --build-arg SERVICE_VERSION="$version" --build-arg VCS_REF="$GITHUB_SHA" -t codex-review-service:ci -f deploy/docker/Dockerfile .
       - name: Verify immutable runtime image shape
         run: |
           set -euo pipefail
+          version="$(node -p "require('./product-contract.json').serviceVersion")"
           test "$(docker inspect -f '{{.Config.User}}' codex-review-service:ci)" = "codex-review"
-          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!=='5.0.0'||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1)process.exit(1)"
+          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!==process.argv[1]||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1)process.exit(1)" "$version"
+          docker run --rm --entrypoint sh codex-review-service:ci -ec 'command -v node >/dev/null; command -v codex >/dev/null; ! command -v npm; ! command -v npx; ! command -v yarn; ! command -v yarnpkg; ! command -v corepack'
       - name: Compose syntax and security boundary
         run: |
           mkdir -p deploy/docker/secrets

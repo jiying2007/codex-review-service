@@ -13,7 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
 WORKDIR /app
 COPY package.json package-lock.json product-contract.json ./
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
+    && rm -rf /root/.npm /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v1.22.22 \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY src ./src
 RUN mkdir -p /var/lib/codex-review /etc/codex-review \
     && chown -R codex-review:codex-review /var/lib/codex-review /home/codex-review
