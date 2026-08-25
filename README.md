@@ -2,13 +2,13 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.0.0** is the production-operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
+Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.0.1** is the current production-operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
 
 ## Product contract
 
 `product-contract.json` is the single machine-checked source for product identity and compatibility:
 
-- Service: **5.0.0**
+- Service: **5.0.1**
 - Database Schema: **5**
 - Config Schema: **1**
 - Policy Schema: **3**
@@ -32,7 +32,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-5.0.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-5.0.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -77,7 +77,7 @@ docker compose -f compose.release.yaml up -d
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-The image runs non-root, drops Linux capabilities, uses a read-only root filesystem and persists only service state/Codex home. The Dockerfile pins the Node 24.19.0 base by immutable multi-platform digest.
+The image runs non-root, drops Linux capabilities, uses a read-only root filesystem and persists only service state/Codex home. The Dockerfile pins the Node 24.19.0 base by immutable multi-platform digest and strips npm/npx/yarn/corepack from the final runtime after build-time installation.
 
 ## Connect GitLab
 
