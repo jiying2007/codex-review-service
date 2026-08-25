@@ -2,26 +2,29 @@
 
 ## Product baseline
 
-Codex Review Service **5.0.0** is the production-operations baseline. Machine-readable compatibility is owned by `product-contract.json`:
+Codex Review Service **5.1.0** is the compatibility/production-operations baseline. Machine-readable compatibility is owned by `product-contract.json`:
 
 - Database Schema 5
 - Config Schema 1
 - Policy Schema 3
 - Review Receipt 4
 - Safe Contract 2 / Safe Core Family v4 exact commit pin
-- Node.js >=24.19.0 <25
-- GitLab Self-Managed >=19.1.0
+- Native/systemd Node.js: 22 LTS >=22.22.2 or 24 LTS >=24.19.0; Node 23 unsupported
+- Canonical Docker Node.js: 24.19.0
+- GitLab Self-Managed compatibility floor: >=14.6.1
+- GitLab recommendation: vendor-supported release
+- GitLab profiles: Classic 14.6.1..<15.7; Modern >=15.7
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, SQLite Schema 5, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared Codex/process execution remains in exact-pinned `codex-safe-core`.
+The service owns GitLab provider/capability semantics, immutable `start_sha`/`head_sha` evidence, SQLite Schema 5, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared Codex/process execution remains in exact-pinned `codex-safe-core`.
 
 ## Deployment model
 
 This is intentionally a **single-node stateful service** backed by local SQLite `WAL + synchronous=FULL`. Use exactly one active Controller per database and never place the database on NFS/SMB/network filesystems.
 
-- Direct user mode: XDG config/state defaults.
+- Direct user mode: XDG config/state defaults; use supported Node 22/24 LTS.
 - Standard system deployment: one `codex-review-service` process with inline Codex.
 - Hardened deployment: Controller + isolated Unix-socket Runner.
-- Docker/Compose: canonical release OCI image, persistent local state volume.
+- Docker/Compose: canonical release OCI image with Node 24.19.0 and persistent local state volume.
 
 One instance is one administrative/security trust domain. Separate instances are preferred over hidden multi-tenant credential sharing.
 
@@ -69,15 +72,29 @@ A direct value and matching `_FILE` value are mutually exclusive. Secret files m
 
 ## Preflight
 
-1. Install Node.js 24.19.0 or newer within major 24.
-2. Install/authenticate the approved Codex CLI.
+1. For native/systemd, install Node 22 >=22.22.2 or Node 24 >=24.19.0. For official Docker, host Node is irrelevant.
+2. Install/authenticate the approved Codex CLI when using native/systemd; the release image contains its tested runtime.
 3. Install a verified release tgz or verified OCI image.
-4. Create Config Schema 1 file.
-5. Provision file-backed secrets.
-6. Run `npm run doctor`.
-7. Require `/health/ready` = 200 before enabling webhooks.
-8. Check `/health/dependencies` separately for GitLab/scope health.
-9. Record `/version` in deployment evidence.
+4. Confirm GitLab is >=14.6.1. Do not treat compatibility with an old GitLab as a recommendation to leave it unpatched indefinitely.
+5. Create Config Schema 1 file.
+6. Provision file-backed secrets.
+7. Run `npm run doctor`; record GitLab version/profile.
+8. Require `/health/ready` = 200 before enabling webhooks.
+9. Check `/health/dependencies` separately for GitLab/scope health.
+10. Record `/version` in deployment evidence.
+
+## GitLab profile operations
+
+Doctor deterministically selects one provider profile from authenticated GitLab `/api/v4/version`:
+
+```text
+14.6.1 .. <15.7   Classic   /changes + overflow === false
+>=15.7             Modern    /diffs pagination + /versions + exact real_size
+```
+
+There is no operator override. If Classic reports `overflow: true` or does not provide an explicit safe overflow signal, the review must block. If Modern pagination/version/size proof is incomplete, the review must block. Never bypass these checks to force a verdict from partial evidence.
+
+The real system matrix permanently exercises 14.6.1, 17.11.7 and 19.3.0. Production acceptance must still cover the actual instance's permissions, configured diff limits and network policy.
 
 ## Health model
 
@@ -92,7 +109,7 @@ A direct value and matching `_FILE` value are mutually exclusive. Secret files m
     durable review queue has intake capacity
 
 /health/dependencies
-    GitLab reachability/version
+    GitLab reachability/version/profile
     GitLab circuit state
     project-scope refresh health
 ```
@@ -163,7 +180,7 @@ Retry commands only transition terminal `failed` outbox rows back to pending and
 
 ## Backup and restore
 
-Node 24's SQLite online backup API is the canonical backup path.
+The Node SQLite online backup API is the canonical backup path and is available on both supported runtime lines at the v5.1 minimum versions.
 
 ```bash
 npm run admin -- backup /secure-backup/codex-review-$(date +%F-%H%M%S).sqlite
@@ -189,7 +206,7 @@ Codex authentication state and external secret files are separate credential ass
 
 ### DR objectives
 
-The project does not claim a universal numeric RPO/RTO because host backup cadence and Codex/GitLab availability are deployment-specific. Operators must define local objectives and run a restore drill at least after meaningful persistence/runtime changes. CI permanently exercises online backup, verification and recovery primitives.
+The project does not claim a universal numeric RPO/RTO because host backup cadence and Codex/GitLab availability are deployment-specific. Operators must define local objectives and run a restore drill at least after meaningful persistence/runtime changes. CI permanently exercises online backup, verification and recovery primitives on the Node compatibility floor.
 
 ## Monitoring and SLO primitives
 
@@ -233,7 +250,7 @@ publication convergence
 CPU/memory/filesystem
 ```
 
-Raise limits only after observing the bottleneck. PostgreSQL/HA is a future explicit replacement boundary, not a prerequisite for a reliable first production deployment.
+Raise limits only after observing the bottleneck. PostgreSQL/HA is a future explicit replacement boundary, not a prerequisite for a reliable production deployment.
 
 ## Upgrade contract
 
@@ -264,6 +281,8 @@ curl -fsS http://127.0.0.1:8787/health/ready
 curl -fsS http://127.0.0.1:8787/version
 ```
 
+GitLab server upgrades are independent infrastructure changes. Existing compatible 14.6.1+ environments do not need a cross-major GitLab upgrade merely to deploy the Service. When upgrading GitLab, follow GitLab's required stops/background migrations and re-run Doctor + a disposable MR acceptance test afterward.
+
 ## Docker production deployment
 
 Do not rebuild source on the production host. Release produces:
@@ -278,13 +297,17 @@ GitHub provenance attestations
 GHCR multi-arch image
 ```
 
-`compose.release.yaml` pins `image:` to the canonical OCI digest. Compose secrets map required credentials into `/run/secrets/*`.
+`compose.release.yaml` pins `image:` to the canonical OCI digest. Compose secrets map required credentials into `/run/secrets/*`. The container remains canonical Node 24.19 even though native deployments support Node 22 LTS.
 
 ## Common incidents
 
 ### GitLab unavailable / rate-limited
 
 Confirm `/health/ready` may remain available while `/health/dependencies` reports degraded. Restore connectivity and let bounded/circuit-protected queues drain. Do not disable durable intake solely because remote publication is delayed.
+
+### GitLab Classic diff overflow
+
+If Doctor reports `profile: classic` and a review blocks on diff completeness, inspect GitLab's `/changes` overflow condition and local diff limits. Do not force review of partial changes. Reduce MR size or deliberately adjust GitLab limits only after evaluating server memory/performance impact.
 
 ### Publication queue grows
 
@@ -312,20 +335,20 @@ Before release require all of the following:
 
 - product-contract verification
 - `git diff --check`
-- Node 24.19 floor + current 24 CI
-- unit/fuzz/governance tests
-- Docker build/smoke with pinned Node digest
-- backup/recovery gate
-- real GitLab CE 19.1.x + current certified provider matrix
-- dependency review + CodeQL
+- Node 22.22.2 + Node 24.19.0 CI and Release tests
+- unit/fuzz/governance tests including Classic/Modern fail-closed contracts
+- Docker build/smoke with pinned canonical Node 24.19 digest
+- backup/recovery gate on the Node compatibility floor
+- real GitLab CE 14.6.1 + 17.11.7 + 19.3.0 provider matrix
+- production dependency audit + CodeQL
 - package boundary dry-run
 - OCI multi-arch build and High/Critical vulnerability scan
 - package SBOM + OCI SBOM/provenance
 - immutable tag/image/release behavior
 - checksum + attestation verification instructions
 - bilingual documentation consistency
-- no temporary migration/compatibility residue
+- no scattered version fallbacks or temporary migration residue
 
 ## Repository governance
 
-CI actions are immutable full-SHA pinned. Release changes are reviewed through PR and squash merge. Temporary branches are removed after merge. Safe Core remains exact commit-pinned; service-only operations/OCI/notification features must not leak into shared protocol layers.
+CI actions are immutable full-SHA pinned. Release changes are reviewed through PR and squash merge. Temporary branches are removed after merge. Safe Core remains exact commit-pinned; service-only compatibility/operations/OCI/notification features must not leak into shared protocol layers.
