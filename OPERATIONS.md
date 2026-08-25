@@ -177,3 +177,7 @@ CI actions remain immutable full-SHA pinned. Repository history uses audited squ
 ## Release gate
 
 Before release require `git diff --check`, Node 22.13/24 CI, config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no current-doc legacy version labels, no temporary migration/deployment artifacts, no runtime compatibility residue, and consumer-verifiable checksum/provenance instructions.
+
+## First-release database contract
+
+This product has not shipped a compatible predecessor. Schema 5 is the first supported production database. The service intentionally contains no legacy migration or backfill path: a non-empty database with a different `PRAGMA user_version` fails closed with `EDBSCHEMA`. Delete any pre-release development database and redeploy from a fresh state directory before first production rollout. Future released versions must introduce explicit, tested migrations when compatibility becomes a real product requirement.

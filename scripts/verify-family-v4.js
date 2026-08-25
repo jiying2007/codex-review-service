@@ -102,6 +102,8 @@ assert.match(release, /src\/codex-safe-core\/\(ARCHITECTURE/, 'release package g
 assert.match(release, /SBOM\.spdx\.json/, 'release must include SPDX SBOM');
 assert.match(release, /sha256sum "\$tgz" SBOM\.spdx\.json > SHA256SUMS/, 'checksums must cover TGZ and SBOM');
 
+assert.doesNotMatch(dbSource, /ALTER TABLE|hasColumn\(|migrate\(/, 'first-release database must not retain migration compatibility');
+assert.match(dbSource, /EDBSCHEMA/, 'database schema mismatch must fail closed');
 const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
 const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
 for (const forbidden of ['CODEX_RUNNER_SOCKET','GITLAB_PROJECT_ALLOWLIST','GITLAB_WEBHOOK_SECRET_TOKEN','X-Gitlab-Token','.codex-review.json','service_extension_schema']) assert.doesNotMatch(source, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `runtime compatibility residue forbidden: ${forbidden}`);
