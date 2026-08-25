@@ -1,11 +1,11 @@
 {
   "name": "codex-review-service",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
   "type": "commonjs",
-  "engines": { "node": ">=24.19.0 <25" },
+  "engines": { "node": ">=22.22.2 <23 || >=24.19.0 <25" },
   "files": [
     ".codex-safe.example.json", ".env.example", "CHANGELOG.md", "LICENSE", "LONG_TERM_ASSET.md", "OPERATIONS.md", "README.md", "README.zh-CN.md", "SUPPORT.md", "SECURITY.md", "VERIFY_RELEASE.md", "config.example.json", "product-contract.json",
     "deploy/systemd/config.example.json", "deploy/systemd/*.service", "deploy/systemd/*.env.example",
