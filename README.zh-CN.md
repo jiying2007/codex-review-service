@@ -2,23 +2,30 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前正式产品基线为 **v5.0.1**：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
+面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前正式产品基线为 **v5.1.0**：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
 
 ## 产品契约
 
 `product-contract.json` 是唯一机器校验的产品事实源：
 
-- Service：**5.0.1**
+- Service：**5.1.0**
 - Database Schema：**5**
 - Config Schema：**1**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
 - Safe Core：精确提交 `7ffbf6f1791e17ba74faf0922e7a702bdac72059`
-- Node.js：**>=24.19.0 <25**
-- GitLab Self-Managed：**>=19.1.0**
+- Native/systemd Node.js：**Node 22 LTS >=22.22.2，或 Node 24 LTS >=24.19.0**；明确不支持 Node 23
+- 官方 Docker runtime：**Node 24.19.0**
+- GitLab Self-Managed 兼容下限：**14.6.1**
+- GitLab 推荐策略：生产环境应运行 **GitLab 官方仍支持的版本**，兼容 14.6.1+ 不代表建议长期停留在旧版本
 
-当前 CI 会对真实 GitLab CE 19.1.x 与当前认证版本线执行 Provider 契约。Safe Core 仍是 Family v4，Service v5 不改变共享 Review 协议。
+GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断：
+
+- **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
+- **Modern profile**（`>=15.7`）：继续使用分页 `/diffs` + `/versions` + `real_size` 证明完整 diff 覆盖。
+
+任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v5.1 不改变共享 Review 协议。
 
 ## 适用场景
 
@@ -32,7 +39,7 @@
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-5.0.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-5.1.0.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -61,7 +68,7 @@ curl -fsS http://127.0.0.1:8787/health/dependencies
 curl -fsS http://127.0.0.1:8787/version
 ```
 
-Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。Webhook 入口为 `/webhooks/gitlab`，启用 **Merge request events** 与 **Note events**。
+Doctor 会输出检测到的 GitLab 版本及 `classic` / `modern` Provider profile。Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。
 
 ## Docker / Compose
 
@@ -76,14 +83,26 @@ chmod 0600 secrets/*
 docker compose -f compose.release.yaml up -d
 ```
 
+官方 Docker 内已固定 Node 24.19，因此使用容器部署时主机 Node 版本不构成要求。
+
+## GitLab 兼容与升级边界
+
+GitLab 14.6.1 是**兼容下限**，不是推荐生产版本。当前已有旧 GitLab 的企业环境可以先部署 Review Service，不必为了 Service 强行先做跨多个 major 的 GitLab 升级；GitLab 本体升级应作为独立的基础设施/安全项目按官方升级路径推进。
+
+Classic profile 对旧 `/changes` 的 `overflow` 信号 fail closed；Modern profile 对 `/diffs` 分页和 `/versions.real_size` fail closed。两者都坚持“不能证明完整变更，就不产生可信 Verdict”。
+
 ## Durable 架构与边界
 
 ```text
-GitLab MR → signed webhook → SQLite durable review queue → Codex Safe Review
-                                              ↓
-                                     SQLite Review Receipt
-                                      ├─ GitLab Publication Outbox
-                                      └─ Notification Outbox
+GitLab MR → signed webhook → SQLite durable review queue
+                                  ↓
+                     GitLab capability profile
+                                  ↓
+                         Codex Safe Review
+                                  ↓
+                        SQLite Review Receipt
+                         ├─ GitLab Publication Outbox
+                         └─ Notification Outbox
 ```
 
 GitLab 是 Review System of Record；SQLite 是服务 durable state；IM 只是 Attention Router，不参与 Verdict 和审批。一个 Service 实例就是一个管理/安全**信任域**，不同凭据域、保密级别或 OpenAI 数据策略应部署不同实例。
@@ -115,7 +134,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-备份使用 Node 24 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 5 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
+备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 5 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
 
 ## Upgrade 契约
 
@@ -123,7 +142,7 @@ Schema 5 是第一个正式生产数据库。**从 v5.0.0 起，已发布数据�
 
 ## 永久 Gate
 
-PR/Release 覆盖 Node 24、Docker build/smoke、恢复/备份、Dependency Review、CodeQL、真实 GitLab CE Provider 矩阵、package boundary、OCI vulnerability scan、SBOM、checksum 与 GitHub provenance attestation。
+PR/Release 覆盖 Node 22.22.2 / 24.19.0、Docker build/smoke、恢复/备份、dependency audit、CodeQL、真实 GitLab CE 14.6.1 / 17.11.7 / 19.3.0 Provider 矩阵、package boundary、OCI vulnerability scan、SBOM、checksum 与 GitHub provenance attestation。
 
 - 部署：[docs/DEPLOYMENT.zh-CN.md](docs/DEPLOYMENT.zh-CN.md)
 - GitLab 配置：[docs/GITLAB_SETUP.zh-CN.md](docs/GITLAB_SETUP.zh-CN.md)
