@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.0.0 - 2026-08-25
+
+### Production operations complete
+
+- Establish `product-contract.json` as the machine-checked source for Service 5.0.0, Database Schema 5, Config Schema 1, Policy Schema 3, Review Receipt 4, Safe Contract 2, exact Safe Core commit, Node >=24.19.0 <25, and GitLab >=19.1.0.
+- Hard-cut the unreleased configuration surface to explicit Config Schema 1 and move the production runtime to the Node 24 LTS line; Safe Core remains exact commit-pinned and unchanged by Service-only productization.
+- Add file-backed `*_FILE` secret resolution for GitLab, OpenAI and notification credentials with direct/file ambiguity rejected fail-closed.
+- Turn Docker into a real release artifact: digest-pinned Node base image, canonical multi-arch GHCR image, BuildKit SBOM/provenance, vulnerability scan, `IMAGE_DIGEST.txt`, and digest-pinned `compose.release.yaml`.
+- Add an operator Admin CLI for metadata-only status/diagnostics, failed Publication/Notification retry, reconciliation, drain, integrity checks, Node SQLite online backup, backup verification and restore checks without ad-hoc SQL repair.
+- Split safe webhook intake readiness from external GitLab/Project-Scope dependency health; add `/health/dependencies`, `/version`, product identity metrics, and oldest queue/publication/notification age SLO primitives.
+- Treat unknown `unhandledRejection` and `uncaughtException` as fatal integrity events with graceful owned-resource shutdown, SQLite checkpoint/close, non-zero exit and durable restart recovery.
+- Add permanent Docker smoke, backup/recovery, Dependency Review, CodeQL and real GitLab CE provider matrix gates covering the minimum supported 19.1 line and a current certified line.
+- Define one Service instance as one administrative/security trust domain; retain PostgreSQL/HA, additional SCM providers and Web UI as explicit future replacement/expansion boundaries rather than adding premature distributed-system complexity.
+- Freeze the post-v5 upgrade contract: released DB/Config schema evolution must use explicit migration fixtures/tests and documented rollback boundaries; first-release hard-cut recreation is no longer a valid normal upgrade strategy.
+- Rewrite deployment, operations, architecture, security, support and bilingual product-entry documentation around canonical release artifacts, file secrets, Admin/DR, SLO/capacity, trust-domain and migration invariants.
+
 ## 4.1.0 - 2026-08-24
 
 ### Durable IM notifications and container deployment

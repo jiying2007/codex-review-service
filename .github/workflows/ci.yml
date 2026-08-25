@@ -16,19 +16,18 @@ concurrency:
 
 jobs:
   test:
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        node: [22.13.0, 24]
+        node: [24.19.0, 24]
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout v7.0.1, pinned to the immutable release commit.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 2
-      # Post-v7.0.0 setup-node commit fixing GHSA-3jxr-9vmj-r5cp, full-SHA pinned.
+          submodules: recursive
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with:
           node-version: ${{ matrix.node }}
@@ -37,3 +36,42 @@ jobs:
       - run: git diff --check HEAD^ HEAD
       - run: npm run ci
       - run: npm pack --dry-run --ignore-scripts
+
+  docker-smoke:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Build production image
+        run: docker build --build-arg SERVICE_VERSION=5.0.0 --build-arg VCS_REF="$GITHUB_SHA" -t codex-review-service:ci -f deploy/docker/Dockerfile .
+      - name: Verify immutable runtime image shape
+        run: |
+          set -euo pipefail
+          test "$(docker inspect -f '{{.Config.User}}' codex-review-service:ci)" = "codex-review"
+          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!=='5.0.0'||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1)process.exit(1)"
+      - name: Compose syntax and security boundary
+        run: |
+          mkdir -p deploy/docker/secrets
+          printf 'x' > deploy/docker/secrets/gitlab_api_token
+          printf 'x' > deploy/docker/secrets/gitlab_webhook_signing_token
+          CODEX_REVIEW_IMAGE=codex-review-service:ci docker compose -f deploy/docker/compose.yaml config >/tmp/compose.yaml
+          grep -q 'read_only: true' /tmp/compose.yaml
+          grep -q '/run/secrets/gitlab_api_token' /tmp/compose.yaml
+
+  recovery-gate:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test test/admin.test.js test/health.test.js test/db.test.js test/notification.test.js test/http.test.js

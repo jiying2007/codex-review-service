@@ -1,0 +1,61 @@
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Audit production dependency graph
+        run: npm audit --omit=dev --audit-level=high
+      - name: Reject copyleft runtime dependency licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          const denied=new Set(['GPL-3.0','AGPL-3.0','GPL-3.0-only','AGPL-3.0-only']);
+          for(const [name,pkg] of Object.entries(lock.packages||{})) {
+            if(!name || pkg.dev) continue;
+            const licenses=String(pkg.license||'').split(/\s+OR\s+|\s+AND\s+/).map(v=>v.replace(/[()]/g,'').trim());
+            if(licenses.some(v=>denied.has(v))) throw new Error(`Denied runtime license in ${name}: ${pkg.license}`);
+          }
+          NODE
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          category: /language:javascript-typescript

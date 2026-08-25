@@ -1,0 +1,13 @@
+{
+  "serviceVersion": "5.0.0",
+  "databaseSchemaVersion": 5,
+  "configSchemaVersion": 1,
+  "policySchemaVersion": 3,
+  "reviewReceiptVersion": 4,
+  "safeContractVersion": 2,
+  "safeCoreMajorVersion": 4,
+  "safeCoreCommit": "7ffbf6f1791e17ba74faf0922e7a702bdac72059",
+  "minimumNodeVersion": "24.19.0",
+  "nodeMajorVersion": 24,
+  "minimumGitLabVersion": "19.1.0"
+}

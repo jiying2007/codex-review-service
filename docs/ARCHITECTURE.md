@@ -1,10 +1,26 @@
 # Architecture
 
-## Family v4 contract
+## Product and shared-family contract
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic Review Rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
-- Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
-- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3.
+Codex Review Service **5.0.0** owns production operations while retaining the exact-pinned Safe Core Family v4 review protocol. `product-contract.json` is the machine-checked product identity:
+
+```text
+Service 5.0.0
+DB Schema 5
+Config Schema 1
+Policy Schema 3
+Review Receipt 4
+Safe Contract 2
+Safe Core 7ffbf6f1791e17ba74faf0922e7a702bdac72059
+Node >=24.19.0 <25
+GitLab >=19.1.0
+```
+
+Service-owned responsibilities: GitLab provider semantics, immutable snapshot acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
+
+Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 3, Review Evidence chunking, deterministic Review Rules and Review Receipt 4.
+
+IM, Docker, Admin and deployment concerns must not be added to Safe Core.
 
 ## Configuration and deployment boundary
 
@@ -13,60 +29,142 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └────────── canonical config.json ────┘
+              └──────── Config Schema 1 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver
                                    │
                                    ▼
-                       Signed GitLab 19.1+ Webhook
+                       Signed GitLab Webhook
                                    │
                                    ▼
-                         SQLite WAL/FULL Queue
+                         SQLite WAL + FULL
                                    │
-                    ┌──────────────┴──────────────┐
-                    ▼                             ▼
-             Review Workers                Publication Workers
-                    │
-             Codex Safe Contract
-                    │
-          ┌─────────┴─────────┐
-          ▼                   ▼
-   Standard inline      Hardened Runner
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+        Review Workers       Publication Workers   Notification Workers
+              │                    │                    │
+        Codex Safe Contract      GitLab API          Feishu/WeCom
+              │
+       ┌──────┴──────┐
+       ▼             ▼
+ inline Runner   isolated Runner
 ```
 
-There is one configuration schema and one precedence model. Direct user mode defaults to XDG paths. System-level units explicitly pin `/etc/codex-review/config.json`; production config explicitly pins `/var/lib/codex-review` state. Runtime does not infer root, sudo, or systemd.
+Runtime does not infer root, sudo, or systemd. Docker consumes the same Config Schema and durable state model; its release manifest points to a canonical OCI digest.
+
+## Security/trust domain
+
+One Service instance represents one administrative/security trust domain. Its projects share a Controller, SQLite state, capacity pool and normally a GitLab credential domain. Isolated Runner can separate GitLab and OpenAI/Codex credentials, but it does not create multi-tenant isolation.
+
+Projects with materially different confidentiality, administrator or AI-data policies should use separate Service instances.
 
 ## Project-scope boundary
 
-Only explicit Project IDs and Group IDs are supported. Group scope is expanded through paginated Group Projects API with optional subgroup inclusion. A refresh builds a complete next Set before mutating the active Set. Provider/pagination failure preserves the last complete Set and makes readiness unhealthy. Removed Projects immediately become unauthorized for new work and pending publication.
+Only explicit Project IDs and Group IDs are supported. Group scope is expanded through paginated Group Projects API with optional subgroup inclusion.
+
+A refresh constructs a complete next Set before mutating the active Set. Provider/pagination failure preserves the last complete Set. Removed Projects become unauthorized for new work and pending GitLab writes are canceled before another mutation.
+
+The real-GitLab CI matrix creates Groups/Projects/MRs and exercises this provider boundary against the minimum supported GitLab line and current certified line.
 
 ## Webhook boundary
 
-The receiver requires Standard Webhooks Signing Token semantics, raw-body HMAC verification, replay-window timestamp, expected GitLab instance, durable delivery-ID idempotency, and resolved-scope authorization. It performs no GitLab API or Codex work inside the request.
+The receiver requires Standard Webhooks Signing Token semantics, raw-body HMAC verification, replay-window timestamp, expected GitLab instance, durable delivery-ID idempotency and resolved-scope authorization.
 
-## Failure domains
+The HTTP request path performs no GitLab API or Codex work. It accepts only enough work to validate and persist the event.
 
-Review execution and GitLab publication are separate. A GitLab write timeout cannot trigger a second Codex review after a run is persisted. Publisher retry uses persistent Outbox state, stable dedupe keys, remote fingerprint discovery, snapshot checks, and current Project Scope checks.
+## Readiness vs dependency health
 
-Hardened Runner is a separate security/failure domain: Controller owns GitLab credentials/state; Runner owns Codex/OpenAI credentials and no SCM mutation capability.
+These are deliberately separate architectural concepts:
+
+```text
+/health/ready
+  Can this instance safely accept and durably persist webhook traffic?
+
+/health/dependencies
+  Are GitLab and dynamic project-scope dependencies healthy now?
+```
+
+A transient GitLab outage must not force a healthy local durable receiver out of traffic. Initial startup still fails closed because the first capability/scope initialization completes before listening.
 
 ## Storage boundary
 
-SQLite is the durable webhook/review queue, review metadata store, and publication Outbox. It uses local-filesystem WAL + FULL and supports one active Controller. Direct user mode defaults to XDG state storage when `server.dataDir` is omitted. Production system config explicitly uses `/var/lib/codex-review`. HA must replace this boundary with equivalent transaction/idempotency/per-MR serialization/recovery semantics; never share SQLite over a network filesystem.
+SQLite is the durable webhook/review queue, review metadata store, GitLab Publication Outbox and Notification Outbox. It uses a local filesystem with `WAL + synchronous=FULL` and supports one active Controller.
+
+Schema 5 is the first production database contract. After v5.0.0, schema evolution requires explicit tested migrations rather than hard-cut recreation.
+
+HA must replace this boundary with equivalent semantics for transactionality, idempotency, per-MR serialization, recovery, ordering and snapshot checks. Never share SQLite over a network filesystem.
 
 ## Snapshot boundary
 
-A review is identified by target `start_sha` + source `head_sha`. Policy, context, finding positions, and publication plan derive from those immutable identities. No stale result may publish.
+A review is identified by immutable target `start_sha` and source `head_sha`. Policy, evidence, finding positions and publication plan derive from those identities. No stale result may publish.
+
+## Failure-domain boundary
+
+Review execution, GitLab publication and IM delivery are separate durable domains:
+
+```text
+Review execution
+   ↓ atomic persist
+Review Run + Receipt + publication/notification plans
+   ├─ GitLab publication retries independently
+   └─ IM delivery retries independently
+```
+
+A GitLab or IM write timeout cannot trigger a second Codex review after the Review Run is durable.
+
+Unexpected asynchronous runtime failures are not tolerated as “unknown but alive”. `unhandledRejection` / `uncaughtException` triggers graceful resource shutdown, SQLite checkpoint/close and non-zero exit. The service manager restarts; durable recovery requeues interrupted states.
+
+## Secret boundary
+
+JSON config contains no credentials. Secret resolution supports either direct environment values or file-backed `_FILE` references, never both. Production Docker maps Compose secrets to `/run/secrets/*`; system deployments use protected local files.
+
+Secret file indirection belongs to Service deployment/runtime, not Safe Core.
 
 ## Provider boundary
 
-GitLab-specific behavior stays behind provider-facing modules: scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, discussions, and statuses. Review construction, finding validation, deterministic gate, budgets, and publication planning remain provider-independent and model-unprivileged.
+GitLab-specific behavior stays behind provider modules: scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, notes/discussions and statuses.
+
+Review construction, finding validation, deterministic gate, budgets and receipt semantics remain provider-independent and model-unprivileged.
 
 ## Publication boundary
 
-Review Workers produce a deterministic publication plan and commit it with runs/findings. Publisher Workers execute the plan independently. Delayed running actions cannot overwrite terminal state; out-of-scope/stale actions are canceled locally.
+Review Workers produce a deterministic publication plan and persist it atomically with the Review Run. Publisher Workers execute the plan independently. Remote fingerprint discovery, stale snapshot checks, scope checks and idempotency protect delayed/repeated writes.
+
+## Notification boundary
+
+Notifications are deterministic renderers over explicit Service events. `notification_outbox` contains durable delivery intent but not credentials. Provider webhook URLs/signing secrets resolve only at delivery time from protected secret inputs.
+
+Notification failure never changes Review Verdict or GitLab approval state.
+
+## Operations boundary
+
+`src/admin-cli.js` is the supported operator mutation plane. It can inspect state, retry only terminal failed outbox entries, reconcile, drain, run integrity checks and create/verify online backups. It does not delete durable evidence or rerun Codex as a publication repair mechanism.
+
+## Observability boundary
+
+Metrics/traces/logs are metadata-only. Prometheus includes low-cardinality product identity plus queue/outbox depth and oldest-item age. Repository names, branch names, prompts, source text and secret values are excluded from metric labels.
+
+## Delivery boundary
+
+Release produces two canonical deployment forms from the same source SHA:
+
+```text
+verified tgz + checksums + provenance
+               │
+               ├── systemd
+               │
+               └── audit/extraction
+
+multi-arch GHCR OCI digest + OCI provenance/SBOM
+               │
+               └── digest-pinned compose.release.yaml
+```
+
+Production Docker does not rebuild source on target hosts.
 
 ## Evolution rule
 
-Provider, Project Scope, storage, and Runner are explicit replacement boundaries. Future HA/provider/model transports replace one boundary cleanly. Do not reintroduce compatibility branches, hidden configuration precedence, or deployment-mode guessing throughout the review engine.
+Provider, Project Scope, storage and Runner remain explicit replacement boundaries. Future PostgreSQL/HA or another provider may replace one boundary only after preserving transaction/idempotency/snapshot/recovery contracts.
+
+Do not reintroduce compatibility branches, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, or ad-hoc database mutation paths.

@@ -1,41 +1,50 @@
 # Long-term asset invariants
 
-## Family v4 contract
+Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v5.0.0** is the production-operations baseline; shared review semantics remain exact-pinned Safe Core Family v4.
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic Review Rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
-- Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
-- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
-- Standard and isolated Runner modes execute the same Core runtime.
+## Product identity
 
-This service is maintained as a security- and reliability-sensitive internal platform component.
+`product-contract.json` is the machine-checked product fact source: Service 5.0.0, Database Schema 5, Config Schema 1, Policy Schema 3, Review Receipt 4, Safe Contract 2, exact Safe Core commit, Node >=24.19.0 <25 and GitLab >=19.1.0.
 
 ## Non-negotiable invariants
 
 1. A successful webhook acknowledgement is backed by a power-loss-durable local transaction (`WAL + synchronous=FULL`).
 2. Codex never receives GitLab credentials and never owns GitLab mutations.
-3. Review execution and GitLab publication are separate failure domains; persistent Outbox retry must not cause Codex re-execution.
+3. Review execution, GitLab publication and IM notification are separate durable failure domains; downstream retry never causes implicit Codex re-execution for a persisted Review Run.
 4. Every review binds target `start_sha` + source `head_sha`; stale results never publish.
 5. Findings map to exact changed lines; Controller never repairs model line numbers.
-6. Merge gating is deterministic. Repository policy can narrow ceilings/add checks but cannot weaken global gate/security policy.
-7. Genuine provider/local/token/model-evidence gaps fail closed; metadata/generated/known-binary cases are explicitly classified.
+6. Merge gating is deterministic. Repository policy may narrow ceilings/add checks but cannot weaken Service-owned gate/security policy.
+7. Genuine provider/local/token/model-evidence gaps fail closed; metadata/generated/known-binary cases remain explicitly classified.
 8. External status targets the correct source Project/ref and concrete pipeline when resolvable.
 9. Human-resolved discussions are never silently reopened.
-10. Token usage, queue/review latency, publication failures, Project-Scope health and provider health are observable without source/prompts/raw model output/secrets.
+10. Token usage, queue/review latency, publication/notification failures, Project-Scope health and provider health are observable without source/prompts/raw model output/secrets.
 11. Production Codex CLI is capability-checked and may be version-pinned by canonical config.
 12. SQLite is single-node/local-filesystem only. HA replaces the storage boundary; it never shares SQLite over a network filesystem.
-13. Standard is one Controller + inline Codex; Hardened adds isolated Runner without branching Review/Gate/Outbox logic.
-14. Publication/Runner retry or restart never creates an implicit second review run for an already persisted result.
-15. Projects/Groups scope changes only after complete discovery. Failed/incomplete refresh preserves the last complete Set and makes readiness unhealthy.
+13. Standard deployment is one Controller + inline Codex; Hardened adds isolated Runner without branching Review/Gate/Outbox semantics.
+14. Projects/Groups scope changes only after complete discovery. Failed/incomplete refresh preserves the last complete Set and degrades dependency health.
+15. Readiness answers whether local durable webhook intake is safe; remote GitLab/scope health is a separate dependency signal. A temporary remote outage must not unnecessarily discard durable intake capacity.
 16. A Project removed from current Scope cannot receive new work or pending GitLab publication.
 17. There is exactly one non-secret JSON configuration model. Direct user mode follows XDG config/state defaults; system-level systemd explicitly pins `/etc/codex-review/config.json` and production state under `/var/lib/codex-review`. Runtime does not infer root/sudo/systemd mode.
-18. Supported environment is limited to optional `CODEX_REVIEW_CONFIG_FILE`, required GitLab credentials, and optional `OPENAI_API_KEY`; non-secret environment override layers are forbidden.
-19. GitLab webhook authentication requires Standard Webhooks Signing Token semantics; no plain-text secret-token fallback exists.
-20. Compatibility inputs removed in earlier majors must not be reintroduced without a new explicit major-version architecture decision.
-21. GitHub Actions are manually reviewed and pinned by immutable commit SHA. Action upgrades must run the full matrix before merge.
-22. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
-23. Changes to durability, trust boundaries, config schema, Outbox, Project Scope, Runner, or merge-gate semantics require contract tests before merge.
-24. Current documentation must describe Family v4 semantics and current deployment boundaries; historical version labels belong only in changelog/history, not current-state architecture or operations text.
+18. Config Schema identity is explicit. Unsupported or missing schema versions fail closed; hidden compatibility precedence is forbidden.
+19. Secrets are outside JSON/SQLite. Production supports protected file-backed `_FILE` inputs; matching direct+file forms are mutually exclusive.
+20. GitLab webhook authentication requires Standard Webhooks Signing Token semantics; no plain-text secret-token fallback exists.
+21. One Service instance is one administrative/security trust domain. Materially different trust domains use separate instances instead of hidden multi-tenant behavior.
+22. Unknown `unhandledRejection` / `uncaughtException` is a fatal integrity event: graceful shutdown, durable checkpoint/close, non-zero exit and service-manager restart.
+23. Operator state mutations go through the Admin control plane; incident repair must not depend on deleting or hand-editing durable queue/outbox rows.
+24. Backups use a consistent SQLite online backup and are accepted only after integrity, foreign-key and exact schema verification.
+25. Schema 5 and Config Schema 1 are the first released production contracts. After v5.0.0, schema evolution requires explicit migration fixtures/tests and a documented rollback boundary; pre-release hard-cut recreation is not a normal upgrade strategy.
+26. Docker production consumes a canonical OCI digest generated by Release, not a target-host source rebuild. The Node base image is digest-pinned.
+27. Release identity covers tgz, package SBOM, OCI digest/metadata, digest-pinned Compose manifest, checksums and provenance attestations.
+28. GitHub Actions are manually reviewed and pinned by immutable commit SHA. Action upgrades run the complete affected matrix before merge.
+29. Provider compatibility is tested against real GitLab CE at the minimum supported line and a current certified line; mocks alone are not sufficient for provider claims.
+30. SLO/capacity decisions use queue age, time-to-verdict/publication convergence, token use, CPU/memory/filesystem and real MR workload measurements rather than arbitrary limit increases.
+31. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
+32. Service-only IM/Docker/Admin/deployment concerns must not be pushed into exact-pinned Safe Core shared protocol layers.
+33. Compatibility inputs removed in earlier majors must not be reintroduced without an explicit new architecture/major-version decision.
+34. Current documentation must describe Service v5 production operations and Safe Core Family v4 accurately; historical product labels belong only in changelog/history.
 
 ## Evolution rule
 
-Prefer clean Provider/Project-Scope/Storage/Runner interfaces and additive data migrations over compatibility layers. Configuration has one canonical schema and no hidden precedence. Keep `main` deployable; keep README/README.zh-CN/OPERATIONS/SECURITY/ARCHITECTURE mutually consistent; do not declare a release mature while a documented invariant is aspirational rather than executable/tested.
+Prefer clean Provider / Project-Scope / Storage / Runner replacement boundaries over compatibility layers. PostgreSQL/HA, another SCM provider or additional distribution targets are adopted only when a demonstrated requirement justifies the added failure modes and after the replacement preserves transactionality, idempotency, per-MR serialization, immutable snapshot validation and recovery semantics.
+
+Keep `main` deployable. README/README.zh-CN/OPERATIONS/SECURITY/ARCHITECTURE and `product-contract.json` must remain mutually consistent, and CI must fail when product facts drift.

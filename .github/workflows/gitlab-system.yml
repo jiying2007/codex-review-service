@@ -1,0 +1,94 @@
+name: GitLab System Matrix
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '41 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitlab-system-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider-e2e:
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        gitlab: ['19.1.6-ce.0','19.3.0-ce.0']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Start real GitLab CE ${{ matrix.gitlab }}
+        run: |
+          set -euo pipefail
+          docker run -d --name gitlab \
+            --shm-size=256m \
+            -p 127.0.0.1:8080:80 \
+            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4TQ9zV2mL7xK5pR8wN3cY6fH4sJ9'" \
+            "gitlab/gitlab-ce:${{ matrix.gitlab }}"
+      - name: Wait for real GitLab provider dependencies
+        run: |
+          set -euo pipefail
+          rails_http_ready=false
+          rails_runner_ready=false
+          for i in $(seq 1 180); do
+            http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
+            if [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; then
+              rails_http_ready=true
+            fi
+            if docker exec gitlab gitlab-rails runner "raise 'root user missing' unless User.find_by_username('root')" >/dev/null 2>&1; then
+              rails_runner_ready=true
+            fi
+            if [ "$rails_http_ready" = true ] && [ "$rails_runner_ready" = true ]; then
+              break
+            fi
+            if [ "$i" = 180 ]; then
+              echo "GitLab provider dependencies did not become ready: rails_http=$rails_http_ready rails_runner=$rails_runner_ready"
+              docker logs gitlab
+              exit 1
+            fi
+            sleep 5
+          done
+      - name: Create deterministic test token and verify authenticated API
+        run: |
+          set -euo pipefail
+          docker exec gitlab gitlab-rails runner "u=User.find_by_username('root'); raise 'root user missing' unless u; u.personal_access_tokens.where(name: 'codex-review-ci').delete_all; t=u.personal_access_tokens.create(scopes: ['api'], name: 'codex-review-ci', expires_at: 1.day.from_now); t.set_token('token-string-here123'); t.save!"
+          for i in $(seq 1 60); do
+            if curl -fsS \
+              --header 'PRIVATE-TOKEN: token-string-here123' \
+              http://127.0.0.1:8080/api/v4/version >/tmp/gitlab-version.json; then
+              cat /tmp/gitlab-version.json
+              exit 0
+            fi
+            if [ "$i" = 60 ]; then
+              echo 'Authenticated GitLab API did not become ready'
+              docker logs gitlab
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Run real GitLab provider contract
+        env:
+          GITLAB_BASE_URL: http://127.0.0.1:8080
+          GITLAB_API_TOKEN: token-string-here123
+        run: node scripts/gitlab-system-smoke.js
+      - name: GitLab diagnostics on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker exec gitlab gitlab-ctl status || true
+          docker logs --tail 500 gitlab

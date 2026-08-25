@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "server": { "host": "0.0.0.0", "port": 8787, "dataDir": "/var/lib/codex-review" },
   "gitlab": { "baseUrl": "https://gitlab.example.internal", "projects": [101, 102], "groups": [{ "id": 20, "includeSubgroups": true }], "requestTimeoutMs": 30000, "maxPages": 200, "statusRetries": 5, "requestsPerSecond": 20, "circuitFailureThreshold": 8, "circuitResetMs": 30000, "statusName": "codex-review", "statusTargetUrl": "", "bindStatusPipeline": true, "botUsername": "codex-review-bot", "manualMinAccessLevel": 30 },
   "webhook": { "expectedInstance": "https://gitlab.example.internal", "requireInstanceHeader": true, "maxSkewSeconds": 300, "maxBodyBytes": 1048576 },

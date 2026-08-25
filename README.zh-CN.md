@@ -2,190 +2,197 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex 审查执行服务。一个 Service 实例可以同时管理多个 Project / Group，并可选把确定性 Review 卡片路由到飞书/Lark或企业微信。
+面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。**v5.0.0** 定义为生产运维完整基线：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
 
-## 快速开始
+## 产品契约
 
-适合需要服务端 MR Review、与开发者工作站解耦、并把确定性状态/Discussion 发布回 GitLab 的场景。
+`product-contract.json` 是唯一机器校验的产品事实源：
+
+- Service：**5.0.0**
+- Database Schema：**5**
+- Config Schema：**1**
+- Policy Schema：**3**
+- Review Receipt：**4**
+- Safe Contract：**2**
+- Safe Core：精确提交 `7ffbf6f1791e17ba74faf0922e7a702bdac72059`
+- Node.js：**>=24.19.0 <25**
+- GitLab Self-Managed：**>=19.1.0**
+
+当前 CI 还会对真实 GitLab CE 19.1.x 与当前认证版本线运行 Provider 契约。Safe Core 仍是 Family v4；Service v5 不改变共享 Review 协议。
+
+## 适用场景
+
+当你希望 MR Review 在服务器侧运行、独立于开发者工作站，并确定性发布 GitLab status / summary / discussions 时使用本产品。
 
 推荐生产部署：
 
 > **systemd + inline Runner + 单机本地 SQLite**
 
-如果希望快速容器化落地，也提供一等支持的 rootless Docker/Compose。只有明确要求 GitLab 凭据与 Codex/OpenAI 凭据分离到不同 Unix 用户/进程时，才使用 isolated Runner。
+只有在必须把 GitLab 凭据与 Codex/OpenAI 凭据拆到不同 Unix 用户/进程时才使用 isolated Runner。Docker/Compose 同样是一等部署方式，但生产环境应消费 Release 发布的 **digest 固定 `compose.release.yaml` / GHCR 镜像**，不要在目标机器重新 build 源码。
 
-环境要求：
+## 5 分钟部署
 
-- Node.js 22.13+
-- GitLab Self-Managed 19.1+
-- GitLab Standard Webhooks Signing Token
-- 最小权限 GitLab API Token
-- Service 用户完成 OpenAI Codex CLI 登录，或配置 `OPENAI_API_KEY`
-
-完整生产部署见 [部署指南](docs/DEPLOYMENT.zh-CN.md)，GitLab UI 接入见 [GitLab 接入](docs/GITLAB_SETUP.zh-CN.md)。
-
-## 5 分钟 systemd 部署
+优先把经过验证的 `codex-review-service-5.0.0.tgz` 安装到 `/opt/codex-review-service`；精确 Tag checkout 仅用于开发/审计。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
-sudo mkdir -p /etc/codex-review
-
-git clone --branch v4.1.0 --recurse-submodules \
-  https://github.com/jiying2007/codex-review-service.git \
-  /opt/codex-review-service
-cd /opt/codex-review-service
-npm ci --ignore-scripts --no-audit --no-fund
-npm run core:init
-
+sudo install -d -o root -g codex-review -m 0750 /etc/codex-review/secrets
 sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
-sudo install -o root -g codex-review -m 0640 .env.example /etc/codex-review-service.env
 sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
 ```
 
-先配置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`、`GITLAB_API_TOKEN`、`GITLAB_WEBHOOK_SIGNING_TOKEN`，再登录 Codex、跑 Doctor：
+每个 Secret 文件使用 `root:codex-review`、`0640`，再通过 `_FILE` 指向；直接值与 `_FILE` 二选一，同时存在会 fail closed：
+
+```text
+GITLAB_API_TOKEN_FILE=/etc/codex-review/secrets/gitlab-api-token
+GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signing-token
+OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # 可选
+```
+
+配置必须包含 `schemaVersion: 1`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。随后：
 
 ```bash
-sudo -u codex-review -H codex login
+cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 sudo systemctl daemon-reload
 sudo systemctl enable --now codex-review-service
 curl -fsS http://127.0.0.1:8787/health/ready
+curl -fsS http://127.0.0.1:8787/health/dependencies
+curl -fsS http://127.0.0.1:8787/version
 ```
 
-**Doctor 和 readiness 未通过前不要开启 GitLab Webhook。**
+Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。
 
 ## Docker / Compose
 
+正式 Release 会发布 canonical 多架构 GHCR 镜像、OCI SBOM/provenance 元数据、`IMAGE_DIGEST.txt` 与 digest 固定的 `compose.release.yaml`。
+
 ```bash
-cp config.example.json deploy/docker/config.json
-cp .env.example deploy/docker/.env
-# 将 deploy/docker/config.json 中 server.host 设为 0.0.0.0，server.dataDir 设为 /var/lib/codex-review。
-docker compose -f deploy/docker/compose.yaml up -d --build
+mkdir -p secrets
+chmod 0700 secrets
+printf '%s' "$GITLAB_API_TOKEN" > secrets/gitlab_api_token
+printf '%s' "$GITLAB_WEBHOOK_SIGNING_TOKEN" > secrets/gitlab_webhook_signing_token
+chmod 0600 secrets/*
+docker compose -f compose.release.yaml up -d
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-镜像使用非 root 用户、丢弃 Linux capabilities、read-only rootfs，只持久化 Service State/Codex Home；默认 pin Codex CLI 镜像依赖，但启动时仍执行 Safe Contract capability probe。详见 [Docker 部署](deploy/docker/README.md)。
+镜像非 root 运行、capabilities 全部 drop、root filesystem read-only，只持久化服务状态与 Codex home。Dockerfile 对 Node 24.19.0 base image 使用 immutable multi-platform digest。
 
-## 接入 GitLab
+## 连接 GitLab
 
-通过可信 HTTPS Ingress/Nginx 暴露：
+通过可信 HTTPS ingress / reverse proxy 暴露：
 
 ```text
-https://<review-host>/webhooks/gitlab
+POST https://<review-host>/webhooks/gitlab
 ```
 
-GitLab 19.1+ Webhook 开启 **Merge request events** 与 **Note events**，Signing Token 与 `GITLAB_WEBHOOK_SIGNING_TOKEN` 使用同一个 Standard Webhooks Signing Token。
+启用 **Merge request events** 与 **Note events**。Signing Token 使用 `GITLAB_WEBHOOK_SIGNING_TOKEN` 或 `_FILE` 形式。
 
-## 多仓库 Scope
+## Durable 架构
 
-一个实例可管理多个 Project、Group 层级或两者混用。Group discovery 支持分页并 fail closed；发现不完整时不会用残缺 Scope 覆盖上一次完整集合。
+```text
+GitLab MR open/update
+        ↓
+签名 Webhook
+        ↓
+SQLite durable review queue
+        ↓
+immutable start_sha + head_sha evidence
+        ↓
+Codex Safe Review
+        ↓
+SQLite Review Receipt
+        ├─ GitLab Publication Outbox
+        │    ├─ status
+        │    ├─ summary
+        │    └─ discussions
+        └─ Notification Outbox
+             ├─ 飞书/Lark
+             └─ 企业微信
+```
+
+GitLab 是 Review System of Record；SQLite 是服务 durable state；IM 只是 Attention Router，不参与 Verdict 和审批。
+
+## 多仓库与信任边界
+
+一个实例可管理显式 Projects、Group 层级或两者。Group discovery 分页、fail closed；刷新不完整时保留上一次完整 scope。
 
 ```json
 "projects": [101, 102, 103],
 "groups": [{ "id": 20, "includeSubgroups": true }]
 ```
 
+**一个 Service 实例就是一个管理/安全信任域。** 如果不同仓库属于不同凭据域、保密级别或 OpenAI 数据策略，应部署不同实例，不在单实例内部引入隐式多租户复杂度。
+
 ## IM 通知
 
-飞书/Lark 与企业微信 Route 使用**独立 durable notification outbox**，支持确定性卡片、幂等、受控重试、重启恢复、failed 终态与 Prometheus Metrics。
+飞书/Lark、企业微信使用独立 durable `notification_outbox`，具备确定性 Card、幂等、bounded retry、重启恢复与 terminal failure。通知失败**不会改变 Review Verdict，也不会重新调用 Codex**。
 
-```json
-"notifications": {
-  "enabled": true,
-  "events": ["review.blocked", "review.failed", "service.degraded"],
-  "routes": [
-    {
-      "name": "embedded-review",
-      "provider": "feishu",
-      "secretRef": "embedded",
-      "projects": [101, 102],
-      "groups": [],
-      "events": ["review.blocked", "review.failed"]
-    }
-  ]
-}
-```
+详见 [IM 通知](docs/NOTIFICATIONS.zh-CN.md)。
 
-`secretRef: "embedded"` 只从 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` 解析。Webhook Secret 不进入 JSON 或 SQLite。通知失败**绝不改变 Review Verdict，也绝不重新运行 Codex**。为避免刷群，默认不推送成功消息；审计群可显式增加 `review.completed`。详见 [IM 通知](docs/NOTIFICATIONS.zh-CN.md)。
-
-## 开发者如何使用
+## Health、SLO 与运维
 
 ```text
-开发者创建/更新 GitLab MR
-          ↓
-GitLab Signed Webhook
-          ↓
-Codex Review Service Queue
-          ↓
-Immutable MR Evidence + target .codex-safe.json
-          ↓
-Deterministic Rules + Codex Review
-          ↓
-SQLite Review Receipt + GitLab Publication Outbox + Notification Outbox
-          ├─ GitLab Status / Summary / Discussions
-          └─ 可选飞书 / 企业微信确定性卡片
+GET /health/live           进程存活
+GET /health/ready          是否可安全接收并持久化 Webhook
+GET /health/dependencies   GitLab/scope 依赖健康
+GET /version               产品/运行时身份
+GET /metrics               Prometheus metrics
 ```
 
-服务端 Review 不要求每个开发者安装插件。GitLab 是 Review System of Record，SQLite 是 Service Durable Source of Truth，IM 只负责 Attention Routing。
+`/health/ready` 不会因为 GitLab 临时故障而必然摘除仍可安全持久化 Webhook 的实例；外部依赖异常单独进入 degraded 状态。
 
-## 配置边界
-
-systemd 生产部署：
-
-```text
-/etc/codex-review/config.json      非 Secret 产品配置
-/etc/codex-review-service.env      只放 Secret
-/var/lib/codex-review              SQLite / State
-```
-
-普通用户直接运行使用 XDG config/state 默认值。始终只有一套 closed JSON Schema，不通过 root/sudo/systemd 检测切换语义。
-
-支持的 Secret/进程输入：
-
-```text
-CODEX_REVIEW_CONFIG_FILE
-GITLAB_API_TOKEN
-GITLAB_WEBHOOK_SIGNING_TOKEN
-OPENAI_API_KEY
-CODEX_REVIEW_NOTIFY_<SECRET_REF>_WEBHOOK   # 仅配置 IM Route 后使用
-```
-
-## Repository Policy
-
-被审查仓库可在目标分支提交 `.codex-safe.json` Policy Schema v3。Repository Policy 可以收紧 Limits 或增强 Rules，但不能削弱 Service 全局 Security、Blocking/Confidence 或 Capacity 边界。
-
-## 运维
-
-```text
-GET /health/live
-GET /health/ready
-GET /metrics
-```
-
-首次上线以及重要配置/认证变更后都应运行 `npm run doctor`。
-
-- 完整部署：[docs/DEPLOYMENT.zh-CN.md](docs/DEPLOYMENT.zh-CN.md)
-- GitLab 接入：[docs/GITLAB_SETUP.zh-CN.md](docs/GITLAB_SETUP.zh-CN.md)
-- IM 通知：[docs/NOTIFICATIONS.zh-CN.md](docs/NOTIFICATIONS.zh-CN.md)
-- Docker：[deploy/docker/README.md](deploy/docker/README.md)
-- 运维/升级/备份/故障：[OPERATIONS.md](OPERATIONS.md)
-- Support Checklist：[SUPPORT.md](SUPPORT.md)
-- 安全：[SECURITY.md](SECURITY.md)
-- 架构：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Release 验证：[VERIFY_RELEASE.md](VERIFY_RELEASE.md)
-
-## Hardened isolated Runner
-
-需要凭据隔离时配置 `runner.mode="isolated"`，并使用独立 `codex-review-runner` 用户部署 `codex-review-runner.service`。除非有明确隔离要求，否则推荐保持 inline。
-
-## 开发
+内建 Admin CLI：
 
 ```bash
-git submodule update --init --recursive
-npm ci --ignore-scripts --no-audit --no-fund
-npm run ci
-npm pack --dry-run --ignore-scripts
+npm run admin -- status
+npm run admin -- jobs
+npm run admin -- publications
+npm run admin -- notifications
+npm run admin -- retry-publication <id>
+npm run admin -- retry-notification <id>
+npm run admin -- drain 60
+npm run admin -- reconcile
+npm run admin -- db-check
+npm run admin -- backup /secure-backup/review.sqlite
+npm run admin -- backup-verify /secure-backup/review.sqlite
+npm run admin -- diagnostics
 ```
+
+备份使用 Node 24 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 5 全部通过才接受备份。
+
+## 故障语义
+
+Review、GitLab Publication、IM Notification 是独立 durable failure domain。Publication / Notification 重试不会重新运行已经持久化的 Codex Review。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal：停止接收、关闭 worker、checkpoint durable state、非零退出，再由 systemd/Docker restart 与恢复逻辑接管。
+
+## 配置归属
+
+```text
+/etc/codex-review/config.json      非 Secret Config Schema 1
+/etc/codex-review/secrets/*        受保护 Secret 文件
+/var/lib/codex-review              SQLite/state
+```
+
+Direct user mode 使用 XDG config/state defaults。运行时不猜测 root/sudo/systemd 模式。
+
+## Upgrade 契约
+
+Schema 5 是第一个正式生产数据库。**v5.0.0 之后，已发布数据库与配置兼容性正式成为产品契约。** 后续 DB / Config Schema 变化必须提供显式 migration fixture、forward upgrade test 与 rollback boundary，不能再把首发前 hard-cut 当作正常升级方式。
+
+## 永久 Gate
+
+PR/Release 会覆盖 Node 24 floor/current-major、Docker build/smoke、恢复/备份、Dependency Review、CodeQL、真实 GitLab CE Provider 矩阵、package boundary、OCI vulnerability scan、SBOM、checksum 与 GitHub provenance attestation。
+
+- 部署：[docs/DEPLOYMENT.zh-CN.md](docs/DEPLOYMENT.zh-CN.md)
+- GitLab 配置：[docs/GITLAB_SETUP.zh-CN.md](docs/GITLAB_SETUP.zh-CN.md)
+- IM 通知：[docs/NOTIFICATIONS.zh-CN.md](docs/NOTIFICATIONS.zh-CN.md)
+- Docker：[deploy/docker/README.md](deploy/docker/README.md)
+- 运维/升级/灾备：[OPERATIONS.md](OPERATIONS.md)
+- Support：[SUPPORT.md](SUPPORT.md)
+- Security：[SECURITY.md](SECURITY.md)
+- Architecture：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Release 验证：[VERIFY_RELEASE.md](VERIFY_RELEASE.md)
 
 ## License
 

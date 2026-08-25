@@ -1,183 +1,331 @@
 # Operations Runbook
 
-## Family v4 contract
+## Product baseline
 
-- Shared Codex/process execution, Safe Contract v2, Policy Schema v3, Review Evidence chunking, deterministic review rules, and Review Receipt v4 are owned by the exact commit-pinned `codex-safe-core` 4 runtime.
-- Service-owned responsibilities are GitLab provider semantics, immutable `start_sha`/`head_sha` evidence acquisition, SQLite schema 4, Queue/Outbox/Publisher, status/discussions, telemetry, and deployment.
-- The only repository policy is target-branch `.codex-safe.json` schemaVersion 3; there is no Service-only policy parser or legacy policy fallback.
-- Standard and isolated Runner modes execute the same Core runtime.
+Codex Review Service **5.0.0** is the production-operations baseline. Machine-readable compatibility is owned by `product-contract.json`:
+
+- Database Schema 5
+- Config Schema 1
+- Policy Schema 3
+- Review Receipt 4
+- Safe Contract 2 / Safe Core Family v4 exact commit pin
+- Node.js >=24.19.0 <25
+- GitLab Self-Managed >=19.1.0
+
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, SQLite Schema 5, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared Codex/process execution remains in exact-pinned `codex-safe-core`.
 
 ## Deployment model
 
-Codex Review Service 4.x is a single-node stateful service backed by SQLite `WAL + synchronous=FULL`. Review execution and GitLab publication are separate durable stages.
+This is intentionally a **single-node stateful service** backed by local SQLite `WAL + synchronous=FULL`. Use exactly one active Controller per database and never place the database on NFS/SMB/network filesystems.
 
-- **Direct user mode**: runs as the invoking user with XDG config/state defaults and no root-owned path requirement.
-- **Standard system deployment**: one `codex-review-service` process with inline Codex.
-- **Hardened system deployment**: Controller + isolated Unix-socket Runner.
+- Direct user mode: XDG config/state defaults.
+- Standard system deployment: one `codex-review-service` process with inline Codex.
+- Hardened deployment: Controller + isolated Unix-socket Runner.
+- Docker/Compose: canonical release OCI image, persistent local state volume.
 
-Use exactly one active Controller per SQLite database. Never place SQLite on NFS/SMB/network filesystems.
+One instance is one administrative/security trust domain. Separate instances are preferred over hidden multi-tenant credential sharing.
 
 ## Configuration ownership
 
-There is one JSON configuration model, not one hard-coded filesystem location.
-
-Direct user mode uses the root `config.example.json` and defaults to:
+Direct user mode:
 
 ```text
 ${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json
 ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 ```
 
-The root example intentionally omits `server.dataDir`. `CODEX_REVIEW_CONFIG_FILE` explicitly selects another config file. Relative XDG home values are ignored and standard `$HOME` fallbacks are used.
-
-System-level systemd deployment uses `deploy/systemd/config.example.json` and explicitly owns:
+System deployment:
 
 ```text
-/etc/codex-review/config.json        non-secret product configuration
-/etc/codex-review-service.env        GitLab/OpenAI secrets only
-/etc/codex-review-runner.env         optional Runner OpenAI secret only
-/var/lib/codex-review                state (systemd config + StateDirectory)
+/etc/codex-review/config.json        Config Schema 1, non-secret
+/etc/codex-review/secrets/*          protected secret files
+/etc/codex-review-service.env        paths to secret files + process selection only
+/var/lib/codex-review                SQLite/state
 ```
 
-Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`; runtime code does not detect root, sudo, or systemd.
+Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Supported process environment remains intentionally narrow: optional `CODEX_REVIEW_CONFIG_FILE`, required `GITLAB_API_TOKEN`, required `GITLAB_WEBHOOK_SIGNING_TOKEN`, and optional `OPENAI_API_KEY`. Do not reintroduce non-secret environment overrides.
+Every config must contain:
 
-## Direct user-mode preflight
-
-1. Install Node.js 22.13+ and the approved Codex CLI.
-2. Create `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json` from root `config.example.json`.
-3. Configure GitLab Project/Group scope and signing token.
-4. Authenticate Codex as the invoking user or export `OPENAI_API_KEY`.
-5. Run `npm run doctor`, then `npm start`.
-
-The default Runner mode is inline. A direct user-mode isolated Runner must explicitly configure an absolute socket path writable by both processes; `/run/codex-review-runner/runner.sock` belongs to the systemd deployment template.
-
-## Standard system deployment preflight
-
-1. Install Node.js 22.13+ and the approved Codex CLI.
-2. Require GitLab Self-Managed 19.1+ and configure a Signing Token.
-3. Create the `codex-review` non-login user.
-4. Install `deploy/systemd/config.example.json` as `/etc/codex-review/config.json`, then install `/etc/codex-review-service.env` and `codex-review-service.service`.
-5. Authenticate Codex as `codex-review` or provision `OPENAI_API_KEY`.
-6. Run:
-
-```bash
-cd /opt/codex-review-service
-sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
+```json
+{"schemaVersion":1}
 ```
 
-7. Start the service and require `/health/ready` = 200 before enabling webhooks.
+Unknown fields and unsupported schema versions fail closed.
+
+## Secret ownership and rotation
+
+Production should use file-backed secrets:
+
+```text
+GITLAB_API_TOKEN_FILE=/etc/codex-review/secrets/gitlab-api-token
+GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signing-token
+OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
+CODEX_REVIEW_NOTIFY_<REF>_WEBHOOK_FILE=/etc/codex-review/secrets/notify-<ref>-webhook
+CODEX_REVIEW_NOTIFY_<REF>_SIGNING_SECRET_FILE=/etc/codex-review/secrets/notify-<ref>-signing-secret
+```
+
+A direct value and matching `_FILE` value are mutually exclusive. Secret files must be absolute paths, regular files and <=64 KiB. Rotate a credential by replacing the protected file atomically, running Doctor, then restarting the owning process. Isolated Runner keeps GitLab credentials on Controller and OpenAI/Codex credentials on Runner.
+
+## Preflight
+
+1. Install Node.js 24.19.0 or newer within major 24.
+2. Install/authenticate the approved Codex CLI.
+3. Install a verified release tgz or verified OCI image.
+4. Create Config Schema 1 file.
+5. Provision file-backed secrets.
+6. Run `npm run doctor`.
+7. Require `/health/ready` = 200 before enabling webhooks.
+8. Check `/health/dependencies` separately for GitLab/scope health.
+9. Record `/version` in deployment evidence.
+
+## Health model
+
+```text
+/health/live
+    process is alive
+
+/health/ready
+    database usable
+    synchronous=FULL
+    workers/publishers/notifiers available
+    durable review queue has intake capacity
+
+/health/dependencies
+    GitLab reachability/version
+    GitLab circuit state
+    project-scope refresh health
+```
+
+A temporary GitLab outage does not automatically make durable webhook intake unavailable. This prevents an ingress/load-balancer readiness reaction from discarding events the local database can still safely accept. Initial startup still fails closed because scope resolution and Codex capability probe happen before listening.
 
 ## Multi-repository scope
 
-`gitlab.projects` and `gitlab.groups` form the complete supported scope. `includeSubgroups=true` expands subgroup projects through GitLab's paginated Group Projects API.
+`gitlab.projects` and `gitlab.groups` define the supported scope. `includeSubgroups=true` expands subgroup projects through paginated Group Projects API.
 
-A scope refresh is atomic: all configured Group discovery must complete before the active Set changes. On provider/pagination failure, the previous complete Set remains active and readiness becomes unhealthy. If a project leaves the resolved scope, new jobs are rejected and pending Outbox actions are canceled locally before another GitLab mutation.
+Scope refresh is atomic: the active Set changes only after complete discovery. On provider/pagination failure, the last complete Set remains and dependency health degrades. A removed project is immediately unauthorized for new work and pending publications are canceled before another GitLab mutation.
 
-## Hardened deployment
+## Durable state and recovery
 
-Set `runner.mode="isolated"` in the systemd config. Controller and Runner consume the same file. Both units explicitly point to `/etc/codex-review/config.json`; GitLab credentials stay only on Controller and Codex/OpenAI credentials only on Runner.
+Three stages are intentionally independent:
 
-Startup order:
+```text
+Review Queue
+    ↓
+Review Run + Receipt
+    ↓
+GitLab Publication Outbox
 
-```bash
-sudo systemctl start codex-review-runner
-sudo systemctl start codex-review-service
-curl -fsS http://127.0.0.1:8787/health/ready
+Review Run / terminal review failure
+    ↓
+Notification Outbox
 ```
 
-## GitLab rollout
+Recovery invariants:
 
-Create a GitLab 19.1+ webhook with a Signing Token, enabling Merge Request and Note events. Validate:
+- `running` Review Jobs requeue after process restart.
+- `publishing` GitLab actions return to pending.
+- `delivering` notifications return to pending.
+- publication/notification retry never reruns a persisted Codex review.
+- stale/out-of-scope publication is canceled.
+- delayed `running` status cannot overwrite terminal state.
+- same MR work is serialized; different MRs may run concurrently.
 
-1. Doctor resolves the expected Project count.
-2. Signed webhook is accepted only for resolved scope.
-3. Test MR gets `running`, then terminal status.
-4. One durable review run is persisted.
-5. Summary/Discussion/status publish through Outbox.
-6. Final status targets expected source Project/ref/pipeline.
-7. New source push supersedes old snapshot.
-8. Group add/remove is reflected after a successful refresh.
-9. Removed-scope Outbox entries are canceled without GitLab writes.
+Never delete queue/outbox rows as an incident workaround.
 
-## Durability and recovery
+## Fatal runtime behavior
 
-- webhook/job persistence: SQLite WAL + FULL;
-- running Review Jobs requeue on restart;
-- `publication_outbox=publishing` returns to pending;
-- publication retry never reruns persisted Codex review;
-- stale/out-of-scope publications are canceled;
-- delayed `running` cannot overwrite terminal state.
+`unhandledRejection` and `uncaughtException` are fatal integrity events. The process logs metadata-only error identity, stops HTTP intake, stops workers, flushes telemetry, checkpoints SQLite, closes state and exits non-zero. systemd/Docker restarts the process; durable recovery then restores interrupted stages.
 
-Never delete queue/Outbox rows as an incident workaround without reconciling the intended remote state.
+Do not change this back to “log and keep running” without proving all service invariants remain valid after an unknown asynchronous failure.
 
-## Upgrade
+## Admin control plane
+
+The CLI is the supported operator mutation boundary. Direct SQL editing is not.
 
 ```bash
-cd /opt/codex-review-service
-git fetch --tags origin
-git checkout <release-tag>
-npm ci --ignore-scripts --no-audit --no-fund
-npm run ci
-npm pack --dry-run --ignore-scripts
-sudo systemctl restart codex-review-runner   # Hardened only
-sudo systemctl restart codex-review-service
-curl -fsS http://127.0.0.1:8787/health/ready
+npm run admin -- status
+npm run admin -- jobs [limit]
+npm run admin -- publications [limit]
+npm run admin -- notifications [limit]
+npm run admin -- retry-publication <id>
+npm run admin -- retry-notification <id>
+npm run admin -- drain [seconds]
+npm run admin -- reconcile
+npm run admin -- db-check
+npm run admin -- backup /secure-backup/review.sqlite
+npm run admin -- backup-verify /secure-backup/review.sqlite
+npm run admin -- restore-check /secure-backup/review.sqlite
+npm run admin -- diagnostics
 ```
 
-Verify downloaded release artifacts before deployment as described in `VERIFY_RELEASE.md`. Back up SQLite before upgrades.
+Retry commands only transition terminal `failed` outbox rows back to pending and reset retry metadata. They do not create a new Review Run.
 
 ## Backup and restore
 
-For system-level deployment:
+Node 24's SQLite online backup API is the canonical backup path.
 
 ```bash
-sqlite3 /var/lib/codex-review/review-service.sqlite ".backup '/secure-backup/codex-review-$(date +%F-%H%M%S).sqlite'"
+npm run admin -- backup /secure-backup/codex-review-$(date +%F-%H%M%S).sqlite
+npm run admin -- backup-verify /secure-backup/codex-review-2026-08-25.sqlite
 ```
 
-For direct user mode, use the configured `server.dataDir` or the XDG state default instead. For cold backup/restore stop Controller first. Codex authentication state is a separate credential asset.
+A backup is accepted only if all checks pass:
 
-## Monitoring
+- `PRAGMA quick_check = ok`
+- `PRAGMA foreign_key_check` has zero violations
+- `PRAGMA user_version = 5`
 
-Alert on readiness failures, `codex_review_scope_healthy == 0`, unexpected Project-count changes, growing review/publication queues, failed jobs/publications, repeated GitLab circuit opens, sustained worker saturation, Token Budget pressure, and state filesystem capacity.
+Restore procedure:
 
-Logs/traces/metrics must remain metadata-only and avoid repository/branch labels.
+1. Stop Controller.
+2. Verify the backup with `restore-check`.
+3. Preserve the failed/current database for forensic use.
+4. Restore the verified SQLite file into the configured state directory with owner-only permissions.
+5. Start the service.
+6. Require Doctor, `/health/ready`, `/version`, queue/outbox counts and remote GitLab convergence checks.
+
+Codex authentication state and external secret files are separate credential assets and are not contained in the SQLite backup.
+
+### DR objectives
+
+The project does not claim a universal numeric RPO/RTO because host backup cadence and Codex/GitLab availability are deployment-specific. Operators must define local objectives and run a restore drill at least after meaningful persistence/runtime changes. CI permanently exercises online backup, verification and recovery primitives.
+
+## Monitoring and SLO primitives
+
+Alert on:
+
+- `/health/ready` failure
+- dependency health degradation
+- `codex_review_scope_healthy == 0`
+- queue/outbox depth
+- `codex_review_oldest_queue_age_seconds`
+- `codex_review_oldest_publication_age_seconds`
+- `codex_review_oldest_notification_age_seconds`
+- worker saturation
+- repeated retry exhaustion
+- GitLab circuit opens
+- token budget pressure
+- state filesystem capacity/WAL growth
+
+Recommended service-level objectives should be built from:
+
+- webhook durable acceptance availability
+- queue waiting latency
+- review terminal completion availability
+- time-to-terminal-verdict
+- GitLab publication convergence latency
+
+Do not label metrics by repository name, branch, prompt or source path. `/metrics` exposes low-cardinality product identity (`serviceVersion`, config/database schema and Safe Core commit).
+
+## Capacity validation
+
+Before materially increasing scope or concurrency, load-test the real deployment with representative MR sizes. Measure:
+
+```text
+project count
+MR arrival burst
+oldest queue age
+review concurrency
+Codex latency/token use
+SQLite write latency/WAL size
+publication convergence
+CPU/memory/filesystem
+```
+
+Raise limits only after observing the bottleneck. PostgreSQL/HA is a future explicit replacement boundary, not a prerequisite for a reliable first production deployment.
+
+## Upgrade contract
+
+Schema 5 is the first supported production database and Config Schema 1 is the first supported configuration schema.
+
+**After v5.0.0, hard deletion of released persistence/config compatibility is forbidden.** Any future schema change must include:
+
+- explicit version transition
+- migration implementation
+- fixtures created by the previous released schema
+- forward upgrade test
+- interruption/retry test
+- backup-before-upgrade requirement
+- documented rollback boundary
+
+A rollback that would require reading a newer irreversible schema must be declared unsupported before deployment. Release notes must state the exact boundary.
+
+Normal upgrade:
+
+```bash
+npm run admin -- backup /secure-backup/pre-upgrade.sqlite
+npm run admin -- drain 120
+# install verified tgz or switch to verified OCI digest
+npm run doctor
+sudo systemctl restart codex-review-runner   # isolated only
+sudo systemctl restart codex-review-service
+curl -fsS http://127.0.0.1:8787/health/ready
+curl -fsS http://127.0.0.1:8787/version
+```
+
+## Docker production deployment
+
+Do not rebuild source on the production host. Release produces:
+
+```text
+codex-review-service-<version>.tgz
+SBOM.spdx.json
+IMAGE_DIGEST.txt
+compose.release.yaml
+SHA256SUMS
+GitHub provenance attestations
+GHCR multi-arch image
+```
+
+`compose.release.yaml` pins `image:` to the canonical OCI digest. Compose secrets map required credentials into `/run/secrets/*`.
 
 ## Common incidents
 
-### Scope discovery failed
-
-Inspect GitLab connectivity, Group permissions and pagination settings. The service keeps the last complete scope and marks readiness unhealthy.
-
 ### GitLab unavailable / rate-limited
 
-Restore connectivity and let bounded retry/circuit-breaker protected queues drain.
+Confirm `/health/ready` may remain available while `/health/dependencies` reports degraded. Restore connectivity and let bounded/circuit-protected queues drain. Do not disable durable intake solely because remote publication is delayed.
 
 ### Publication queue grows
 
-Investigate write permissions, pipeline binding and provider 429/5xx. Do not rerun Codex to repair publication-only failures.
+Inspect token permission, status target project/ref/pipeline and 429/5xx behavior. Retry a terminal failed action only through Admin CLI after the cause is fixed.
+
+### Notification queue grows
+
+Inspect route Secret file, provider host, signature settings, timeout/429/5xx. Notification state never changes Review Verdict.
 
 ### Codex CLI incompatible
 
-Install the tested CLI version or adjust `codex.versionPolicy/allowedVersionPattern` only after contract validation.
+Install the tested CLI version or intentionally update the version policy only after Safe Contract capability validation. Do not add legacy argument fallbacks.
 
-### Runner unavailable
+### Queue full
 
-Hardened only: inspect Runner service, socket ownership and Codex authentication.
+`/health/ready` becomes unavailable when the durable review queue reaches configured capacity. Reduce intake/load or safely increase capacity after measurement.
 
-### Queue full / Token Budget / Coverage incomplete
+### Database integrity check fails
 
-The service fails closed. Investigate capacity/usage/evidence before raising limits.
-
-## Repository governance
-
-CI actions remain immutable full-SHA pinned. Repository history uses audited squash merges for release-style changes; merged feature branches are disposable and must be cleaned. Documentation-only/governance maintenance does not require product version churn when package/runtime semantics are unchanged.
+Stop the Controller, preserve the state directory, validate a known-good backup and restore. Do not run ad-hoc repair SQL against the only copy.
 
 ## Release gate
 
-Before release require `git diff --check`, Node 22.13/24 CI, config/scope/outbox/Runner/security contracts, package dry-run, bilingual docs consistency, no current-doc legacy version labels, no temporary migration/deployment artifacts, no runtime compatibility residue, and consumer-verifiable checksum/provenance instructions.
+Before release require all of the following:
 
-## First-release database contract
+- product-contract verification
+- `git diff --check`
+- Node 24.19 floor + current 24 CI
+- unit/fuzz/governance tests
+- Docker build/smoke with pinned Node digest
+- backup/recovery gate
+- real GitLab CE 19.1.x + current certified provider matrix
+- dependency review + CodeQL
+- package boundary dry-run
+- OCI multi-arch build and High/Critical vulnerability scan
+- package SBOM + OCI SBOM/provenance
+- immutable tag/image/release behavior
+- checksum + attestation verification instructions
+- bilingual documentation consistency
+- no temporary migration/compatibility residue
 
-This product has not shipped a compatible predecessor. Schema 5 is the first supported production database. The service intentionally contains no legacy migration or backfill path: a non-empty database with a different `PRAGMA user_version` fails closed with `EDBSCHEMA`. Delete any pre-release development database and redeploy from a fresh state directory before first production rollout. Future released versions must introduce explicit, tested migrations when compatibility becomes a real product requirement.
+## Repository governance
+
+CI actions are immutable full-SHA pinned. Release changes are reviewed through PR and squash merge. Temporary branches are removed after merge. Safe Core remains exact commit-pinned; service-only operations/OCI/notification features must not leak into shared protocol layers.

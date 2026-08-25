@@ -4,104 +4,27 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-
+const contract=require('../product-contract.json');
 const root=path.resolve(__dirname,'..');
 const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md','deploy/docker/README.md','SUPPORT.md'];
-
 function read(name){return fs.readFileSync(path.join(root,name),'utf8');}
 
-test('permanent product documentation exists',()=>{
-  for(const name of docs) assert.ok(fs.existsSync(path.join(root,name)),`missing product document: ${name}`);
-});
+test('permanent product documentation exists',()=>{for(const name of docs)assert.ok(fs.existsSync(path.join(root,name)),`missing product document: ${name}`);});
 
-test('current documentation stays on Family v4 semantics',()=>{
-  for(const name of docs){
-    const text=read(name);
-    assert.doesNotMatch(text,/Codex Review Service v3\.0|Codex Review Service 3\.0|\bv3\.0 is the server-side|\bv3\.0 是 Codex Safe/,`${name} must not describe the current service as v3`);
-    assert.doesNotMatch(text,/codex-safe-core 3\.0\.1/,`${name} must not describe the current Core as 3.0.1`);
-    assert.doesNotMatch(text,/Review Evidence \/ Rules \/ Receipt v3|Receipt v3 is the cross-product|Receipt v3 只是跨产品/,`${name} must not describe the current receipt as v3`);
-  }
-});
+test('current-state docs do not drift to obsolete service/runtime facts',()=>{for(const name of docs){const text=read(name);assert.doesNotMatch(text,/Codex Review Service v3\.0|Codex Review Service 3\.0|codex-safe-core 3\.0\.1/,`${name} describes obsolete current product`);assert.doesNotMatch(text,/\.codex-review\.json/,`${name} documents removed service-only policy`);if(!name.includes('NOTIFICATIONS')&&!name.includes('GITLAB_SETUP')){assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4/i,`${name} has stale database schema`);assert.doesNotMatch(text,/Node 22\.13(?:\.0)?(?:\/24)? validation/i,`${name} has stale Node baseline`);}}});
 
-test('README is a deployable product entry',()=>{
-  const en=read('README.md'),zh=read('README.zh-CN.md');
-  assert.match(en,/5[- ]minute[\s\S]{0,40}deploy/i);
-  assert.match(zh,/5 分钟[^\n]{0,40}部署/);
-  for(const text of [en,zh]){
-    assert.match(text,/\/etc\/codex-review\/config\.json/);
-    assert.match(text,/\/webhooks\/gitlab/);
-    assert.match(text,/doctor/i);
-    assert.match(text,/health\/ready/);
-    assert.match(text,/Docker|Compose/i);
-    assert.match(text,/notification|通知/i);
-  }
-});
+test('README files expose v5 deployable product entry and operations contract',()=>{const en=read('README.md'),zh=read('README.zh-CN.md');assert.match(en,/5[- ]minute[\s\S]{0,40}deploy/i);assert.match(zh,/5 分钟[^\n]{0,40}部署/);for(const text of[en,zh]){assert.match(text,new RegExp(contract.serviceVersion.replaceAll('.','\\.')));assert.match(text,/Config Schema[^\n]{0,20}1/i);assert.match(text,/Database Schema[^\n]{0,20}5|Schema 5/i);assert.match(text,/Node[^\n]{0,30}24\.19\.0/i);assert.match(text,/\/etc\/codex-review\/config\.json/);assert.match(text,/\/webhooks\/gitlab/);assert.match(text,/doctor/i);assert.match(text,/health\/ready/);assert.match(text,/health\/dependencies/);assert.match(text,/\/version/);assert.match(text,/Docker|Compose/i);assert.match(text,/admin/i);assert.match(text,/backup|备份/i);assert.match(text,/notification|通知/i);assert.match(text,/trust domain|信任域/i);}});
 
-test('deployment guides cover full rollout and lifecycle',()=>{
-  for(const name of ['docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']){
-    const text=read(name);
-    assert.match(text,/GITLAB_API_TOKEN/);
-    assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN/);
-    assert.match(text,/Merge request events/i);
-    assert.match(text,/Note events/i);
-    assert.match(text,/\/webhooks\/gitlab/);
-    assert.match(text,/doctor/i);
-    assert.match(text,/health\/ready/);
-    assert.match(text,/inline/i);
-    assert.match(text,/isolated/i);
-    assert.match(text,/upgrade|升级/i);
-    assert.match(text,/rollback|回滚/i);
-    assert.match(text,/projects|Project/);
-    assert.match(text,/groups|Group/);
-  }
-});
+test('deployment guides cover full rollout, secret files and lifecycle',()=>{for(const name of['docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']){const text=read(name);assert.match(text,/schemaVersion[^\n]{0,20}1/);assert.match(text,/GITLAB_API_TOKEN_FILE/);assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN_FILE/);assert.match(text,/Merge request events/i);assert.match(text,/Note events/i);assert.match(text,/\/webhooks\/gitlab/);assert.match(text,/doctor/i);assert.match(text,/health\/ready/);assert.match(text,/health\/dependencies/);assert.match(text,/\/version/);assert.match(text,/inline/i);assert.match(text,/isolated/i);assert.match(text,/upgrade|升级/i);assert.match(text,/rollback|回滚/i);assert.match(text,/compose\.release\.yaml/);assert.match(text,/projects|Project/);assert.match(text,/groups|Group/);}});
 
-test('notification docs preserve attention-only durable boundary',()=>{
-  for(const name of ['docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md']){
-    const text=read(name);
-    assert.match(text,/notification_outbox/);
-    assert.match(text,/Feishu|飞书/i);
-    assert.match(text,/WeCom|企业微信/i);
-    assert.match(text,/review\.blocked/);
-    assert.match(text,/review\.failed/);
-    assert.match(text,/service\.degraded/);
-    assert.match(text,/retry|重试/i);
-    assert.match(text,/idempot|幂等/i);
-    assert.match(text,/never changes? a review verdict|不会改变 Review Verdict|绝不改变 Review Verdict/i);
-  }
-});
+test('notification docs preserve attention-only durable boundary',()=>{for(const name of['docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md']){const text=read(name);assert.match(text,/notification_outbox/);assert.match(text,/Feishu|飞书/i);assert.match(text,/WeCom|企业微信/i);assert.match(text,/review\.blocked/);assert.match(text,/review\.failed/);assert.match(text,/service\.degraded/);assert.match(text,/retry|重试/i);assert.match(text,/idempot|幂等/i);assert.match(text,/never changes? a review verdict|不会改变 Review Verdict|绝不改变 Review Verdict/i);}});
 
-test('GitLab setup documents end-to-end acceptance',()=>{
-  for(const name of ['docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md']){
-    const text=read(name);
-    assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN/);
-    assert.match(text,/\/webhooks\/gitlab/);
-    assert.match(text,/Merge request events/i);
-    assert.match(text,/Note events/i);
-    assert.match(text,/health\/ready/);
-    assert.match(text,/Feishu|飞书|WeCom|企业微信/i);
-  }
-});
+test('GitLab setup documents end-to-end acceptance',()=>{for(const name of['docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md']){const text=read(name);assert.match(text,/GITLAB_WEBHOOK_SIGNING_TOKEN/);assert.match(text,/\/webhooks\/gitlab/);assert.match(text,/Merge request events/i);assert.match(text,/Note events/i);assert.match(text,/health\/ready/);assert.match(text,/Feishu|飞书|WeCom|企业微信/i);}});
 
-test('current documentation preserves rootless and explicit-system path boundary',()=>{
-  const deployment=read('docs/DEPLOYMENT.md');
-  const deploymentZh=read('docs/DEPLOYMENT.zh-CN.md');
-  const operations=read('OPERATIONS.md');
-  const security=read('SECURITY.md');
-  const longTerm=read('LONG_TERM_ASSET.md');
-  const architecture=read('docs/ARCHITECTURE.md');
+test('runtime-boundary docs preserve rootless and explicit system paths',()=>{const deployment=read('docs/DEPLOYMENT.md'),deploymentZh=read('docs/DEPLOYMENT.zh-CN.md'),operations=read('OPERATIONS.md'),security=read('SECURITY.md'),longTerm=read('LONG_TERM_ASSET.md'),architecture=read('docs/ARCHITECTURE.md');for(const text of[deployment,deploymentZh,operations,security,architecture])assert.match(text,/\/etc\/codex-review\/config\.json/);for(const text of[operations,security,architecture])assert.match(text,/XDG_CONFIG_HOME/);assert.match(longTerm,/XDG config\/state defaults/);assert.match(longTerm,/\/etc\/codex-review\/config\.json/);assert.match(longTerm,/Runtime does not infer root\/sudo\/systemd mode/);assert.match(architecture,/Runtime does not infer root, sudo, or systemd/);});
 
-  for(const text of [deployment,deploymentZh,operations,security,architecture]) assert.match(text,/\/etc\/codex-review\/config\.json/, 'production docs must document explicit system config path');
-  for(const text of [operations,security,architecture]) assert.match(text,/XDG_CONFIG_HOME/, 'runtime-boundary docs must preserve concrete XDG config semantics');
-  assert.match(longTerm,/XDG config\/state defaults/, 'long-term invariants must preserve rootless XDG semantic boundary');
-  assert.match(longTerm,/\/etc\/codex-review\/config\.json/, 'long-term invariants must preserve explicit system config path');
-  assert.match(longTerm,/Runtime does not infer root\/sudo\/systemd mode/);
-  assert.match(architecture,/Runtime does not infer root, sudo, or systemd/);
-});
+test('operations docs freeze post-v5 migration, DR, SLO and fatal-crash contracts',()=>{const operations=read('OPERATIONS.md'),security=read('SECURITY.md'),longTerm=read('LONG_TERM_ASSET.md');for(const text of[operations,security,longTerm]){assert.match(text,/Config Schema 1/);assert.match(text,/Schema 5/);assert.match(text,/migration/i);assert.match(text,/rollback/i);assert.match(text,/backup/i);assert.match(text,/unhandledRejection/);assert.match(text,/trust domain/i);}assert.match(operations,/oldest_queue_age_seconds/);assert.match(operations,/time-to-terminal-verdict/);});
 
-test('systemd units explicitly pin system configuration path',()=>{
-  for(const name of ['deploy/systemd/codex-review-service.service','deploy/systemd/codex-review-runner.service']){
-    const text=read(name);
-    assert.match(text,/^Environment=CODEX_REVIEW_CONFIG_FILE=\/etc\/codex-review\/config\.json$/m,`${name} must explicitly pin system config path`);
-  }
-});
+test('Docker docs require canonical release digest and secrets',()=>{const text=read('deploy/docker/README.md');assert.match(text,/compose\.release\.yaml/);assert.match(text,/IMAGE_DIGEST\.txt/);assert.match(text,/\/run\/secrets/);assert.match(text,/do not run .*--build|不要.*build/i);});
+
+test('systemd units explicitly pin system configuration path',()=>{for(const name of['deploy/systemd/codex-review-service.service','deploy/systemd/codex-review-runner.service']){const text=read(name);assert.match(text,/^Environment=CODEX_REVIEW_CONFIG_FILE=\/etc\/codex-review\/config\.json$/m,`${name} must explicitly pin system config path`);}});

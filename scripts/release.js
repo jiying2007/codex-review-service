@@ -7,11 +7,12 @@ const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const pkgPath = path.join(root, 'package.json');
 const lockPath = path.join(root, 'package-lock.json');
+const contractPath = path.join(root, 'product-contract.json');
 const changelogPath = path.join(root, 'CHANGELOG.md');
-const EXPECTED_CORE_COMMIT = '7ffbf6f1791e17ba74faf0922e7a702bdac72059';
 
 function fail(message) { throw new Error(message); }
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+function writeJson(file,value){fs.writeFileSync(file,JSON.stringify(value,null,2)+'\n');}
 function run(command, args, options = {}) {
   const output = execFileSync(command, args, {
     cwd: root,
@@ -27,15 +28,16 @@ function hasChangelogVersion(changelog, version) {
 }
 
 function verifyStatic() {
-  const pkg = readJson(pkgPath);
-  const lock = readJson(lockPath);
+  const pkg = readJson(pkgPath),lock = readJson(lockPath),contract=readJson(contractPath);
   if (!validVersion(pkg.version)) fail(`package version must be MAJOR.MINOR.PATCH: ${pkg.version}`);
+  if (pkg.version!==contract.serviceVersion) fail('package version must match product-contract.json serviceVersion.');
   if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) fail('package-lock version metadata must match package.json.');
+  if(pkg.engines?.node!==`>=${contract.minimumNodeVersion} <${Number(contract.nodeMajorVersion)+1}`)fail('package Node engine must match product contract.');
   const changelog = fs.readFileSync(changelogPath, 'utf8');
   if (!hasChangelogVersion(changelog, pkg.version)) fail(`CHANGELOG.md must contain a release heading for ${pkg.version}.`);
   const staged = run('git', ['ls-files', '--stage', 'src/codex-safe-core']);
   const match = staged.match(/^160000 ([0-9a-f]{40,64}) 0\tsrc\/codex-safe-core$/i);
-  if (!match || match[1] !== EXPECTED_CORE_COMMIT) fail(`src/codex-safe-core must pin ${EXPECTED_CORE_COMMIT}.`);
+  if (!match || match[1] !== contract.safeCoreCommit) fail(`src/codex-safe-core must pin ${contract.safeCoreCommit}.`);
   const sourceFiles = fs.readdirSync(path.join(root, 'src')).filter(name => name.endsWith('.js'));
   const source = sourceFiles.map(name => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
   for (const forbidden of ['CODEX_RUNNER_SOCKET', 'GITLAB_PROJECT_ALLOWLIST', 'GITLAB_WEBHOOK_SECRET_TOKEN', 'X-Gitlab-Token', '.codex-review.json']) {
@@ -46,17 +48,16 @@ function verifyStatic() {
 
 function prepare(version) {
   if (!validVersion(version)) fail('Usage: npm run release:prepare -- X.Y.Z');
-  const pkg = readJson(pkgPath);
-  const lock = readJson(lockPath);
+  const pkg = readJson(pkgPath),lock = readJson(lockPath),contract=readJson(contractPath);
   pkg.version = version;
   lock.version = version;
   if (lock.packages?.['']) lock.packages[''].version = version;
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-  fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+  contract.serviceVersion=version;
+  writeJson(pkgPath,pkg);writeJson(lockPath,lock);writeJson(contractPath,contract);
   let changelog = fs.readFileSync(changelogPath, 'utf8');
   if (!hasChangelogVersion(changelog, version)) changelog = changelog.replace('# Changelog\n', `# Changelog\n\n## ${version}\n\n- Release prepared. Replace this line with final release notes before merge.\n`);
   fs.writeFileSync(changelogPath, changelog);
-  console.log(`Prepared ${version}.`);
+  console.log(`Prepared ${version} across package, lockfile and product contract.`);
 }
 
 function verify() {
@@ -77,7 +78,7 @@ function push() {
   const version = verifyStatic();
   check();
   run('git', ['push', 'origin', 'main'], { stdio: 'inherit' });
-  console.log(`Pushed main for v${version}; GitHub Release workflow owns tag/artifact publication.`);
+  console.log(`Pushed main for v${version}; GitHub Release workflow owns tag, package, OCI and attestation publication.`);
 }
 
 function main(argv = process.argv.slice(2)) {
