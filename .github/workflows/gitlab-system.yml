@@ -38,7 +38,7 @@ jobs:
           docker run -d --name gitlab \
             --shm-size=256m \
             -p 127.0.0.1:8080:80 \
-            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4T!Q9z#V2m@L7x$K5p%R8w^N3c'" \
+            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4TQ9zV2mL7xK5pR8wN3cY6fH4sJ9'" \
             "gitlab/gitlab-ce:${{ matrix.gitlab }}"
       - name: Wait for GitLab and create deterministic test token
         run: |
