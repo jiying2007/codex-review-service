@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.0.0 要求：Node.js >=24.19.0 <25、GitLab Self-Managed >=19.1.0、Database Schema 5、Config Schema 1。
+部署前先读取 `product-contract.json`。Codex Review Service 5.0.1 要求：Node.js >=24.19.0 <25、GitLab Self-Managed >=19.1.0、Database Schema 5、Config Schema 1。
 
 Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink 或复制其他 Core 版本。
 
