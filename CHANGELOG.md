@@ -1,5 +1,18 @@
 # Changelog
 
+## 5.1.0 - 2026-08-25
+
+### Enterprise GitLab compatibility without weakening review evidence
+
+- Lower the native/systemd Node compatibility floor to Node 22.22.2 while retaining Node 24.19.0 as the canonical Docker/runtime line; Node 23 remains intentionally unsupported and CI/Release validate both supported LTS lines.
+- Lower the GitLab Self-Managed compatibility floor to 14.6.1 through a centralized capability selector rather than scattered version fallbacks.
+- Add a first-class **Classic GitLab profile** for 14.6.1 through <15.7 using `/merge_requests/:iid/changes`; trusted review is allowed only when GitLab explicitly reports `overflow: false`, otherwise diff acquisition fails closed before Codex.
+- Retain the **Modern GitLab profile** for >=15.7 using paginated `/diffs` plus `/versions` and exact `real_size` coverage proof.
+- Add real GitLab CE 14.6.1, 17.11.7 and 19.3.0 provider system gates covering authenticated API, Group/Project/MR lifecycle, diff coverage, repository reads, notes, discussions, resolution and commit status.
+- Make Doctor report detected GitLab version/profile/completeness strategy and keep profile selection non-configurable so operators cannot bypass evidence guarantees.
+- Separate GitLab **compatibility** from lifecycle **recommendation**: existing 14.6.1+ enterprise instances can deploy the Service, while operators are still advised to run a vendor-supported GitLab release and treat GitLab upgrades as an independent infrastructure/security project.
+- Preserve Database Schema 5, Config Schema 1, Safe Contract 2, Review Receipt 4 and exact Safe Core commit `7ffbf6f1791e17ba74faf0922e7a702bdac72059`; v5.1 changes only Service runtime/provider compatibility boundaries.
+
 ## 5.0.1 - 2026-08-25
 
 ### OCI runtime security closure
