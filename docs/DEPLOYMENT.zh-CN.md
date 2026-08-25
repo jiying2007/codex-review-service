@@ -10,12 +10,14 @@ Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink �
 
 ## GitLab Capability Profile
 
-服务根据已认证的 `/api/v4/version` 自动选择 Provider profile：
+服务根据已认证的 `/api/v4/version` 自动选择能力：
 
-- **Classic**（`14.6.1` 到 `<15.7`）：MR diff 使用 `/merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续。
-- **Modern**（`>=15.7`）：MR diff 使用分页 `/diffs`，并通过 `/versions` + `real_size` 证明完整覆盖。
+- **Classic diff**（`14.6.1` 到 `<15.7`）：使用 `/merge_requests/:iid/changes`，必须明确得到 `overflow: false`。
+- **Modern diff**（`>=15.7`）：使用分页 `/diffs`，并通过 `/versions.real_size` 证明完整覆盖。
+- **Classic Webhook Auth**（`<19.1`）：常量时间校验 `X-Gitlab-Token`，并用事件类型 + 原始 body SHA-256 生成 delivery identity。旧 GitLab 没有 Standard Webhooks timestamp/HMAC replay-window，因此建议额外使用可信 HTTPS/私有 ingress 和来源网络限制。
+- **Standard HMAC Webhook Auth**（`>=19.1`）：要求 provider delivery identity、timestamp replay window、原始 body HMAC-SHA256 和预期 GitLab instance。
 
-两个 profile 都遵守 fail closed：无法证明 diff 完整就不会调用 Codex 生成可信 Verdict。Doctor 会输出当前 GitLab version/profile。
+所有 profile 都 fail closed。Doctor 会输出实际 diff/webhook 能力，不提供人工 compatibility override。
 
 ## 选择部署模式
 
@@ -96,7 +98,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；兼容旧版本会显示 `profile: classic`，新版本显示 `profile: modern`。
+Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；部署证据应记录 `profile`、`webhookAuth` 和 `webhookReplayWindow`。
 
 ## 启动 systemd
 
@@ -134,18 +136,18 @@ curl -fsS http://127.0.0.1:8787/metrics | head
 https://<review-host>/webhooks/gitlab
 ```
 
-GitLab Webhook 使用 Standard Webhooks Signing Token，并启用：
+生成 `GITLAB_WEBHOOK_SIGNING_TOKEN(_FILE)` 使用的 `whsec_...` 值，然后按 Doctor 检出的能力配置 GitLab：
 
-- **Merge request events**
-- **Note events**
+- GitLab **<19.1**：把该值原样填入 Webhook 的 **Secret Token**，GitLab 会通过 `X-Gitlab-Token` 发送。
+- GitLab **>=19.1**：把该值配置为 Standard Webhooks Signing Token。
 
-Signing Token 必须与 `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE` 一致。Doctor 和 `/health/ready` 未通过前不要启用 Webhook。
+启用 **Merge request events** 与 **Note events**。Doctor 和 `/health/ready` 未通过前不要启用 Webhook。Classic 模式由于上游 GitLab 不支持 timestamped HMAC replay protection，应优先部署在可信 HTTPS/私有 ingress 后，并限制来源网络。
 
 ## 端到端验收
 
 使用可丢弃测试 MR：
 
-1. 先运行 Doctor 并记录 GitLab version/profile。
+1. 先运行 Doctor 并记录 GitLab version/diff profile/webhook auth mode。
 2. Open/update MR。
 3. 确认 Webhook 快速返回，只把工作持久化入队。
 4. 观察 GitLab `running` → terminal status。
@@ -188,7 +190,7 @@ Compose 将 Secret 映射到 `/run/secrets/*`，必需凭据不再依赖 `env_fi
 
 ## Reverse Proxy
 
-在可信 ingress/reverse proxy 终止 TLS。必须保留原始 request body 和 Standard Webhooks 签名 Header，不能改写已签名 payload bytes。网络策略允许时限制管理 endpoint 的直接访问。
+在可信 ingress/reverse proxy 终止 TLS，并保留精确原始 request body。Standard HMAC 模式必须保留签名/timestamp/identity headers；Classic Token 模式必须保留 `X-Gitlab-Token`，并建议额外限制来源网络。网络策略允许时限制管理 endpoint 的直接访问。
 
 ## Upgrade 前备份
 
