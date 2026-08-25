@@ -70,6 +70,16 @@ curl -fsS http://127.0.0.1:8787/version
 
 Doctor 会输出检测到的 GitLab 版本及 `classic` / `modern` Provider profile。Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。
 
+## 接入 GitLab Webhook
+
+通过可信 HTTPS ingress / reverse proxy 暴露：
+
+```text
+POST https://<review-host>/webhooks/gitlab
+```
+
+在 GitLab Webhook 中启用 **Merge request events** 与 **Note events**，并使用与 `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE` 相同的 Standard Webhooks Signing Token。服务只在签名、实例、scope 与 replay/idempotency 校验通过后持久化事件。
+
 ## Docker / Compose
 
 正式 Release 发布 canonical 多架构 GHCR 镜像、OCI SBOM/provenance、`IMAGE_DIGEST.txt` 与 digest 固定的 `compose.release.yaml`。镜像非 root 运行、capabilities 全部 drop、root filesystem read-only，只持久化服务状态与 Codex home；构建完成后会从最终 runtime 中移除 npm/npx/yarn/corepack，只保留 `node` 与 `codex` 所需执行面。
