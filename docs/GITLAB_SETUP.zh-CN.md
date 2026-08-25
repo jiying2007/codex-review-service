@@ -1,13 +1,29 @@
 # GitLab 接入
 
-1. 创建只包含 Codex Review Service 所需 API 权限的 Group/Project Access Token。生产环境使用受保护文件，并配置 `GITLAB_API_TOKEN_FILE`。
-2. 创建 Config Schema 1（`"schemaVersion": 1`），在 `config.json` 配置显式 Project ID 和/或 Group ID。
-3. 配置 GitLab Self-Managed 19.1+ Standard Webhooks Signing Token，通过 `GITLAB_WEBHOOK_SIGNING_TOKEN` 或生产优先的 `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` 提供；两者不能同时设置。
-4. 添加 Webhook `https://<host>/webhooks/gitlab`，开启 **Merge request events** 与 **Note events**。
-5. 运行 `npm run doctor`，再检查 `GET /health/ready`、`GET /health/dependencies`、`GET /version`。
-6. 创建或更新可丢弃测试 MR，确认 GitLab `running` → terminal status、单一 Summary、确定性 Discussion；duplicate webhook 不应产生重复 Review Run。
-7. Push 新 source commit，确认上一 immutable snapshot 被 supersede，stale publication 不会覆盖新结果。
-8. 如开启 IM，确认飞书/企业微信 Route 通过 `notification_outbox` 收到确定性卡片；通知失败不改变 GitLab Verdict。
-9. Group scope 场景确认完整 refresh 能发现预期 Project；失败/不完整 refresh 保留上一次完整 scope，同时 `/health/dependencies` 进入 degraded。
+1. 确认实例为 GitLab Self-Managed **14.6.1 或更高版本**。14.6.1 是兼容下限，不代表建议长期运行已经停止官方维护的旧 GitLab；条件允许时应运行 GitLab 官方仍支持的版本。
+2. 创建只包含 Codex Review Service 所需 API 权限的 Group/Project Access Token。生产环境使用受保护文件，并配置 `GITLAB_API_TOKEN_FILE`。
+3. 创建 Config Schema 1（`"schemaVersion": 1`），在 `config.json` 配置显式 Project ID 和/或 Group ID。
+4. 配置 Standard Webhooks Signing Token，通过 `GITLAB_WEBHOOK_SIGNING_TOKEN` 或生产优先的 `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` 提供；两者不能同时设置。
+5. 添加 Webhook `https://<host>/webhooks/gitlab`，开启 **Merge request events** 与 **Note events**。
+6. 运行 `npm run doctor`，记录检测出的 GitLab version 与 Provider profile，再检查 `GET /health/ready`、`GET /health/dependencies`、`GET /version`。
+7. 创建或更新可丢弃测试 MR，确认 GitLab `running` → terminal status、单一 Summary、确定性 Discussion；duplicate webhook 不应产生重复 Review Run。
+8. Push 新 source commit，确认上一 immutable snapshot 被 supersede，stale publication 不会覆盖新结果。
+9. 如开启 IM，确认飞书/企业微信 Route 通过 `notification_outbox` 收到确定性卡片；通知失败不改变 GitLab Verdict。
+10. Group scope 场景确认完整 refresh 能发现预期 Project；失败/不完整 refresh 保留上一次完整 scope，同时 `/health/dependencies` 进入 degraded。
 
-仓库永久 system matrix 会在真实 GitLab CE 最低支持的 19.1 版本线及当前认证版本线上运行 Provider Contract。生产部署仍应在实际 Self-Managed 实例重复验收，因为权限、Hook 和网络策略属于部署环境。
+## Provider Profile
+
+Doctor 根据已认证的 `/api/v4/version` 自动选择 profile：
+
+- **Classic（`14.6.1` 到 `<15.7`）**：使用 `GET /projects/:id/merge_requests/:iid/changes`。响应必须明确包含 `overflow: false`；`overflow: true` 或缺少/未知 overflow 信号都会在调用 Codex 前阻断 Review。
+- **Modern（`>=15.7`）**：使用分页 `GET /projects/:id/merge_requests/:iid/diffs`，并要求 `/versions` 元数据与 `real_size` 精确匹配。
+
+不提供人工 profile override。Profile 由 GitLab 版本确定性选择，避免运维人员通过配置误削弱 diff 完整性保证。
+
+## 永久兼容证据
+
+仓库 system matrix 会在真实 GitLab CE **14.6.1、17.11.7、19.3.0** 上运行完整 Provider Contract：创建真实 Group/Project/MR，通过对应 profile 获取完整 diff，发布 notes/discussions/status，resolve discussion，并验证 repository/scope 行为。
+
+生产环境仍应在实际 Self-Managed 实例重复验收，因为权限、Hook、diff limits 与网络策略属于具体部署环境。Classic 环境建议额外准备一个故意触发 overflow 的 MR，确认其结果是 blocked，而不是对不完整 diff 做部分 Review。
+
+GitLab 本体升级与 Review Service 部署是独立生命周期。不要仅为了 Codex Review Service 从旧版本直接跨多个 major 升级 GitLab；GitLab 升级应遵循官方 required upgrade stops 与 background migration 要求。
