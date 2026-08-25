@@ -31,11 +31,15 @@ for(const file of ['config.example.json','deploy/systemd/config.example.json','d
   assert.equal(config.schemaVersion,contract.configSchemaVersion,`${file} config schema must match product contract`);
 }
 
-assert.equal(selectGitLabCapabilities(contract.minimumGitLabVersion).profile,'classic','GitLab compatibility floor must use classic profile');
-assert.equal(selectGitLabCapabilities(contract.modernGitLabProfileMinimumVersion).profile,'modern','modern GitLab profile threshold must be governed');
+const floorCapabilities=selectGitLabCapabilities(contract.minimumGitLabVersion),modernCapabilities=selectGitLabCapabilities(contract.modernGitLabProfileMinimumVersion),standardWebhookCapabilities=selectGitLabCapabilities(contract.standardWebhookMinimumGitLabVersion);
+assert.equal(floorCapabilities.profile,'classic','GitLab compatibility floor must use classic diff profile');
+assert.equal(floorCapabilities.webhookAuth,'classic-token','GitLab compatibility floor must use classic webhook auth');
+assert.equal(modernCapabilities.profile,'modern','modern GitLab diff profile threshold must be governed');
+assert.equal(standardWebhookCapabilities.webhookAuth,'standard-hmac','standard webhook threshold must be governed');
+assert.equal(standardWebhookCapabilities.webhookReplayWindow,true,'standard webhook mode must retain replay-window capability');
 assert.equal(contract.recommendedGitLabPolicy,'vendor-supported','recommended GitLab policy must not pretend the compatibility floor is recommended');
 
-const docs=['README.md','README.zh-CN.md','OPERATIONS.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md'];
+const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md'];
 for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|Schema 4 database|schema 4\b/i,`${file} contains stale Schema 4 product facts`);}
 
 const docker=fs.readFileSync(path.join(root,'deploy/docker/Dockerfile'),'utf8');
@@ -52,4 +56,4 @@ assert.match(release,/subject-name:/,'OCI digest must receive GitHub provenance 
 assert.match(release,/IMAGE_DIGEST\.txt/,'release must publish the canonical OCI digest');
 assert.match(release,/compose\.release\.yaml/,'release must publish a digest-pinned compose manifest');
 
-console.log(`Product contract verified: service ${contract.serviceVersion}, DB ${contract.databaseSchemaVersion}, config ${contract.configSchemaVersion}, Node ${pkg.engines.node}, GitLab ${contract.minimumGitLabVersion}+ (${contract.recommendedGitLabPolicy} recommended).`);
+console.log(`Product contract verified: service ${contract.serviceVersion}, DB ${contract.databaseSchemaVersion}, config ${contract.configSchemaVersion}, Node ${pkg.engines.node}, GitLab ${contract.minimumGitLabVersion}+ (${contract.recommendedGitLabPolicy} recommended), Standard Webhooks ${contract.standardWebhookMinimumGitLabVersion}+.`);
