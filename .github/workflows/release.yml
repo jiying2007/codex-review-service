@@ -22,35 +22,71 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      release_sha: ${{ steps.version.outputs.release_sha }}
       publish: ${{ steps.version.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false, fetch-depth: 0, submodules: recursive }
+        with: { persist-credentials: false, fetch-depth: 0 }
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '24.19.0', cache: npm }
       - id: version
         env:
+          GH_TOKEN: ${{ github.token }}
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
         shell: bash
         run: |
           set -euo pipefail
-          version=$(node -p "require('./product-contract.json').serviceVersion")
-          test "$version" = "$(node -p "require('./package.json').version")"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          tag="v${version}"
           publish=true
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            previous_version=""
-            if [[ "$GITHUB_EVENT_BEFORE" =~ ^[0-9a-f]{40}$ && ! "$GITHUB_EVENT_BEFORE" =~ ^0+$ ]]; then
-              previous_version=$(git show "${GITHUB_EVENT_BEFORE}:package.json" 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)
-            fi
-            if [[ "$previous_version" == "$version" ]] && git ls-remote --exit-code --refs origin "refs/tags/${tag}" >/dev/null 2>&1; then
-              publish=false
+          if [[ "$GITHUB_EVENT_NAME" == "issue_comment" ]]; then
+            git fetch --force --tags origin
+            retry_tag=""
+            while IFS= read -r candidate; do
+              [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+              if ! gh release view "$candidate" >/dev/null 2>&1; then
+                if [[ -n "$retry_tag" ]]; then
+                  echo "Multiple unreleased immutable tags exist; refusing ambiguous /release-retry." >&2
+                  exit 1
+                fi
+                retry_tag="$candidate"
+              fi
+            done < <(git tag --list 'v*' --sort=-version:refname)
+            [[ -n "$retry_tag" ]] || { echo 'No unreleased immutable tag exists for /release-retry.' >&2; exit 1; }
+            tag="$retry_tag"
+            version="${tag#v}"
+            release_sha=$(git rev-list -n 1 "$tag")
+            package_version=$(git show "${release_sha}:package.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).version||''))")
+            contract_version=$(git show "${release_sha}:product-contract.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).serviceVersion||''))")
+            test "$package_version" = "$version"
+            test "$contract_version" = "$version"
+          else
+            version=$(node -p "require('./product-contract.json').serviceVersion")
+            test "$version" = "$(node -p "require('./package.json').version")"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            tag="v${version}"
+            release_sha="$GITHUB_SHA"
+            if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+              previous_version=""
+              if [[ "$GITHUB_EVENT_BEFORE" =~ ^[0-9a-f]{40}$ && ! "$GITHUB_EVENT_BEFORE" =~ ^0+$ ]]; then
+                previous_version=$(git show "${GITHUB_EVENT_BEFORE}:package.json" 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)
+              fi
+              if [[ "$previous_version" == "$version" ]] && git ls-remote --exit-code --refs origin "refs/tags/${tag}" >/dev/null 2>&1; then
+                publish=false
+              fi
             fi
           fi
+          [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - name: Checkout canonical release candidate
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.version.outputs.release_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: recursive
       - if: steps.version.outputs.publish == 'true'
         run: npm ci --ignore-scripts --no-audit --no-fund
       - if: steps.version.outputs.publish == 'true'
@@ -67,7 +103,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: { persist-credentials: false, fetch-depth: 2, submodules: recursive }
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: recursive
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '${{ matrix.node }}', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
@@ -86,7 +126,11 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: { persist-credentials: false, fetch-depth: 0, submodules: recursive }
+        with:
+          ref: ${{ needs.prepare.outputs.release_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: recursive
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '24.19.0', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
@@ -96,6 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ needs.prepare.outputs.version }}"
+          test "$(git rev-parse HEAD)" = "${{ needs.prepare.outputs.release_sha }}"
           tgz=$(npm pack --ignore-scripts --json | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s)[0].filename))")
           test "$tgz" = "codex-review-service-${version}.tgz"
           tar -tzf "$tgz" > /tmp/package-files.txt
@@ -123,14 +168,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
         shell: bash
         run: |
           set -euo pipefail
           if git ls-remote --exit-code --refs origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
             git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
-            test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA"
+            test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$RELEASE_SHA"
           else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="$GITHUB_SHA" >/dev/null
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="$RELEASE_SHA" >/dev/null
           fi
 
       - name: Login to GHCR
@@ -143,6 +189,7 @@ jobs:
         name: Build or recover canonical OCI image
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -155,7 +202,7 @@ jobs:
               exit 1
             fi
             docker pull "$image" >/dev/null
-            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
+            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$RELEASE_SHA"
             test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")" = "$VERSION"
             digest=$(awk '/^Digest:/ {print $2; exit}' /tmp/existing-image.txt)
           else
@@ -164,7 +211,7 @@ jobs:
               --file deploy/docker/Dockerfile \
               --platform linux/amd64,linux/arm64 \
               --build-arg SERVICE_VERSION="$VERSION" \
-              --build-arg VCS_REF="$GITHUB_SHA" \
+              --build-arg VCS_REF="$RELEASE_SHA" \
               --tag "$image" \
               --provenance=mode=max \
               --sbom=true \
