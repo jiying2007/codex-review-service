@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.0.1 - 2026-08-25
+
+### OCI runtime security closure
+
+- Treat the failed v5.0.0 OCI publication as a blocked release candidate after Trivy found CVE-2026-59873 in the Node base image's bundled npm `tar@7.5.16`; no GitHub Release assets were published for v5.0.0.
+- Strip npm, npx, yarn, corepack and npm cache from the final production container after build-time installation while retaining `node` and the pinned Codex CLI runtime.
+- Make Docker smoke derive the service version from `product-contract.json` instead of hard-coding it, and permanently verify the final image exposes `node`/`codex` but no package-manager executables.
+- Preserve Database Schema 5, Config Schema 1, Safe Contract 2 and the exact Safe Core commit; this patch changes delivery/runtime attack surface only.
+
 ## 5.0.0 - 2026-08-25
 
 ### Production operations complete
