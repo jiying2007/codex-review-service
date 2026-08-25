@@ -18,7 +18,7 @@
     "precheck": "npm run core:init", "pretest": "npm run core:init",
     "start": "node src/index.js", "start:runner": "node src/runner-server.js", "doctor": "node src/doctor.js", "admin": "node src/admin-cli.js",
     "contract:verify": "node scripts/verify-product-contract.js",
-    "check": "node --check src/*.js && node --check src/codex-safe-core/*.js && node --check test/*.test.js && node --check scripts/*.js && node scripts/verify-family-v4.js && node scripts/verify-product-contract.js && node scripts/release.js verify",
+    "check": "node --check src/*.js && node --check src/codex-safe-core/*.js && node --check test/*.test.js && node --check scripts/*.js && node scripts/verify-family.js && node scripts/verify-product-contract.js && node scripts/release.js verify",
     "test": "node --test test/*.test.js", "ci": "npm run check && npm test",
     "release:prepare": "node scripts/release.js prepare", "release:verify": "node scripts/release.js verify", "release:check": "node scripts/release.js check", "release:push": "node scripts/release.js push"
   },

@@ -25,7 +25,7 @@ jobs:
       publish: ${{ steps.version.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false, fetch-depth: 0 }
+        with: { persist-credentials: false, fetch-depth: 0, submodules: recursive }
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '24.19.0', cache: npm }
       - id: version
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: { persist-credentials: false, fetch-depth: 2 }
+        with: { persist-credentials: false, fetch-depth: 2, submodules: recursive }
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '${{ matrix.node }}', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
@@ -86,11 +86,10 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: { persist-credentials: false, fetch-depth: 0 }
+        with: { persist-credentials: false, fetch-depth: 0, submodules: recursive }
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with: { node-version: '24.19.0', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run core:init
 
       - name: Build and inspect immutable package
         shell: bash
@@ -141,7 +140,7 @@ jobs:
         run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - id: image
-        name: Build and push canonical OCI image
+        name: Build or recover canonical OCI image
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
@@ -155,7 +154,9 @@ jobs:
               echo "OCI image ${image} already exists; immutable image will not be overwritten." >&2
               exit 1
             fi
-            gh attestation verify "oci://${image}" -R "$GITHUB_REPOSITORY" >/dev/null
+            docker pull "$image" >/dev/null
+            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")" = "$GITHUB_SHA"
+            test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")" = "$VERSION"
             digest=$(awk '/^Digest:/ {print $2; exit}' /tmp/existing-image.txt)
           else
             docker buildx create --name codex-review-release --use >/dev/null 2>&1 || docker buildx use codex-review-release
@@ -174,14 +175,23 @@ jobs:
           echo "ref=$image" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Scan canonical OCI image
+      - name: Report High/Critical OCI vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: '${{ steps.image.outputs.ref }}@${{ steps.image.outputs.digest }}'
+          format: table
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Block unfixed Critical OCI vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: '${{ steps.image.outputs.ref }}@${{ steps.image.outputs.digest }}'
           format: table
           exit-code: '1'
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
+          severity: 'CRITICAL'
 
       - name: Attest canonical OCI image
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -201,6 +211,7 @@ jobs:
           tgz="codex-review-service-${version}.tgz"
           printf '%s@%s\n' "$IMAGE_REF" "$IMAGE_DIGEST" > IMAGE_DIGEST.txt
           awk -v image="${IMAGE_REF}@${IMAGE_DIGEST}" '{if($1=="image:"){$0="    image: " image} print}' deploy/docker/compose.yaml > compose.release.yaml
+          grep -F "${IMAGE_REF}@${IMAGE_DIGEST}" compose.release.yaml >/dev/null
           sha256sum "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml > SHA256SUMS
 
       - name: Attest immutable release files

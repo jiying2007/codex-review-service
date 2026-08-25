@@ -1,139 +1,108 @@
-# Codex Review Service Deployment Guide
+# Production Deployment
 
-This guide describes the recommended production deployment for v4.0.4: **systemd + inline Runner + local SQLite**, followed by the optional isolated Runner topology.
+## Supported baseline
 
-## 1. Choose scope
+Read `product-contract.json` before deployment. Codex Review Service 5.0.0 requires Node.js >=24.19.0 <25, GitLab Self-Managed >=19.1.0, Database Schema 5 and Config Schema 1.
 
-One instance can manage explicit Projects, Groups, or both.
+Safe Core remains exact commit-pinned. Do not replace the gitlink or copy a different Core runtime into a release package.
+
+## Choose a deployment mode
+
+### Standard systemd / inline Runner
+
+Recommended default. Controller, SQLite, GitLab provider and Codex execution run as one Unix service user.
+
+### Hardened systemd / isolated Runner
+
+Use when GitLab credentials and OpenAI/Codex credentials must live in different Unix users/processes. Controller owns GitLab/state. Runner owns Codex/OpenAI credentials and exposes only the Unix-socket Safe Contract.
+
+### Docker / Compose
+
+Use the release-published `compose.release.yaml` and canonical GHCR digest. Do not rebuild source on production hosts.
+
+## Install the verified release
+
+Verify release checksums and provenance first; see `VERIFY_RELEASE.md`. Extract the verified tgz into `/opt/codex-review-service` or use the digest-pinned OCI image.
+
+For systemd:
+
+```bash
+sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
+sudo install -d -o root -g codex-review -m 0750 /etc/codex-review/secrets
+sudo install -d -o codex-review -g codex-review -m 0700 /var/lib/codex-review
+sudo install -m 0644 deploy/systemd/config.example.json /etc/codex-review/config.json
+sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/system/
+```
+
+Create each secret file as `root:codex-review` mode `0640`. For isolated mode, give the Runner-owned OpenAI secret to the Runner group/user instead of the Controller group. Also install `codex-review-runner.service` and its environment example.
+
+## Configure Config Schema 1
+
+The file must explicitly contain:
 
 ```json
-"gitlab": {
-  "baseUrl": "https://gitlab.example.internal",
-  "projects": [101, 102],
-  "groups": [{ "id": 20, "includeSubgroups": true }]
+{
+  "schemaVersion": 1,
+  "server": { "host": "127.0.0.1", "port": 8787, "dataDir": "/var/lib/codex-review" },
+  "gitlab": {
+    "baseUrl": "https://gitlab.example.internal",
+    "projects": [101, 102],
+    "groups": [{ "id": 20, "includeSubgroups": true }]
+  }
 }
 ```
 
-Use numeric GitLab Project/Group IDs. Group discovery is paginated and fail-closed.
+At least one Project or Group is required. Unknown keys and unsupported Config Schema versions fail closed.
 
-## 2. Install runtime
+## Provision secrets
 
-Requirements:
-
-- Linux with systemd
-- Node.js 22.13+
-- Git
-- OpenAI Codex CLI
-- GitLab Self-Managed 19.1+
-
-Install the immutable release:
-
-```bash
-sudo useradd --system --create-home \
-  --home-dir /home/codex-review \
-  --shell /usr/sbin/nologin \
-  codex-review
-
-sudo mkdir -p /etc/codex-review
-
-git clone --branch v4.0.4 --recurse-submodules \
-  https://github.com/jiying2007/codex-review-service.git \
-  /opt/codex-review-service
-
-cd /opt/codex-review-service
-npm ci --ignore-scripts --no-audit --no-fund
-npm run core:init
-```
-
-For later releases, replace `v4.0.4` with the immutable release tag you intentionally selected and verify artifacts according to `VERIFY_RELEASE.md`.
-
-## 3. Install non-secret configuration
-
-```bash
-sudo install -m 0644 \
-  deploy/systemd/config.example.json \
-  /etc/codex-review/config.json
-```
-
-Edit:
-
-```bash
-sudo editor /etc/codex-review/config.json
-```
-
-At minimum configure:
-
-- `gitlab.baseUrl`;
-- `gitlab.projects` and/or `gitlab.groups`;
-- `webhook.expectedInstance` if different from the GitLab base URL;
-- review concurrency/capacity only if defaults are not appropriate.
-
-Keep `runner.mode="inline"` for the recommended first deployment.
-
-## 4. Create credentials
-
-Create a GitLab Project/Group access token with only the API access required for configured scope, MR/repository reads, discussions and commit-status publication.
-
-Generate a Standard Webhooks Signing Token secret in the format expected by the service:
-
-```bash
-echo "whsec_$(openssl rand -base64 32)"
-```
-
-Install the secret environment file:
-
-```bash
-sudo install -o root -g codex-review -m 0640 \
-  .env.example \
-  /etc/codex-review-service.env
-
-sudo editor /etc/codex-review-service.env
-```
-
-Set:
+Production should use protected files and `_FILE` inputs:
 
 ```text
-GITLAB_API_TOKEN=...
-GITLAB_WEBHOOK_SIGNING_TOKEN=whsec_...
+GITLAB_API_TOKEN_FILE=/etc/codex-review/secrets/gitlab-api-token
+GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signing-token
+OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key       # optional, inline mode
 ```
 
-Optionally set `OPENAI_API_KEY`. Otherwise authenticate Codex as the actual service user:
+`GITLAB_API_TOKEN` / `GITLAB_WEBHOOK_SIGNING_TOKEN` direct values remain supported where appropriate, but a value and matching `_FILE` cannot both be set.
+
+The GitLab API token should be scoped to the configured Projects/Groups and only have permissions needed for MR reads, repository reads, notes/discussions and commit statuses. Rotate credentials through protected files, Doctor and service restart.
+
+## Authenticate Codex
+
+Either authenticate as the execution user:
 
 ```bash
 sudo -u codex-review -H codex login
-sudo -u codex-review -H codex --version
 ```
 
-Do not authenticate only as root; the systemd service runs as `codex-review`.
+or provide `OPENAI_API_KEY_FILE`. In isolated mode, this credential belongs only to the Runner process.
 
-## 5. Install and validate systemd
-
-```bash
-sudo install -m 0644 \
-  deploy/systemd/codex-review-service.service \
-  /etc/systemd/system/codex-review-service.service
-
-sudo systemctl daemon-reload
-```
-
-Run Doctor **before** starting:
+## Doctor preflight
 
 ```bash
 cd /opt/codex-review-service
-sudo -u codex-review \
-  /usr/bin/node \
+sudo -u codex-review /usr/bin/node \
   --env-file=/etc/codex-review-service.env \
   src/doctor.js
 ```
 
-Doctor validates config, state/database readiness, Codex capabilities, GitLab reachability and resolved Project/Group scope without executing reviewed repository code.
+Doctor validates product/config identity, SQLite Schema 5/integrity, Codex capability contract, GitLab connectivity/version and complete Project/Group scope.
 
-Only after Doctor succeeds:
+## Start systemd
+
+Standard:
 
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable --now codex-review-service
-systemctl status codex-review-service
-journalctl -u codex-review-service -f
+```
+
+Isolated:
+
+```bash
+sudo systemctl enable --now codex-review-runner
+sudo systemctl enable --now codex-review-service
 ```
 
 Validate:
@@ -141,142 +110,112 @@ Validate:
 ```bash
 curl -fsS http://127.0.0.1:8787/health/live
 curl -fsS http://127.0.0.1:8787/health/ready
-curl -fsS http://127.0.0.1:8787/metrics
+curl -fsS http://127.0.0.1:8787/health/dependencies
+curl -fsS http://127.0.0.1:8787/version
+curl -fsS http://127.0.0.1:8787/metrics | head
 ```
 
-Do not enable GitLab webhooks until `/health/ready` returns success.
+`/health/ready` means safe durable webhook intake. `/health/dependencies` reports GitLab/scope degradation separately.
 
-## 6. Expose trusted HTTPS ingress
+## Configure GitLab webhook
 
-Keep the service bound to `127.0.0.1:8787` and terminate TLS at a trusted internal reverse proxy. Example Nginx skeleton:
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name review.example.internal;
-
-    ssl_certificate     /etc/nginx/ssl/review.crt;
-    ssl_certificate_key /etc/nginx/ssl/review.key;
-
-    location /webhooks/gitlab {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        client_max_body_size 2m;
-    }
-
-    location /health/ {
-        allow 10.0.0.0/8;
-        deny all;
-        proxy_pass http://127.0.0.1:8787;
-    }
-
-    location /metrics {
-        allow 10.0.0.0/8;
-        deny all;
-        proxy_pass http://127.0.0.1:8787;
-    }
-}
-```
-
-Restrict webhook ingress to GitLab/trusted networks where practical. Health/metrics should be reachable only by trusted monitoring systems.
-
-## 7. Configure GitLab webhook
-
-Configure the Project or Group webhook URL:
+Expose trusted HTTPS ingress to:
 
 ```text
-https://review.example.internal/webhooks/gitlab
+https://<review-host>/webhooks/gitlab
 ```
 
-Enable:
+Create a GitLab webhook using a Standard Webhooks Signing Token and enable:
 
-- Merge request events
-- Note events
+- **Merge request events**
+- **Note events**
 
-Configure the same Standard Webhooks Signing Token represented by `GITLAB_WEBHOOK_SIGNING_TOKEN`.
+The Signing Token must match `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE`. Do not enable the webhook until Doctor and `/health/ready` pass.
 
-GitLab 19.1+ Standard Webhooks signing semantics are required. Legacy plain `X-Gitlab-Token` compatibility is intentionally not provided.
+## End-to-end acceptance
 
-## 8. First rollout validation
+For a disposable test MR:
 
-Use a test MR and verify:
+1. Open or update the MR.
+2. Confirm webhook returns quickly and one durable job is queued.
+3. Observe `running`, then terminal GitLab status.
+4. Confirm exactly one durable Review Run for the immutable snapshot.
+5. Confirm summary/discussions publish through `publication_outbox`.
+6. If notifications are enabled, confirm the deterministic Feishu/WeCom card is delivered through `notification_outbox`.
+7. Push a new commit and confirm older snapshot work is superseded/stale publication is prevented.
+8. Send a duplicate webhook and confirm idempotent acceptance rather than duplicate review.
+9. Check `/version` and retain it with deployment evidence.
 
-1. signed webhook is accepted;
-2. MR enters `running` status;
-3. one durable review run appears in SQLite;
-4. summary/discussions/status publish through the Outbox;
-5. final status is terminal;
-6. a new source push supersedes the old snapshot;
-7. `/health/ready` remains healthy;
-8. logs/metrics contain no repository content or credentials.
+## Docker / Compose deployment
 
-## 9. Repository policy
+Use release assets:
 
-Optionally commit `.codex-safe.json` to reviewed target branches. The service reads the policy from immutable target `diff_refs.start_sha`, not from the MR source branch.
+```text
+IMAGE_DIGEST.txt
+compose.release.yaml
+```
 
-Repository policy can strengthen deterministic rules and lower resource ceilings; it cannot weaken service-wide security, confidence/blocking or capacity limits.
-
-## 10. Hardened isolated Runner
-
-Use this only when credential separation is required.
-
-Create the Runner user while sharing the `codex-review` group:
+Create required secrets:
 
 ```bash
-sudo useradd --system --create-home \
-  --home-dir /home/codex-review-runner \
-  --shell /usr/sbin/nologin \
-  --gid codex-review \
-  codex-review-runner
+mkdir -p secrets
+chmod 0700 secrets
+printf '%s' "$GITLAB_API_TOKEN" > secrets/gitlab_api_token
+printf '%s' "$GITLAB_WEBHOOK_SIGNING_TOKEN" > secrets/gitlab_webhook_signing_token
+chmod 0600 secrets/*
 ```
 
-Set in `/etc/codex-review/config.json`:
-
-```json
-"runner": {
-  "mode": "isolated",
-  "socket": "/run/codex-review-runner/runner.sock"
-}
-```
-
-Install:
+Then:
 
 ```bash
-sudo install -o root -g codex-review -m 0640 \
-  deploy/systemd/codex-review-runner.env.example \
-  /etc/codex-review-runner.env
-
-sudo install -m 0644 \
-  deploy/systemd/codex-review-runner.service \
-  /etc/systemd/system/codex-review-runner.service
+docker compose -f compose.release.yaml up -d
+curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-Authenticate Codex as `codex-review-runner` or put only `OPENAI_API_KEY` in the Runner env file. Do not give the Runner GitLab credentials.
+Compose maps secrets under `/run/secrets/*`; no `env_file` is required for required credentials. Optional OpenAI/notification secrets can be added using the same `_FILE` contract.
+
+## Reverse proxy
+
+Terminate TLS at a trusted ingress/reverse proxy. Preserve the raw request body and Standard Webhooks signature headers. Do not modify signed payload bytes. Restrict direct access to service management endpoints where network policy allows.
+
+## Backup before upgrade
 
 ```bash
-sudo -u codex-review-runner -H codex login
-sudo systemctl daemon-reload
-sudo systemctl enable --now codex-review-runner
-sudo systemctl restart codex-review-service
+npm run admin -- backup /secure-backup/pre-upgrade.sqlite
+npm run admin -- backup-verify /secure-backup/pre-upgrade.sqlite
+npm run admin -- drain 120
 ```
 
-Run Doctor/readiness again after the topology change.
+## Upgrade
 
-## 11. Upgrade and rollback
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Any future schema transition must be documented and tested.
 
-Before upgrade, back up SQLite and record the current immutable tag.
+1. Read release notes and rollback boundary.
+2. Create/verify backup.
+3. Drain durable work.
+4. Verify new tgz/OCI digest and provenance.
+5. Install/switch exact release artifact.
+6. Run Doctor before enabling traffic.
+7. Restart service/Runner.
+8. Require `/health/ready`, `/version` and expected queue/outbox state.
 
-```bash
-cd /opt/codex-review-service
-git fetch --tags origin
-git checkout <new-release-tag>
-git submodule update --init --recursive
-npm ci --ignore-scripts --no-audit --no-fund
-npm run ci
-```
+## Rollback
 
-Run Doctor, then restart the Runner (if isolated) and Controller, and require readiness success.
+Rollback is allowed only within the release's documented schema boundary. Never start an older binary against a newer irreversible DB/Config schema.
 
-Rollback uses the same process with the previously recorded immutable tag. Back up SQLite before any version transition; see `OPERATIONS.md` for backup/restore procedures.
+If rollback is compatible:
+
+1. Stop Controller.
+2. Restore the previous verified binary/image.
+3. Restore the pre-upgrade database only if required by the release boundary.
+4. Restore the matching Config Schema file.
+5. Run Doctor.
+6. Start and verify `/health/ready`, `/health/dependencies` and `/version`.
+
+## Production rollout pattern
+
+For a broad Project/Group scope, start with a small explicit Project set, validate queue age/token/latency, then widen scope. One instance should remain within one administrative/security trust domain. Use separate instances for materially different confidentiality or credential domains.
+
+## Operational follow-up
+
+See `OPERATIONS.md` for Admin CLI, backup/restore, incident response, SLO/capacity and fatal crash/restart semantics.
