@@ -10,6 +10,7 @@
 - Add `review.blocked`, `review.failed`, `review.completed`, `service.degraded`, and `service.recovered` notification events with quiet defaults.
 - Add rootless Docker/Compose deployment with read-only root filesystem, dropped capabilities, healthcheck, resource bounds, persistent state/Codex home, and pinned Codex CLI default.
 - Add dedicated GitLab setup and bilingual IM notification documentation.
+- Hard-cut the first production database contract at Schema 5: no pre-release migration/backfill compatibility; incompatible development databases fail closed.
 
 ## 4.0.4 - 2026-08-24
 
