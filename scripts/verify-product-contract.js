@@ -10,11 +10,14 @@ const pkg=require('../package.json');
 const lock=require('../package-lock.json');
 const {SCHEMA_VERSION}=require('../src/db');
 const core=require('../src/codex-safe-core');
+const {selectGitLabCapabilities}=require('../src/gitlab-capabilities');
 
 assert.equal(pkg.version,contract.serviceVersion,'package version must come from product contract');
 assert.equal(lock.version,contract.serviceVersion,'lockfile version must match product contract');
 assert.equal(lock.packages[''].version,contract.serviceVersion,'lock root package version must match product contract');
-assert.equal(pkg.engines.node,`>=${contract.minimumNodeVersion} <${contract.nodeMajorVersion+1}`,'Node engine must be hard-pinned to the supported LTS major');
+const expectedNodeEngine=`>=${contract.minimumNodeVersion} <23 || >=${contract.canonicalNodeVersion} <25`;
+assert.equal(pkg.engines.node,expectedNodeEngine,'Node engine must expose only supported LTS ranges');
+assert.deepEqual(contract.supportedNodeMajors,[22,24],'supported Node majors must stay explicit');
 assert.equal(SCHEMA_VERSION,contract.databaseSchemaVersion,'database schema must match product contract');
 assert.equal(core.SAFE_CORE_VERSION,contract.safeCoreMajorVersion,'Safe Core major must match product contract');
 assert.equal(core.SAFE_CONTRACT_VERSION,contract.safeContractVersion,'Safe Contract must match product contract');
@@ -28,13 +31,20 @@ for(const file of ['config.example.json','deploy/systemd/config.example.json','d
   assert.equal(config.schemaVersion,contract.configSchemaVersion,`${file} config schema must match product contract`);
 }
 
+assert.equal(selectGitLabCapabilities(contract.minimumGitLabVersion).profile,'classic','GitLab compatibility floor must use classic profile');
+assert.equal(selectGitLabCapabilities(contract.modernGitLabProfileMinimumVersion).profile,'modern','modern GitLab profile threshold must be governed');
+assert.equal(contract.recommendedGitLabPolicy,'vendor-supported','recommended GitLab policy must not pretend the compatibility floor is recommended');
+
 const docs=['README.md','README.zh-CN.md','OPERATIONS.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md'];
 for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|Schema 4 database|schema 4\b/i,`${file} contains stale Schema 4 product facts`);}
 
 const docker=fs.readFileSync(path.join(root,'deploy/docker/Dockerfile'),'utf8');
-assert.match(docker,new RegExp(`node:${contract.minimumNodeVersion}-bookworm-slim@sha256:[0-9a-f]{64}`),'Docker base must pin exact Node LTS image digest');
+assert.match(docker,new RegExp(`node:${contract.canonicalNodeVersion}-bookworm-slim@sha256:[0-9a-f]{64}`),'Docker base must pin canonical Node LTS image digest');
 const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
-assert.match(ci,new RegExp(contract.minimumNodeVersion.replaceAll('.','\\.')),'CI must test the product-contract Node floor');
+assert.match(ci,new RegExp(contract.minimumNodeVersion.replaceAll('.','\\.')),'CI must test the Node compatibility floor');
+assert.match(ci,new RegExp(contract.canonicalNodeVersion.replaceAll('.','\\.')),'CI must test canonical Node');
+const gitlabMatrix=fs.readFileSync(path.join(root,'.github/workflows/gitlab-system.yml'),'utf8');
+for(const version of ['14.6.1','17.11.7','19.3.0'])assert.match(gitlabMatrix,new RegExp(version.replaceAll('.','\\.')),`GitLab system matrix must cover ${version}`);
 const release=fs.readFileSync(path.join(root,'.github/workflows/release.yml'),'utf8');
 assert.match(release,/ghcr\.io\/\$\{GITHUB_REPOSITORY\}/,'release must publish canonical GHCR image');
 assert.match(release,/docker buildx build[\s\S]*--push/,'release must push OCI image instead of rebuilding at deployment time');
@@ -42,4 +52,4 @@ assert.match(release,/subject-name:/,'OCI digest must receive GitHub provenance 
 assert.match(release,/IMAGE_DIGEST\.txt/,'release must publish the canonical OCI digest');
 assert.match(release,/compose\.release\.yaml/,'release must publish a digest-pinned compose manifest');
 
-console.log(`Product contract verified: service ${contract.serviceVersion}, DB ${contract.databaseSchemaVersion}, config ${contract.configSchemaVersion}, Node ${contract.minimumNodeVersion}, GitLab ${contract.minimumGitLabVersion}.`);
+console.log(`Product contract verified: service ${contract.serviceVersion}, DB ${contract.databaseSchemaVersion}, config ${contract.configSchemaVersion}, Node ${pkg.engines.node}, GitLab ${contract.minimumGitLabVersion}+ (${contract.recommendedGitLabPolicy} recommended).`);
