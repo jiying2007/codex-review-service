@@ -161,6 +161,7 @@ jobs:
           else
             docker buildx create --name codex-review-release --use >/dev/null 2>&1 || docker buildx use codex-review-release
             docker buildx build \
+              --file deploy/docker/Dockerfile \
               --platform linux/amd64,linux/arm64 \
               --build-arg SERVICE_VERSION="$VERSION" \
               --build-arg VCS_REF="$GITHUB_SHA" \
