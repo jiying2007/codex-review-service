@@ -16,11 +16,11 @@ concurrency:
 
 jobs:
   provider-e2e:
-    timeout-minutes: 35
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        gitlab: ['19.1.6-ce.0','19.3.0-ce.0']
+        gitlab: ['14.6.1-ce.0','17.11.7-ce.0','19.3.0-ce.0']
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           rails_http_ready=false
           rails_runner_ready=false
-          for i in $(seq 1 180); do
+          for i in $(seq 1 210); do
             http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
             if [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; then
               rails_http_ready=true
@@ -56,7 +56,7 @@ jobs:
             if [ "$rails_http_ready" = true ] && [ "$rails_runner_ready" = true ]; then
               break
             fi
-            if [ "$i" = 180 ]; then
+            if [ "$i" = 210 ]; then
               echo "GitLab provider dependencies did not become ready: rails_http=$rails_http_ready rails_runner=$rails_runner_ready"
               docker logs gitlab
               exit 1
