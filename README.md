@@ -2,23 +2,30 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.0.1** is the current production-operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
+Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.1.0** is the current compatibility/operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
 
 ## Product contract
 
 `product-contract.json` is the single machine-checked source for product identity and compatibility:
 
-- Service: **5.0.1**
+- Service: **5.1.0**
 - Database Schema: **5**
 - Config Schema: **1**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
 - Safe Core: exact commit `7ffbf6f1791e17ba74faf0922e7a702bdac72059`
-- Node.js: **>=24.19.0 <25**
-- GitLab Self-Managed: **>=19.1.0**
+- Native/systemd Node.js: **22.22.2+ on Node 22 LTS, or 24.19.0+ on Node 24 LTS**; Node 23 is intentionally unsupported
+- Canonical Docker runtime: **Node 24.19.0**
+- GitLab Self-Managed compatibility floor: **14.6.1**
+- GitLab recommendation: run a **vendor-supported GitLab release** even though older 14.6.1+ installations are compatibility-tested
 
-Current CI additionally runs the GitLab provider contract against real GitLab CE 19.1.x and the current certified release line. Safe Core remains Family v4; Service v5 does not change the shared review protocol.
+GitLab compatibility is capability-driven rather than a pile of scattered version branches:
+
+- **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
+- **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
+
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v5.1 does not change the shared review protocol.
 
 ## Start here
 
@@ -32,7 +39,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-5.0.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-5.1.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -61,7 +68,7 @@ curl -fsS http://127.0.0.1:8787/health/dependencies
 curl -fsS http://127.0.0.1:8787/version
 ```
 
-Do not enable GitLab webhooks until Doctor and `/health/ready` pass.
+Doctor reports the detected GitLab version and `classic`/`modern` provider profile. Do not enable GitLab webhooks until Doctor and `/health/ready` pass.
 
 ## Docker / Compose
 
@@ -77,7 +84,7 @@ docker compose -f compose.release.yaml up -d
 curl -fsS http://127.0.0.1:8787/health/ready
 ```
 
-The image runs non-root, drops Linux capabilities, uses a read-only root filesystem and persists only service state/Codex home. The Dockerfile pins the Node 24.19.0 base by immutable multi-platform digest and strips npm/npx/yarn/corepack from the final runtime after build-time installation.
+The image runs non-root, drops Linux capabilities, uses a read-only root filesystem and persists only service state/Codex home. The Dockerfile pins the canonical Node 24.19.0 base by immutable multi-platform digest and strips npm/npx/yarn/corepack from the final runtime after build-time installation. Host Node is irrelevant when deploying the official container.
 
 ## Connect GitLab
 
@@ -89,6 +96,8 @@ POST https://<review-host>/webhooks/gitlab
 
 Enable **Merge request events** and **Note events**. Use the same Standard Webhooks Signing Token represented by `GITLAB_WEBHOOK_SIGNING_TOKEN` or its `_FILE` form.
 
+GitLab 14.6.1 is a compatibility floor, not a recommendation to remain on an unsupported server release. Upgrade GitLab as an independent infrastructure/security project when practical; Codex Review Service does not require that upgrade before it can be deployed.
+
 ## Durable architecture
 
 ```text
@@ -99,6 +108,8 @@ GitLab signed webhook
 SQLite durable review queue
           ↓
 immutable start_sha + head_sha evidence
+          ↓
+GitLab capability profile proves complete diff
           ↓
 Codex Safe Review
           ↓
@@ -160,7 +171,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use Node 24's SQLite online backup API and are rejected unless `quick_check`, foreign-key validation and Schema 5 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 5 verification pass.
 
 ## Failure semantics
 
@@ -182,7 +193,7 @@ Schema 5 is the first supported production database. **v5.0.0 is the line after 
 
 ## Verification and governance
 
-PR/release gates include Node 24 floor/current-major tests, Docker build/smoke, recovery/backup tests, dependency review, CodeQL, real GitLab CE provider matrix, package boundary, OCI vulnerability scan, SBOM, checksum and GitHub provenance attestations.
+PR/release gates include Node 22.22.2 and 24.19.0 tests, Docker build/smoke, recovery/backup tests, dependency audit, CodeQL, real GitLab CE 14.6.1/17.11.7/19.3.0 provider matrix, package boundary, OCI vulnerability scan, SBOM, checksum and GitHub provenance attestations.
 
 - Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - GitLab setup: [docs/GITLAB_SETUP.md](docs/GITLAB_SETUP.md)

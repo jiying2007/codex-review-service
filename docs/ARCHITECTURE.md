@@ -2,25 +2,27 @@
 
 ## Product and shared-family contract
 
-Codex Review Service **5.0.0** owns production operations while retaining the exact-pinned Safe Core Family v4 review protocol. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **5.1.0** owns production operations and GitLab compatibility profiles while retaining the exact-pinned Safe Core Family v4 review protocol. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 5.0.0
+Service 5.1.0
 DB Schema 5
 Config Schema 1
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
 Safe Core 7ffbf6f1791e17ba74faf0922e7a702bdac72059
-Node >=24.19.0 <25
-GitLab >=19.1.0
+Native Node: 22 LTS >=22.22.2 OR 24 LTS >=24.19.0
+Canonical Docker Node: 24.19.0
+GitLab compatibility floor: 14.6.1
+GitLab recommendation: vendor-supported release
 ```
 
-Service-owned responsibilities: GitLab provider semantics, immutable snapshot acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
+Service-owned responsibilities: GitLab provider semantics/capability selection, immutable snapshot acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
 
 Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 3, Review Evidence chunking, deterministic Review Rules and Review Receipt 4.
 
-IM, Docker, Admin and deployment concerns must not be added to Safe Core.
+IM, Docker, Admin, GitLab version/profile logic and deployment concerns must not be added to Safe Core.
 
 ## Configuration and deployment boundary
 
@@ -51,7 +53,7 @@ ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
  inline Runner   isolated Runner
 ```
 
-Runtime does not infer root, sudo, or systemd. Docker consumes the same Config Schema and durable state model; its release manifest points to a canonical OCI digest.
+Runtime does not infer root, sudo, or systemd. Docker consumes the same Config Schema and durable state model; its release manifest points to a canonical OCI digest. Native/systemd supports explicit Node 22/24 LTS ranges; canonical Docker deliberately stays on one Node 24.19 runtime.
 
 ## Security/trust domain
 
@@ -65,7 +67,7 @@ Only explicit Project IDs and Group IDs are supported. Group scope is expanded t
 
 A refresh constructs a complete next Set before mutating the active Set. Provider/pagination failure preserves the last complete Set. Removed Projects become unauthorized for new work and pending GitLab writes are canceled before another mutation.
 
-The real-GitLab CI matrix creates Groups/Projects/MRs and exercises this provider boundary against the minimum supported GitLab line and current certified line.
+The real-GitLab CI matrix creates Groups/Projects/MRs and exercises this provider boundary against GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
 ## Webhook boundary
 
@@ -95,9 +97,26 @@ Schema 5 is the first production database contract. After v5.0.0, schema evoluti
 
 HA must replace this boundary with equivalent semantics for transactionality, idempotency, per-MR serialization, recovery, ordering and snapshot checks. Never share SQLite over a network filesystem.
 
-## Snapshot boundary
+## Snapshot and diff-completeness boundary
 
 A review is identified by immutable target `start_sha` and source `head_sha`. Policy, evidence, finding positions and publication plan derive from those identities. No stale result may publish.
+
+Before Codex receives evidence, the GitLab Provider must prove complete diff coverage using exactly one capability profile selected from authenticated GitLab version:
+
+```text
+GitLab /api/v4/version
+        │
+        ├─ 14.6.1 .. <15.7  → Classic
+        │                       /changes
+        │                       overflow must be exactly false
+        │
+        └─ >=15.7            → Modern
+                                paginated /diffs
+                                + /versions
+                                + exact real_size
+```
+
+There is no operator-configurable profile override. Missing/ambiguous completeness evidence blocks review. Version selection logic lives only in `src/gitlab-capabilities.js`; provider methods consume capabilities rather than scattering `if(version)` checks across the Service.
 
 ## Failure-domain boundary
 
@@ -123,7 +142,9 @@ Secret file indirection belongs to Service deployment/runtime, not Safe Core.
 
 ## Provider boundary
 
-GitLab-specific behavior stays behind provider modules: scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, notes/discussions and statuses.
+GitLab-specific behavior stays behind provider modules: capability selection, scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, notes/discussions and statuses.
+
+Classic/Modern are **first-class provider capability profiles**, not temporary compatibility residue. A profile is allowed only when it has one centralized selector, deterministic fail-closed semantics and permanent real-version contract coverage.
 
 Review construction, finding validation, deterministic gate, budgets and receipt semantics remain provider-independent and model-unprivileged.
 
@@ -152,13 +173,14 @@ Release produces two canonical deployment forms from the same source SHA:
 ```text
 verified tgz + checksums + provenance
                │
-               ├── systemd
+               ├── systemd (Node 22/24 supported range)
                │
                └── audit/extraction
 
 multi-arch GHCR OCI digest + OCI provenance/SBOM
                │
                └── digest-pinned compose.release.yaml
+                    canonical Node 24.19
 ```
 
 Production Docker does not rebuild source on target hosts.
@@ -167,4 +189,4 @@ Production Docker does not rebuild source on target hosts.
 
 Provider, Project Scope, storage and Runner remain explicit replacement boundaries. Future PostgreSQL/HA or another provider may replace one boundary only after preserving transaction/idempotency/snapshot/recovery contracts.
 
-Do not reintroduce compatibility branches, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, or ad-hoc database mutation paths.
+Do not reintroduce scattered version branches, one-off legacy fallbacks, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, or ad-hoc database mutation paths. A compatibility profile is a product contract only when centrally selected, fail-closed, documented and permanently tested against a real representative release.

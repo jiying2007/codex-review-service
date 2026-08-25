@@ -1,5 +1,5 @@
 {
-  "serviceVersion": "5.0.1",
+  "serviceVersion": "5.1.0",
   "databaseSchemaVersion": 5,
   "configSchemaVersion": 1,
   "policySchemaVersion": 3,
@@ -7,7 +7,12 @@
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
   "safeCoreCommit": "7ffbf6f1791e17ba74faf0922e7a702bdac72059",
-  "minimumNodeVersion": "24.19.0",
+  "minimumNodeVersion": "22.22.2",
+  "canonicalNodeVersion": "24.19.0",
+  "supportedNodeMajors": [22, 24],
   "nodeMajorVersion": 24,
-  "minimumGitLabVersion": "19.1.0"
+  "minimumGitLabVersion": "14.6.1",
+  "modernGitLabProfileMinimumVersion": "15.7.0",
+  "standardWebhookMinimumGitLabVersion": "19.1.0",
+  "recommendedGitLabPolicy": "vendor-supported"
 }

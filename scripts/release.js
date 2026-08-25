@@ -26,13 +26,16 @@ function hasChangelogVersion(changelog, version) {
   const escaped = String(version).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^## ${escaped}(?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`, 'm').test(changelog);
 }
+function expectedNodeEngine(contract){return `>=${contract.minimumNodeVersion} <23 || >=${contract.canonicalNodeVersion} <25`;}
 
 function verifyStatic() {
   const pkg = readJson(pkgPath),lock = readJson(lockPath),contract=readJson(contractPath);
   if (!validVersion(pkg.version)) fail(`package version must be MAJOR.MINOR.PATCH: ${pkg.version}`);
   if (pkg.version!==contract.serviceVersion) fail('package version must match product-contract.json serviceVersion.');
   if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) fail('package-lock version metadata must match package.json.');
-  if(pkg.engines?.node!==`>=${contract.minimumNodeVersion} <${Number(contract.nodeMajorVersion)+1}`)fail('package Node engine must match product contract.');
+  if(pkg.engines?.node!==expectedNodeEngine(contract))fail('package Node engine must match product contract.');
+  if(lock.packages?.['']?.engines?.node!==expectedNodeEngine(contract))fail('package-lock Node engine must match product contract.');
+  if(JSON.stringify(contract.supportedNodeMajors)!=='[22,24]')fail('supported Node majors must remain explicit 22/24 LTS lines.');
   const changelog = fs.readFileSync(changelogPath, 'utf8');
   if (!hasChangelogVersion(changelog, pkg.version)) fail(`CHANGELOG.md must contain a release heading for ${pkg.version}.`);
   const staged = run('git', ['ls-files', '--stage', 'src/codex-safe-core']);
@@ -99,4 +102,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, validVersion, hasChangelogVersion, verifyStatic, main };
+module.exports = { run, validVersion, hasChangelogVersion, expectedNodeEngine, verifyStatic, main };

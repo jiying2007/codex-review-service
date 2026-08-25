@@ -2,15 +2,28 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.0.1 要求：Node.js >=24.19.0 <25、GitLab Self-Managed >=19.1.0、Database Schema 5、Config Schema 1。
+部署前先读取 `product-contract.json`。Codex Review Service 5.1.0 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 5、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
+
+GitLab 14.6.1 是兼容下限，不是推荐长期运行版本。条件允许时，生产环境应运行 GitLab 官方仍支持的版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
 Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink 或复制其他 Core 版本。
+
+## GitLab Capability Profile
+
+服务根据已认证的 `/api/v4/version` 自动选择能力：
+
+- **Classic diff**（`14.6.1` 到 `<15.7`）：使用 `/merge_requests/:iid/changes`，必须明确得到 `overflow: false`。
+- **Modern diff**（`>=15.7`）：使用分页 `/diffs`，并通过 `/versions.real_size` 证明完整覆盖。
+- **Classic Webhook Auth**（`<19.1`）：常量时间校验 `X-Gitlab-Token`，并用事件类型 + 原始 body SHA-256 生成 delivery identity。旧 GitLab 没有 Standard Webhooks timestamp/HMAC replay-window，因此建议额外使用可信 HTTPS/私有 ingress 和来源网络限制。
+- **Standard HMAC Webhook Auth**（`>=19.1`）：要求 provider delivery identity、timestamp replay window、原始 body HMAC-SHA256 和预期 GitLab instance。
+
+所有 profile 都 fail closed。Doctor 会输出实际 diff/webhook 能力，不提供人工 compatibility override。
 
 ## 选择部署模式
 
 ### 标准 systemd / inline Runner
 
-默认推荐。Controller、SQLite、GitLab Provider 与 Codex 执行运行在同一个 Unix Service User 下。
+默认推荐。Controller、SQLite、GitLab Provider 与 Codex 执行运行在同一个 Unix Service User 下。主机 Node 必须处于上述两个受支持 LTS 区间之一。
 
 ### Hardened systemd / isolated Runner
 
@@ -18,7 +31,7 @@ Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink �
 
 ### Docker / Compose
 
-使用 Release 发布的 `compose.release.yaml` 与 canonical GHCR digest。生产主机不要重新 build 源码。
+使用 Release 发布的 `compose.release.yaml` 与 canonical GHCR digest。生产主机不要重新 build 源码。官方镜像自带 Node 24.19.0。
 
 ## 安装已验证 Release
 
@@ -85,7 +98,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本及完整 Project/Group scope。
+Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；部署证据应记录 `profile`、`webhookAuth` 和 `webhookReplayWindow`。
 
 ## 启动 systemd
 
@@ -123,26 +136,29 @@ curl -fsS http://127.0.0.1:8787/metrics | head
 https://<review-host>/webhooks/gitlab
 ```
 
-GitLab Webhook 使用 Standard Webhooks Signing Token，并启用：
+生成 `GITLAB_WEBHOOK_SIGNING_TOKEN(_FILE)` 使用的 `whsec_...` 值，然后按 Doctor 检出的能力配置 GitLab：
 
-- **Merge request events**
-- **Note events**
+- GitLab **<19.1**：把该值原样填入 Webhook 的 **Secret Token**，GitLab 会通过 `X-Gitlab-Token` 发送。
+- GitLab **>=19.1**：把该值配置为 Standard Webhooks Signing Token。
 
-Signing Token 必须与 `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE` 一致。Doctor 和 `/health/ready` 未通过前不要启用 Webhook。
+启用 **Merge request events** 与 **Note events**。Doctor 和 `/health/ready` 未通过前不要启用 Webhook。Classic 模式由于上游 GitLab 不支持 timestamped HMAC replay protection，应优先部署在可信 HTTPS/私有 ingress 后，并限制来源网络。
 
 ## 端到端验收
 
 使用可丢弃测试 MR：
 
-1. Open/update MR。
-2. 确认 Webhook 快速返回，只把工作持久化入队。
-3. 观察 GitLab `running` → terminal status。
-4. 同一 immutable snapshot 只有一个 durable Review Run。
-5. summary/discussions 通过 `publication_outbox` 收敛。
-6. 开启通知时，飞书/企业微信通过 `notification_outbox` 收到确定性 Card。
-7. Push 新 commit，旧 snapshot 被 supersede，旧 publication 不会覆盖新状态。
-8. 重发 duplicate webhook，确认幂等，不产生重复 Review。
-9. 保存 `/version` 作为部署证据。
+1. 先运行 Doctor 并记录 GitLab version/diff profile/webhook auth mode。
+2. Open/update MR。
+3. 确认 Webhook 快速返回，只把工作持久化入队。
+4. 观察 GitLab `running` → terminal status。
+5. 同一 immutable snapshot 只有一个 durable Review Run。
+6. summary/discussions 通过 `publication_outbox` 收敛。
+7. 开启通知时，飞书/企业微信通过 `notification_outbox` 收到确定性 Card。
+8. Push 新 commit，旧 snapshot 被 supersede，旧 publication 不会覆盖新状态。
+9. 重发 duplicate webhook，确认幂等，不产生重复 Review。
+10. 保存 `/version` 作为部署证据。
+
+Classic GitLab 的预生产验收建议同时包含一个正常小 MR 与一个故意触发 diff overflow 的大 MR；后者必须被 blocked，不能产生可信 Review。
 
 ## Docker / Compose
 
@@ -174,7 +190,7 @@ Compose 将 Secret 映射到 `/run/secrets/*`，必需凭据不再依赖 `env_fi
 
 ## Reverse Proxy
 
-在可信 ingress/reverse proxy 终止 TLS。必须保留原始 request body 和 Standard Webhooks 签名 Header，不能改写已签名 payload bytes。网络策略允许时限制管理 endpoint 的直接访问。
+在可信 ingress/reverse proxy 终止 TLS，并保留精确原始 request body。Standard HMAC 模式必须保留签名/timestamp/identity headers；Classic Token 模式必须保留 `X-Gitlab-Token`，并建议额外限制来源网络。网络策略允许时限制管理 endpoint 的直接访问。
 
 ## Upgrade 前备份
 
@@ -196,6 +212,8 @@ npm run admin -- drain 120
 6. Doctor。
 7. 重启 Service/Runner。
 8. 检查 `/health/ready`、`/version` 与 queue/outbox 状态。
+
+GitLab 本体升级与 Review Service 升级是两个独立流程。不要为了部署 Service 强制从 14.x 直接跨多个 major 升级 GitLab；升级 GitLab 时应按官方 required upgrade stops 与 background migrations 要求执行。
 
 ## Rollback
 

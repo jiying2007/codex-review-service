@@ -2,15 +2,28 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. Codex Review Service 5.0.1 requires Node.js >=24.19.0 <25, GitLab Self-Managed >=19.1.0, Database Schema 5 and Config Schema 1.
+Read `product-contract.json` before deployment. Codex Review Service 5.1.0 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 5 and Config Schema 1. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
+
+GitLab 14.6.1 is the compatibility floor, not the recommended server lifecycle target. Production operators should run a vendor-supported GitLab release when practical. Service compatibility is proven against real GitLab 14.6.1, 17.11.7 and 19.3.0.
 
 Safe Core remains exact commit-pinned. Do not replace the gitlink or copy a different Core runtime into a release package.
+
+## GitLab capability profiles
+
+The service chooses capabilities from authenticated `/api/v4/version`:
+
+- **Classic diff** (`14.6.1` to `<15.7`): `/merge_requests/:iid/changes`, requiring explicit `overflow: false`.
+- **Modern diff** (`>=15.7`): paginated `/diffs` plus `/versions.real_size` proof.
+- **Classic webhook auth** (`<19.1`): constant-time `X-Gitlab-Token` verification and raw-body SHA-256 delivery identity. Upstream GitLab does not provide Standard Webhooks timestamp/HMAC replay protection, so trusted HTTPS/private ingress and source-network restriction are recommended.
+- **Standard HMAC webhook auth** (`>=19.1`): provider delivery identity, timestamp replay window, raw-body HMAC-SHA256 and expected GitLab instance.
+
+All profiles fail closed when their available guarantees cannot be proven. Doctor reports the detected diff and webhook profiles. There is no manual compatibility override.
 
 ## Choose a deployment mode
 
 ### Standard systemd / inline Runner
 
-Recommended default. Controller, SQLite, GitLab provider and Codex execution run as one Unix service user.
+Recommended default. Controller, SQLite, GitLab provider and Codex execution run as one Unix service user. The host Node executable must match one supported LTS range.
 
 ### Hardened systemd / isolated Runner
 
@@ -18,7 +31,7 @@ Use when GitLab credentials and OpenAI/Codex credentials must live in different 
 
 ### Docker / Compose
 
-Use the release-published `compose.release.yaml` and canonical GHCR digest. Do not rebuild source on production hosts.
+Use the release-published `compose.release.yaml` and canonical GHCR digest. Do not rebuild source on production hosts. The image already supplies canonical Node 24.19.0.
 
 ## Install the verified release
 
@@ -87,7 +100,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 5/integrity, Codex capability contract, GitLab connectivity/version and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 5/integrity, Codex capability contract, GitLab connectivity/version/profile and complete Project/Group scope. A GitLab version below 14.6.1 fails closed. Record `profile`, `webhookAuth` and `webhookReplayWindow` in deployment evidence.
 
 ## Start systemd
 
@@ -125,26 +138,29 @@ Expose trusted HTTPS ingress to:
 https://<review-host>/webhooks/gitlab
 ```
 
-Create a GitLab webhook using a Standard Webhooks Signing Token and enable:
+Generate the `whsec_...` value used by `GITLAB_WEBHOOK_SIGNING_TOKEN(_FILE)`, then configure GitLab according to Doctor's detected capability:
 
-- **Merge request events**
-- **Note events**
+- GitLab **<19.1**: paste that exact value into the webhook **Secret Token** field; GitLab sends it as `X-Gitlab-Token`.
+- GitLab **>=19.1**: configure the value as the Standard Webhooks Signing Token.
 
-The Signing Token must match `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE`. Do not enable the webhook until Doctor and `/health/ready` pass.
+Enable **Merge request events** and **Note events**. Do not enable the webhook until Doctor and `/health/ready` pass. Classic webhook mode should be placed behind trusted HTTPS/private ingress and source-network restrictions where available because the upstream GitLab version lacks timestamped HMAC replay protection.
 
 ## End-to-end acceptance
 
 For a disposable test MR:
 
-1. Open or update the MR.
-2. Confirm webhook returns quickly and one durable job is queued.
-3. Observe `running`, then terminal GitLab status.
-4. Confirm exactly one durable Review Run for the immutable snapshot.
-5. Confirm summary/discussions publish through `publication_outbox`.
-6. If notifications are enabled, confirm the deterministic Feishu/WeCom card is delivered through `notification_outbox`.
-7. Push a new commit and confirm older snapshot work is superseded/stale publication is prevented.
-8. Send a duplicate webhook and confirm idempotent acceptance rather than duplicate review.
-9. Check `/version` and retain it with deployment evidence.
+1. Run Doctor and record GitLab version/diff profile/webhook auth mode.
+2. Open or update the MR.
+3. Confirm webhook returns quickly and one durable job is queued.
+4. Observe `running`, then terminal GitLab status.
+5. Confirm exactly one durable Review Run for the immutable snapshot.
+6. Confirm summary/discussions publish through `publication_outbox`.
+7. If notifications are enabled, confirm the deterministic Feishu/WeCom card is delivered through `notification_outbox`.
+8. Push a new commit and confirm older snapshot work is superseded/stale publication is prevented.
+9. Send a duplicate webhook and confirm idempotent acceptance rather than duplicate review.
+10. Check `/version` and retain it with deployment evidence.
+
+For Classic GitLab, include at least one MR below configured diff limits and one intentionally overflowed fixture in pre-production acceptance; the latter must block rather than produce a trusted review.
 
 ## Docker / Compose deployment
 
@@ -176,7 +192,7 @@ Compose maps secrets under `/run/secrets/*`; no `env_file` is required for requi
 
 ## Reverse proxy
 
-Terminate TLS at a trusted ingress/reverse proxy. Preserve the raw request body and Standard Webhooks signature headers. Do not modify signed payload bytes. Restrict direct access to service management endpoints where network policy allows.
+Terminate TLS at a trusted ingress/reverse proxy and preserve the exact raw request body. Standard HMAC mode must preserve Standard Webhooks signature/timestamp/identity headers. Classic token mode must preserve `X-Gitlab-Token` and should additionally restrict source networks. Restrict direct access to service management endpoints where network policy allows.
 
 ## Backup before upgrade
 
@@ -198,6 +214,8 @@ From v5.0.0 onward, released DB/Config compatibility is an explicit product cont
 6. Run Doctor before enabling traffic.
 7. Restart service/Runner.
 8. Require `/health/ready`, `/version` and expected queue/outbox state.
+
+GitLab server upgrades are independent of Service upgrades. Do not force a cross-major GitLab upgrade merely to deploy the Service; when upgrading GitLab, follow GitLab's required upgrade stops and background-migration requirements.
 
 ## Rollback
 

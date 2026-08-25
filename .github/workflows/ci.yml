@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [24.19.0, 24]
+        node: [22.22.2, 24.19.0]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,8 +54,9 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./product-contract.json').serviceVersion")"
+          canonical_node="$(node -p "require('./product-contract.json').canonicalNodeVersion")"
           test "$(docker inspect -f '{{.Config.User}}' codex-review-service:ci)" = "codex-review"
-          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!==process.argv[1]||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1)process.exit(1)" "$version"
+          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!==process.argv[1]||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1||process.versions.node!==process.argv[2])process.exit(1)" "$version" "$canonical_node"
           docker run --rm --entrypoint sh codex-review-service:ci -ec 'command -v node >/dev/null; command -v codex >/dev/null; ! command -v npm; ! command -v npx; ! command -v yarn; ! command -v yarnpkg; ! command -v corepack'
       - name: Compose syntax and security boundary
         run: |
@@ -76,7 +77,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
         with:
-          node-version: '24.19.0'
+          node-version: '22.22.2'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test test/admin.test.js test/health.test.js test/db.test.js test/notification.test.js test/http.test.js
