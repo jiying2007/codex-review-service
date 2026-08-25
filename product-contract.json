@@ -13,5 +13,6 @@
   "nodeMajorVersion": 24,
   "minimumGitLabVersion": "14.6.1",
   "modernGitLabProfileMinimumVersion": "15.7.0",
+  "standardWebhookMinimumGitLabVersion": "19.1.0",
   "recommendedGitLabPolicy": "vendor-supported"
 }
