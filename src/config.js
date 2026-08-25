@@ -3,9 +3,11 @@
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const {hydrateSecretEnv}=require('./secrets');
+const {CONFIG_SCHEMA_VERSION}=require('./product-contract');
 const SEVERITIES=Object.freeze(['critical','high','medium','low','info']);
 const NOTIFICATION_EVENTS=Object.freeze(['review.completed','review.blocked','review.failed','service.degraded','service.recovered']);
-const TOP_KEYS=new Set(['server','gitlab','webhook','review','codex','runner','publication','notifications','lifecycle','observability']);
+const TOP_KEYS=new Set(['schemaVersion','server','gitlab','webhook','review','codex','runner','publication','notifications','lifecycle','observability']);
 const SECTION_KEYS={
   server:new Set(['host','port','dataDir']),
   gitlab:new Set(['baseUrl','projects','groups','requestTimeoutMs','maxPages','statusRetries','requestsPerSecond','circuitFailureThreshold','circuitResetMs','statusName','statusTargetUrl','bindStatusPipeline','botUsername','manualMinAccessLevel']),
@@ -41,16 +43,18 @@ function loadStructuredConfig(filePath=process.env.CODEX_REVIEW_CONFIG_FILE||def
   if(!fs.existsSync(filePath))throw configError(`Configuration file does not exist: ${filePath}`);
   let root;try{root=JSON.parse(fs.readFileSync(filePath,'utf8'));}catch(cause){const error=configError(`Configuration file is not valid JSON: ${filePath}`);error.cause=cause;throw error;}
   root=assertObject(root,'config');assertKeys(root,TOP_KEYS,'config');
-  const sections={};for(const name of Object.keys(SECTION_KEYS)){sections[name]=assertObject(root[name],name);assertKeys(sections[name],SECTION_KEYS[name],name);}return{path:filePath,value:sections};
+  if(root.schemaVersion!==CONFIG_SCHEMA_VERSION)throw configError(`Unsupported config schema ${root.schemaVersion??'<missing>'}; expected ${CONFIG_SCHEMA_VERSION}`);
+  const sections={};for(const name of Object.keys(SECTION_KEYS)){sections[name]=assertObject(root[name],name);assertKeys(sections[name],SECTION_KEYS[name],name);}return{path:filePath,schemaVersion:root.schemaVersion,value:sections};
 }
 function loadConfig(){
+  hydrateSecretEnv();
   const structured=loadStructuredConfig(),s=structured.value.server,g=structured.value.gitlab,w=structured.value.webhook,r=structured.value.review,c=structured.value.codex,runner=structured.value.runner,pub=structured.value.publication,n=structured.value.notifications,life=structured.value.lifecycle,obs=structured.value.observability;
   const gitlabBaseUrl=normalizeBaseUrl(stringValue(g.baseUrl,'','gitlab.baseUrl'),'gitlab.baseUrl'),projects=new Set(positiveIds(g.projects,'gitlab.projects')),groups=parseGroups(g.groups);if(!projects.size&&!groups.length)throw configError('Configure at least one gitlab.projects or gitlab.groups entry');
   const notificationEnabled=boolValue(n.enabled,false,'notifications.enabled'),notificationRoutes=parseNotificationRoutes(n.routes);if(notificationEnabled&&!notificationRoutes.length)throw configError('notifications.enabled requires at least one notifications.routes entry');
   const runnerMode=enumValue(runner.mode,'inline','runner.mode',['inline','isolated']),runnerSocket=stringValue(runner.socket,defaultRunnerSocket(),'runner.socket',2048);if(runnerMode==='isolated'&&!runnerSocket.startsWith('/'))throw configError('runner.socket must be an absolute Unix socket path');
   const dataDir=path.resolve(stringValue(s.dataDir,defaultStateDir(),'server.dataDir',2048)),language=enumValue(r.language,'zh-CN','review.language',['zh-CN','en']),blockingSeverity=enumValue(r.blockingSeverity,'high','review.blockingSeverity',SEVERITIES);
   return Object.freeze({
-    configFilePath:structured.path,gitlabProjectAllowlist:projects,gitlabGroups:Object.freeze(groups.map(Object.freeze)),host:stringValue(s.host,'127.0.0.1','server.host',255)||'127.0.0.1',port:intValue(s.port,8787,'server.port',1,65535),dataDir,dbPath:path.join(dataDir,'review-service.sqlite'),
+    configSchemaVersion:structured.schemaVersion,configFilePath:structured.path,gitlabProjectAllowlist:projects,gitlabGroups:Object.freeze(groups.map(Object.freeze)),host:stringValue(s.host,'127.0.0.1','server.host',255)||'127.0.0.1',port:intValue(s.port,8787,'server.port',1,65535),dataDir,dbPath:path.join(dataDir,'review-service.sqlite'),
     gitlabBaseUrl,gitlabApiUrl:`${gitlabBaseUrl}/api/v4`,gitlabToken:requiredSecret('GITLAB_API_TOKEN'),gitlabRequestTimeoutMs:intValue(g.requestTimeoutMs,30000,'gitlab.requestTimeoutMs',1000,120000),gitlabMaxPages:intValue(g.maxPages,200,'gitlab.maxPages',1,1000),gitlabStatusRetries:intValue(g.statusRetries,5,'gitlab.statusRetries',1,10),gitlabRequestsPerSecond:intValue(g.requestsPerSecond,20,'gitlab.requestsPerSecond',1,200),gitlabCircuitFailureThreshold:intValue(g.circuitFailureThreshold,8,'gitlab.circuitFailureThreshold',2,100),gitlabCircuitResetMs:intValue(g.circuitResetMs,30000,'gitlab.circuitResetMs',1000,600000),statusName:stringValue(g.statusName,'codex-review','gitlab.statusName',255)||'codex-review',statusTargetUrl:stringValue(g.statusTargetUrl,'','gitlab.statusTargetUrl',2048),bindStatusPipeline:boolValue(g.bindStatusPipeline,true,'gitlab.bindStatusPipeline'),botUsername:stringValue(g.botUsername,'','gitlab.botUsername',255),manualMinAccessLevel:intValue(g.manualMinAccessLevel,30,'gitlab.manualMinAccessLevel',0,50),
     webhookSigningToken:validateSigningToken(process.env.GITLAB_WEBHOOK_SIGNING_TOKEN),webhookExpectedInstance:normalizeBaseUrl(stringValue(w.expectedInstance,gitlabBaseUrl,'webhook.expectedInstance',2048)||gitlabBaseUrl,'webhook.expectedInstance'),requireInstanceHeader:boolValue(w.requireInstanceHeader,true,'webhook.requireInstanceHeader'),webhookMaxSkewSeconds:intValue(w.maxSkewSeconds,300,'webhook.maxSkewSeconds',30,3600),webhookMaxBodyBytes:intValue(w.maxBodyBytes,1024*1024,'webhook.maxBodyBytes',4096,10*1024*1024),
     language,runnerMode,codexRunnerSocket:runnerMode==='isolated'?runnerSocket:'',codexPath:stringValue(c.path,'codex','codex.path',1024)||'codex',codexModel:stringValue(c.model,'','codex.model',128),codexHome:stringValue(c.home,'','codex.home',2048),codexVersionPolicy:enumValue(c.versionPolicy,'warn','codex.versionPolicy',['off','warn','strict']),codexAllowedVersionPattern:stringValue(c.allowedVersionPattern,'','codex.allowedVersionPattern',256),
@@ -59,4 +63,4 @@ function loadConfig(){
     dataRetentionDays:intValue(life.dataRetentionDays,30,'lifecycle.dataRetentionDays',1,3650),webhookRetentionDays:intValue(life.webhookRetentionDays,7,'lifecycle.webhookRetentionDays',1,3650),maintenanceIntervalMs:intValue(life.maintenanceIntervalMs,3600000,'lifecycle.maintenanceIntervalMs',60000,86400000),reconcileIntervalMs:intValue(life.reconcileIntervalMs,300000,'lifecycle.reconcileIntervalMs',60000,86400000),readinessCacheMs:intValue(life.readinessCacheMs,5000,'lifecycle.readinessCacheMs',500,60000),otelEndpoint:stringValue(obs.otelEndpoint,'','observability.otelEndpoint',2048),otelServiceName:stringValue(obs.serviceName,'codex-review-service','observability.serviceName',255)||'codex-review-service',otelExportTimeoutMs:intValue(obs.exportTimeoutMs,3000,'observability.exportTimeoutMs',100,60000)
   });
 }
-module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,defaultRunnerSocket,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError,parseNotificationEvents,parseNotificationRoutes,NOTIFICATION_EVENTS};
+module.exports={loadConfig,loadStructuredConfig,validateSigningToken,normalizeBaseUrl,defaultConfigPath,defaultStateDir,defaultRunnerSocket,resolveXdgHome,SEVERITIES,parseGroups,positiveIds,configError,parseNotificationEvents,parseNotificationRoutes,NOTIFICATION_EVENTS,CONFIG_SCHEMA_VERSION};

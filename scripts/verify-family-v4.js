@@ -6,31 +6,32 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const core = require('../src/codex-safe-core');
 const { SCHEMA_VERSION } = require('../src/db');
+const contract = require('../product-contract.json');
 
 const root = path.resolve(__dirname, '..');
-const expectedCore = '7ffbf6f1791e17ba74faf0922e7a702bdac72059';
+const expectedCore = contract.safeCoreCommit;
 const pkg = require('../package.json');
 
-assert.equal(pkg.version, '4.1.0');
-assert.equal(core.SAFE_CORE_VERSION, 4);
-assert.equal(core.SAFE_CONTRACT_VERSION, 2);
-assert.equal(core.POLICY_SCHEMA_VERSION, 3);
-assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, 4);
+assert.equal(pkg.version, contract.serviceVersion);
+assert.equal(core.SAFE_CORE_VERSION, contract.safeCoreMajorVersion);
+assert.equal(core.SAFE_CONTRACT_VERSION, contract.safeContractVersion);
+assert.equal(core.POLICY_SCHEMA_VERSION, contract.policySchemaVersion);
+assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION, contract.reviewReceiptVersion);
 assert.equal(core.COMMIT_RECEIPT_SCHEMA_VERSION, 4);
 assert.equal(core.REVIEW_PROMPT_CONTRACT_VERSION, 1);
-assert.equal(SCHEMA_VERSION, 5, 'Review + notification durable database schema must be v5');
+assert.equal(SCHEMA_VERSION, contract.databaseSchemaVersion, 'durable database schema must match product contract');
 
 const staged = execFileSync('git', ['ls-files', '--stage', 'src/codex-safe-core'], { cwd: root, encoding: 'utf8' }).trim();
 assert.match(staged, new RegExp(`^160000 ${expectedCore} 0\\tsrc/codex-safe-core$`), 'Service must pin coordinated Safe Core maintenance commit');
 
 assert.equal(fs.existsSync(path.join(root, '.codex-review.example.json')), false, 'legacy service-only policy example must not exist');
 const example = JSON.parse(fs.readFileSync(path.join(root, '.codex-safe.example.json'), 'utf8'));
-assert.equal(example.schemaVersion, 3);
+assert.equal(example.schemaVersion, contract.policySchemaVersion);
 assert.ok(example.review && example.reviewService);
 assert.match(String(example.$schema || ''), new RegExp(expectedCore));
 
 const requiredPackageFiles = [
-  '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md', 'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json',
+  '.codex-safe.example.json', '.env.example', 'CHANGELOG.md', 'LICENSE', 'LONG_TERM_ASSET.md', 'OPERATIONS.md', 'README.md', 'README.zh-CN.md', 'SUPPORT.md', 'SECURITY.md', 'VERIFY_RELEASE.md', 'config.example.json', 'product-contract.json',
   'deploy/systemd/config.example.json', 'deploy/systemd/*.service', 'deploy/systemd/*.env.example',
   'deploy/docker/Dockerfile', 'deploy/docker/compose.yaml', 'deploy/docker/README.md', 'deploy/docker/config.example.json',
   'docs/ARCHITECTURE.md', 'docs/DEPLOYMENT.md', 'docs/DEPLOYMENT.zh-CN.md', 'docs/NOTIFICATIONS.md', 'docs/NOTIFICATIONS.zh-CN.md', 'docs/GITLAB_SETUP.md', 'docs/GITLAB_SETUP.zh-CN.md',
@@ -42,6 +43,9 @@ for (const forbidden of ['test', 'scripts', '.github', '.gitmodules', 'src/codex
 const userConfig = JSON.parse(fs.readFileSync(path.join(root, 'config.example.json'), 'utf8'));
 const systemConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'systemd', 'config.example.json'), 'utf8'));
 const dockerConfig = JSON.parse(fs.readFileSync(path.join(root, 'deploy', 'docker', 'config.example.json'), 'utf8'));
+assert.equal(userConfig.schemaVersion, contract.configSchemaVersion, 'user config must declare the canonical config schema');
+assert.equal(systemConfig.schemaVersion, contract.configSchemaVersion, 'system config must declare the canonical config schema');
+assert.equal(dockerConfig.schemaVersion, contract.configSchemaVersion, 'Docker config must declare the canonical config schema');
 assert.equal(Object.hasOwn(userConfig.server || {}, 'dataDir'), false, 'root config example must use XDG state default');
 assert.equal(Object.hasOwn(userConfig.runner || {}, 'socket'), false, 'root config example must use rootless Runner socket default');
 assert.equal(systemConfig.server.dataDir, '/var/lib/codex-review', 'systemd config must explicitly pin system state');
@@ -58,17 +62,23 @@ const docker = fs.readFileSync(path.join(root, 'deploy', 'docker', 'Dockerfile')
 const compose = fs.readFileSync(path.join(root, 'deploy', 'docker', 'compose.yaml'), 'utf8');
 assert.match(docker, /USER codex-review/);
 assert.match(docker, /ARG CODEX_VERSION=0\.149\.1/);
+assert.match(docker, /FROM node:24\.19\.0-bookworm-slim@sha256:[0-9a-f]{64}/);
 assert.match(compose, /read_only: true/);
 assert.match(compose, /cap_drop: \["ALL"\]/);
 assert.match(compose, /\/health\/ready/);
+assert.match(compose, /secrets:/, 'Docker production path must use file-backed secrets');
+assert.doesNotMatch(compose, /env_file:/, 'Docker production path must not inject secret values through env_file');
 
 const notificationSource = fs.readFileSync(path.join(root, 'src', 'notification.js'), 'utf8');
 const dbSource = fs.readFileSync(path.join(root, 'src', 'db.js'), 'utf8');
+const secretSource = fs.readFileSync(path.join(root, 'src', 'secrets.js'), 'utf8');
 assert.match(notificationSource, /review\.blocked/);
 assert.match(notificationSource, /service\.degraded/);
 assert.match(notificationSource, /open\.feishu\.cn/);
 assert.match(notificationSource, /qyapi\.weixin\.qq\.com/);
 assert.doesNotMatch(notificationSource, /mustache/i, 'IM cards must remain deterministic, not user-templated');
+assert.match(secretSource, /_FILE/);
+assert.match(secretSource, /mutually exclusive/);
 assert.match(dbSource, /notification_outbox/);
 assert.match(dbSource, /saveRunWithOutbox/);
 assert.match(dbSource, /notificationActions/);
@@ -95,12 +105,13 @@ assert.doesNotMatch(release, /tags:\s*\[/, 'workflow-created release tags must n
 assert.match(release, /previous_version.*==.*version[\s\S]*git ls-remote --exit-code --refs origin "refs\/tags\/\$\{tag\}"[\s\S]*publish=false/, 'unchanged versions may be skipped only after the immutable tag exists');
 assert.doesNotMatch(release, /--clobber/, 'immutable release assets must never be overwritten');
 assert.match(release, /Release .* already exists; immutable assets will not be overwritten/, 'existing releases must fail closed');
-assert.match(release, /actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8/, 'release provenance action must stay full-SHA pinned to v4.2.2');
+assert.match(release, /actions\/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8/, 'release provenance action must stay full-SHA pinned');
 assert.match(release, /tar -tzf "\$tgz"/, 'release must inspect the actual TGZ contents');
 assert.match(release, /release package contains development-only files/, 'release must fail on development-only package contents');
 assert.match(release, /src\/codex-safe-core\/\(ARCHITECTURE/, 'release package gate must reject non-provenance Core development docs');
 assert.match(release, /SBOM\.spdx\.json/, 'release must include SPDX SBOM');
 assert.match(release, /sha256sum "\$tgz" SBOM\.spdx\.json > SHA256SUMS/, 'checksums must cover TGZ and SBOM');
+assert.match(release, /ghcr\.io/, 'release must publish OCI image');
 
 assert.doesNotMatch(dbSource, /ALTER TABLE|hasColumn\(|migrate\(/, 'first-release database must not retain migration compatibility');
 assert.match(dbSource, /EDBSCHEMA/, 'database schema mismatch must fail closed');
@@ -139,4 +150,4 @@ for (const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','
   assert.doesNotMatch(text, /\.codex-review\.json/, `${doc} must not document the removed service-only policy`);
 }
 
-console.log('Codex Review Service 4.1.0 Family v4 deployment, canonical durable IM notification, Docker, supply-chain, exact Core pin, rootless defaults and immutable release policy verified.');
+console.log(`Codex Review Service ${contract.serviceVersion} Family v4 Core boundary, Schema ${contract.databaseSchemaVersion}, Config Schema ${contract.configSchemaVersion}, durable notifications, OCI delivery and immutable release policy verified.`);

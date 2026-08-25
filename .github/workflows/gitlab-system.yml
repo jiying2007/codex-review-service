@@ -1,0 +1,59 @@
+name: GitLab System Matrix
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '41 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitlab-system-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider-e2e:
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        gitlab: ['19.1.6-ce.0','19.3.0-ce.0']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Start real GitLab CE ${{ matrix.gitlab }}
+        run: |
+          set -euo pipefail
+          docker run -d --name gitlab \
+            --shm-size=256m \
+            -p 127.0.0.1:8080:80 \
+            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='RootPass-Review-2026!'" \
+            "gitlab/gitlab-ce:${{ matrix.gitlab }}"
+      - name: Wait for GitLab and create deterministic test token
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8080/-/readiness >/dev/null 2>&1; then break; fi
+            if [ "$i" = 120 ]; then docker logs gitlab; exit 1; fi
+            sleep 5
+          done
+          docker exec gitlab gitlab-rails runner "u=User.find_by_username('root'); t=u.personal_access_tokens.create(scopes: ['api'], name: 'codex-review-ci', expires_at: 1.day.from_now); t.set_token('token-string-here123'); t.save!"
+      - name: Run real GitLab provider contract
+        env:
+          GITLAB_BASE_URL: http://127.0.0.1:8080
+          GITLAB_API_TOKEN: token-string-here123
+        run: node scripts/gitlab-system-smoke.js
+      - name: GitLab diagnostics on failure
+        if: failure()
+        run: docker logs --tail 300 gitlab

@@ -1,10 +1,6 @@
 services:
   codex-review-service:
-    build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
-      args:
-        CODEX_VERSION: "0.149.1"
+    image: ${CODEX_REVIEW_IMAGE:-ghcr.io/jiying2007/codex-review-service:5.0.0}
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -18,8 +14,13 @@ services:
       - ./config.json:/etc/codex-review/config.json:ro
       - codex-review-state:/var/lib/codex-review
       - codex-review-home:/home/codex-review
-    env_file:
-      - .env
+    environment:
+      CODEX_REVIEW_CONFIG_FILE: /etc/codex-review/config.json
+      GITLAB_API_TOKEN_FILE: /run/secrets/gitlab_api_token
+      GITLAB_WEBHOOK_SIGNING_TOKEN_FILE: /run/secrets/gitlab_webhook_signing_token
+    secrets:
+      - gitlab_api_token
+      - gitlab_webhook_signing_token
     healthcheck:
       test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -34,6 +35,11 @@ services:
         reservations:
           cpus: "1.0"
           memory: 1G
+secrets:
+  gitlab_api_token:
+    file: ./secrets/gitlab_api_token
+  gitlab_webhook_signing_token:
+    file: ./secrets/gitlab_webhook_signing_token
 volumes:
   codex-review-state:
   codex-review-home:
