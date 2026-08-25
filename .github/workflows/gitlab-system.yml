@@ -38,17 +38,17 @@ jobs:
           docker run -d --name gitlab \
             --shm-size=256m \
             -p 127.0.0.1:8080:80 \
-            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='RootPass-Review-2026!'" \
+            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4T!Q9z#V2m@L7x$K5p%R8w^N3c'" \
             "gitlab/gitlab-ce:${{ matrix.gitlab }}"
       - name: Wait for GitLab and create deterministic test token
         run: |
           set -euo pipefail
-          for i in $(seq 1 120); do
+          for i in $(seq 1 180); do
             if curl -fsS http://127.0.0.1:8080/-/readiness >/dev/null 2>&1; then break; fi
-            if [ "$i" = 120 ]; then docker logs gitlab; exit 1; fi
+            if [ "$i" = 180 ]; then docker logs gitlab; exit 1; fi
             sleep 5
           done
-          docker exec gitlab gitlab-rails runner "u=User.find_by_username('root'); t=u.personal_access_tokens.create(scopes: ['api'], name: 'codex-review-ci', expires_at: 1.day.from_now); t.set_token('token-string-here123'); t.save!"
+          docker exec gitlab gitlab-rails runner "u=User.find_by_username('root'); raise 'root user missing' unless u; t=u.personal_access_tokens.create(scopes: ['api'], name: 'codex-review-ci', expires_at: 1.day.from_now); t.set_token('token-string-here123'); t.save!"
       - name: Run real GitLab provider contract
         env:
           GITLAB_BASE_URL: http://127.0.0.1:8080
