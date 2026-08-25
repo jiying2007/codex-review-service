@@ -17,7 +17,7 @@ concurrency:
 jobs:
   prepare:
     name: Prepare release
-    if: github.event_name != 'issue_comment' || (github.event.comment.body == '/release-retry' && github.event.comment.author_association == 'OWNER')
+    if: github.event_name != 'issue_comment' || (((github.event.comment.body == '/release-retry') || startsWith(github.event.comment.body, '/release-retry ')) && github.event.comment.author_association == 'OWNER')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -33,24 +33,49 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          RELEASE_RETRY_REQUEST: ${{ github.event.comment.body }}
         shell: bash
         run: |
           set -euo pipefail
           publish=true
           if [[ "$GITHUB_EVENT_NAME" == "issue_comment" ]]; then
             git fetch --force --tags origin
+            request="${RELEASE_RETRY_REQUEST:-}"
             retry_tag=""
-            while IFS= read -r candidate; do
-              [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-              if ! gh release view "$candidate" >/dev/null 2>&1; then
-                if [[ -n "$retry_tag" ]]; then
-                  echo "Multiple unreleased immutable tags exist; refusing ambiguous /release-retry." >&2
-                  exit 1
-                fi
-                retry_tag="$candidate"
+            explicit_tag=""
+            if [[ "$request" == "/release-retry" ]]; then
+              :
+            elif [[ "$request" =~ ^/release-retry[[:space:]]+(v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              explicit_tag="${BASH_REMATCH[1]}"
+            else
+              echo 'Usage: /release-retry [vMAJOR.MINOR.PATCH]' >&2
+              exit 1
+            fi
+
+            if [[ -n "$explicit_tag" ]]; then
+              git rev-parse --verify --quiet "refs/tags/${explicit_tag}" >/dev/null || {
+                echo "Requested immutable tag ${explicit_tag} does not exist." >&2
+                exit 1
+              }
+              if gh release view "$explicit_tag" >/dev/null 2>&1; then
+                echo "Release ${explicit_tag} already exists; refusing retry." >&2
+                exit 1
               fi
-            done < <(git tag --list 'v*' --sort=-version:refname)
-            [[ -n "$retry_tag" ]] || { echo 'No unreleased immutable tag exists for /release-retry.' >&2; exit 1; }
+              retry_tag="$explicit_tag"
+            else
+              while IFS= read -r candidate; do
+                [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+                if ! gh release view "$candidate" >/dev/null 2>&1; then
+                  if [[ -n "$retry_tag" ]]; then
+                    echo "Multiple unreleased immutable tags exist; use /release-retry vMAJOR.MINOR.PATCH." >&2
+                    exit 1
+                  fi
+                  retry_tag="$candidate"
+                fi
+              done < <(git tag --list 'v*' --sort=-version:refname)
+              [[ -n "$retry_tag" ]] || { echo 'No unreleased immutable tag exists for /release-retry.' >&2; exit 1; }
+            fi
+
             tag="$retry_tag"
             version="${tag#v}"
             release_sha=$(git rev-list -n 1 "$tag")
