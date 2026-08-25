@@ -2,7 +2,7 @@
 
 const fs=require('node:fs');
 const path=require('node:path');
-const STATIC_SECRET_NAMES=new Set(['GITLAB_API_TOKEN','GITLAB_WEBHOOK_SIGNING_TOKEN','GITLAB_WEBHOOK_CLASSIC_TOKEN','OPENAI_API_KEY']);
+const STATIC_SECRET_NAMES=new Set(['GITLAB_API_TOKEN','GITLAB_WEBHOOK_SIGNING_TOKEN','OPENAI_API_KEY']);
 function isNotificationSecret(name){return /^CODEX_REVIEW_NOTIFY_[A-Z0-9_]+_(WEBHOOK|SIGNING_SECRET)$/.test(name);}
 function allowedSecretName(name){return STATIC_SECRET_NAMES.has(name)||isNotificationSecret(name);}
 function validateSecret(value,name){const out=String(value??'').trim();if(!out)throw new Error(`${name} secret file is empty`);if(out.length>65536||/[\r\n\0]/.test(out))throw new Error(`${name} secret value is invalid`);return out;}
