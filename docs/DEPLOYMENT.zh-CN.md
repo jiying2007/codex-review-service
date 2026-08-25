@@ -2,15 +2,26 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.0.1 要求：Node.js >=24.19.0 <25、GitLab Self-Managed >=19.1.0、Database Schema 5、Config Schema 1。
+部署前先读取 `product-contract.json`。Codex Review Service 5.1.0 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 5、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
+
+GitLab 14.6.1 是兼容下限，不是推荐长期运行版本。条件允许时，生产环境应运行 GitLab 官方仍支持的版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
 Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink 或复制其他 Core 版本。
+
+## GitLab Capability Profile
+
+服务根据已认证的 `/api/v4/version` 自动选择 Provider profile：
+
+- **Classic**（`14.6.1` 到 `<15.7`）：MR diff 使用 `/merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续。
+- **Modern**（`>=15.7`）：MR diff 使用分页 `/diffs`，并通过 `/versions` + `real_size` 证明完整覆盖。
+
+两个 profile 都遵守 fail closed：无法证明 diff 完整就不会调用 Codex 生成可信 Verdict。Doctor 会输出当前 GitLab version/profile。
 
 ## 选择部署模式
 
 ### 标准 systemd / inline Runner
 
-默认推荐。Controller、SQLite、GitLab Provider 与 Codex 执行运行在同一个 Unix Service User 下。
+默认推荐。Controller、SQLite、GitLab Provider 与 Codex 执行运行在同一个 Unix Service User 下。主机 Node 必须处于上述两个受支持 LTS 区间之一。
 
 ### Hardened systemd / isolated Runner
 
@@ -18,7 +29,7 @@ Safe Core 保持 exact commit pin，不要在正式 Release 中替换 gitlink �
 
 ### Docker / Compose
 
-使用 Release 发布的 `compose.release.yaml` 与 canonical GHCR digest。生产主机不要重新 build 源码。
+使用 Release 发布的 `compose.release.yaml` 与 canonical GHCR digest。生产主机不要重新 build 源码。官方镜像自带 Node 24.19.0。
 
 ## 安装已验证 Release
 
@@ -85,7 +96,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本及完整 Project/Group scope。
+Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；兼容旧版本会显示 `profile: classic`，新版本显示 `profile: modern`。
 
 ## 启动 systemd
 
@@ -134,15 +145,18 @@ Signing Token 必须与 `GITLAB_WEBHOOK_SIGNING_TOKEN` / `_FILE` 一致。Doctor
 
 使用可丢弃测试 MR：
 
-1. Open/update MR。
-2. 确认 Webhook 快速返回，只把工作持久化入队。
-3. 观察 GitLab `running` → terminal status。
-4. 同一 immutable snapshot 只有一个 durable Review Run。
-5. summary/discussions 通过 `publication_outbox` 收敛。
-6. 开启通知时，飞书/企业微信通过 `notification_outbox` 收到确定性 Card。
-7. Push 新 commit，旧 snapshot 被 supersede，旧 publication 不会覆盖新状态。
-8. 重发 duplicate webhook，确认幂等，不产生重复 Review。
-9. 保存 `/version` 作为部署证据。
+1. 先运行 Doctor 并记录 GitLab version/profile。
+2. Open/update MR。
+3. 确认 Webhook 快速返回，只把工作持久化入队。
+4. 观察 GitLab `running` → terminal status。
+5. 同一 immutable snapshot 只有一个 durable Review Run。
+6. summary/discussions 通过 `publication_outbox` 收敛。
+7. 开启通知时，飞书/企业微信通过 `notification_outbox` 收到确定性 Card。
+8. Push 新 commit，旧 snapshot 被 supersede，旧 publication 不会覆盖新状态。
+9. 重发 duplicate webhook，确认幂等，不产生重复 Review。
+10. 保存 `/version` 作为部署证据。
+
+Classic GitLab 的预生产验收建议同时包含一个正常小 MR 与一个故意触发 diff overflow 的大 MR；后者必须被 blocked，不能产生可信 Review。
 
 ## Docker / Compose
 
@@ -196,6 +210,8 @@ npm run admin -- drain 120
 6. Doctor。
 7. 重启 Service/Runner。
 8. 检查 `/health/ready`、`/version` 与 queue/outbox 状态。
+
+GitLab 本体升级与 Review Service 升级是两个独立流程。不要为了部署 Service 强制从 14.x 直接跨多个 major 升级 GitLab；升级 GitLab 时应按官方 required upgrade stops 与 background migrations 要求执行。
 
 ## Rollback
 
