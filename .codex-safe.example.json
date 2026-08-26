@@ -11,13 +11,8 @@
     "extraInstructions": "重点检查资源生命周期、并发和错误处理。",
     "rules": {
       "requireTestsForCodeChanges": true,
-      "codePathPrefixes": [
-        "src/"
-      ],
-      "testPathPrefixes": [
-        "test/",
-        "tests/"
-      ],
+      "codePathPrefixes": ["src/"],
+      "testPathPrefixes": ["test/", "tests/"],
       "forbiddenPathPrefixes": []
     }
   },
