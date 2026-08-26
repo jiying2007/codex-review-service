@@ -11,7 +11,7 @@ The planner applies these controls in order:
 3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Low-risk chunks receive a smaller context window.
 4. **Optional fast-model routing** uses `codex.fastModel` only for low-risk chunks. Empty `fastModel` keeps one-model behavior.
 5. **MR total diff budget** (`review.maxTotalDiffBytes`) limits total model-reviewed diff bytes across all chunks. If the limit omits evidence, coverage is marked incomplete.
-6. **Token preflight** estimates the next prompt plus bounded output before execution. `review.mrMaxTokenBudget` is checked before the call, avoiding post-call overshoot.
+6. **Token preflight** estimates the next prompt plus bounded output before execution. Input is conservatively estimated at roughly two UTF-8 bytes per token before the model call. `review.mrMaxTokenBudget` is checked before execution, avoiding post-call budget discovery.
 7. **Project reservation ledger** reserves estimated tokens across concurrent workers before execution so simultaneous jobs cannot independently consume the same remaining daily budget.
 8. **Deterministic summaries** remove per-chunk model summaries. Codex returns findings only; the controller renders the final summary.
 9. **Cache-friendly prompt layout** keeps stable safety rules, policy and MR metadata before chunk-specific content to maximize reusable prompt prefixes.
