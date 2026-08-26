@@ -8,7 +8,7 @@ The planner applies these controls in order:
 
 1. **Snapshot deduplication and supersession** avoid duplicate reviews of the same MR state.
 2. **Incremental push review** reuses the latest complete review when the target start SHA and policy fingerprint are unchanged. Only paths changed since the previous reviewed head are sent back to Codex; findings on untouched paths are carried forward.
-3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Low-risk chunks receive a smaller context window.
+3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Low-risk chunks receive a smaller context window. Adaptive sizing may shrink a configured context allowance but never exceed the effective policy caps for bytes, files, or line radius.
 4. **Optional fast-model routing** uses `codex.fastModel` only for low-risk chunks. Empty `fastModel` keeps one-model behavior.
 5. **MR total diff budget** (`review.maxTotalDiffBytes`) limits total model-reviewed diff bytes across all chunks. If the limit omits evidence, coverage is marked incomplete.
 6. **Token preflight** estimates the next prompt plus bounded output before execution. Input is conservatively estimated at roughly two UTF-8 bytes per token before the model call. `review.mrMaxTokenBudget` is checked before execution, avoiding post-call budget discovery.
