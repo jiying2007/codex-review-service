@@ -1,0 +1,33 @@
+name: Sync package governance allowlist
+on:
+  push:
+    branches: [family-governance-v4.2.0]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Sync exact release package allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node <<'NODE'
+          const fs=require('fs');
+          const file='scripts/verify-family.js';
+          let text=fs.readFileSync(file,'utf8');
+          const old="'src/codex-safe-core/README.zh-CN.md','src/codex-safe-core/SECURITY.md'];";
+          const next="'src/codex-safe-core/README.zh-CN.md','src/codex-safe-core/SECURITY.md','src/codex-safe-core/core-contract.json','src/codex-safe-core/family-non-goals.json','src/codex-safe-core/family-error-taxonomy.json','src/codex-safe-core/scripts/family-diagnostics.js','src/codex-safe-core/scripts/verify-release-artifact.js'];";
+          if(text.includes(next)) process.exit(0);
+          if(!text.includes(old)) throw new Error('expected package allowlist boundary not found');
+          fs.writeFileSync(file,text.replace(old,next));
+          NODE
+          git add scripts/verify-family.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: govern new Core release package assets'
+          git push origin HEAD:family-governance-v4.2.0
