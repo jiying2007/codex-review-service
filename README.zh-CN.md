@@ -2,19 +2,19 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前正式产品基线为 **v5.1.0**：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
+面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前正式产品基线为 **v5.1.1**：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
 
 ## 产品契约
 
 `product-contract.json` 是唯一机器校验的产品事实源：
 
-- Service：**5.1.0**
+- Service：**5.1.1**
 - Database Schema：**5**
 - Config Schema：**1**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
-- Safe Core：精确提交 `7ffbf6f1791e17ba74faf0922e7a702bdac72059`
+- Safe Core：精确提交 `1755262f51d5e15d74e432add38863d2383bb495`
 - Native/systemd Node.js：**Node 22 LTS >=22.22.2，或 Node 24 LTS >=24.19.0**；明确不支持 Node 23
 - 官方 Docker runtime：**Node 24.19.0**
 - GitLab Self-Managed 兼容下限：**14.6.1**
@@ -39,7 +39,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-5.1.0.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-5.1.1.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review

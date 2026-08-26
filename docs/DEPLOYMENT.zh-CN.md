@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.1.0 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 5、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
+部署前先读取 `product-contract.json`。Codex Review Service 5.1.1 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 5、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
 
 GitLab 14.6.1 是兼容下限，不是推荐长期运行版本。条件允许时，生产环境应运行 GitLab 官方仍支持的版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
