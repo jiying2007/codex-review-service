@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.1.1 - 2026-08-26
+
+### Family governance and durable-state verification
+
+- Pin the Service to formally released Codex Safe Core v4.2.1 and adopt the shared Actions-pin, non-goal, diagnostics, dependency-review and release-guard governance gates.
+- Add cross-platform fault-injection coverage for incompatible SQLite schema handle release plus publication/notification outbox crash-and-reopen recovery.
+- Govern the additional Core contract/diagnostic files in the exact release-package allowlist while retaining the existing rootless Docker and immutable release boundaries.
+- Preserve Database Schema 5, Config Schema 1, Policy Schema 3, Review Receipt 4, Safe Contract 2 and the GitLab 14.6.1 / 17.11.7 / 19.3.0 provider compatibility profiles; this patch changes governance and verification only.
+
 ## 5.1.0 - 2026-08-25
 
 ### Enterprise GitLab compatibility without weakening review evidence
