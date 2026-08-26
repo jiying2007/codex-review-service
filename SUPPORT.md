@@ -1,5 +1,7 @@
 # Support
 
+Codex Review Service production deployment is supported on **Linux/POSIX**. The isolated Runner contract intentionally uses Unix domain sockets and the default configuration/state layout follows XDG/POSIX paths. Windows jobs in the Safe Core Family matrix validate portable JavaScript, schema, database and shared-contract behavior; they do **not** establish Windows as a supported Service deployment target or introduce a Named Pipe compatibility layer.
+
 Before opening an issue or escalating an incident, collect a **metadata-only** diagnostic bundle. Do not attach repository content, prompts, credentials or the full SQLite database.
 
 ## Preferred diagnostic command
@@ -68,6 +70,8 @@ Do not delete queue/outbox rows or hand-edit SQLite to make an incident disappea
 If integrity checks fail, stop the Controller, preserve the state directory for forensic analysis and restore only a verified backup.
 
 ## 中文
+
+Codex Review Service 的正式部署支持平台为 **Linux/POSIX**。隔离 Runner 永久使用 Unix Domain Socket，默认配置与状态目录遵循 XDG/POSIX 路径。Safe Core Family 中的 Windows Job 只验证可移植 JavaScript、Schema、SQLite 与共享契约，不代表 Service 支持 Windows 正式部署，也不会因此引入 Named Pipe 兼容层。
 
 升级问题前优先运行 `src/admin-cli.js diagnostics`，并收集 Service/source SHA、`/version`、Node/Codex/GitLab 版本、inline/isolated 模式、Project/Group 数量、`/health/ready`、`/health/dependencies`、Doctor 错误类别及不含源码内容的日志。
 
