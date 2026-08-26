@@ -1,0 +1,33 @@
+name: Sync v5.1.1 current-state docs
+on:
+  push:
+    branches: [release-v5.1.1]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Synchronize release identity in current-state docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node <<'NODE'
+          const fs=require('fs');
+          const files=['README.md','README.zh-CN.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','deploy/docker/compose.yaml'];
+          for(const file of files){
+            let text=fs.readFileSync(file,'utf8');
+            text=text.replaceAll('5.1.0','5.1.1');
+            text=text.replaceAll('7ffbf6f1791e17ba74faf0922e7a702bdac72059','1755262f51d5e15d74e432add38863d2383bb495');
+            fs.writeFileSync(file,text);
+          }
+          NODE
+          git add README.md README.zh-CN.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md deploy/docker/compose.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m 'docs: sync v5.1.1 release identity'
+          git push origin HEAD:release-v5.1.1
