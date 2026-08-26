@@ -8,7 +8,7 @@ Planner 按以下顺序执行：
 
 1. **Snapshot 去重与 supersede**：同一 MR 状态不重复审核，新快照淘汰旧任务。
 2. **增量 Push 审核**：当 target start SHA 与 policy fingerprint 未变化时，复用最近一次完整审核；只把相对上次已审核 head 新变化的路径再次送入 Codex，未变化路径上的 finding 直接继承。
-3. **风险评分**：安全、并发、资源生命周期、数据库/Schema、Native 代码获得更多上下文；低风险 chunk 使用更小上下文。
+3. **风险评分**：安全、并发、资源生命周期、数据库/Schema、Native 代码获得更多上下文；低风险 chunk 使用更小上下文。自适应缩放只会减少上下文，不会突破有效 Policy 对字节数、文件数和行半径设置的上限。
 4. **可选低成本模型路由**：配置 `codex.fastModel` 后，仅低风险 chunk 使用该模型；留空则保持单模型。
 5. **MR 总 Diff 预算**：`review.maxTotalDiffBytes` 限制整个 MR 实际送模的 diff 总字节数；若因此遗漏证据，覆盖状态直接变为 incomplete。
 6. **Token 事前预检**：调用前估算 prompt 与有界输出，先检查 `review.mrMaxTokenBudget`，避免“调用结束才发现超预算”。
