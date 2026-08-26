@@ -2,19 +2,19 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.1.0** is the current compatibility/operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
+Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.1.1** is the current compatibility/operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
 
 ## Product contract
 
 `product-contract.json` is the single machine-checked source for product identity and compatibility:
 
-- Service: **5.1.0**
+- Service: **5.1.1**
 - Database Schema: **5**
 - Config Schema: **1**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
-- Safe Core: exact commit `7ffbf6f1791e17ba74faf0922e7a702bdac72059`
+- Safe Core: exact commit `1755262f51d5e15d74e432add38863d2383bb495`
 - Native/systemd Node.js: **22.22.2+ on Node 22 LTS, or 24.19.0+ on Node 24 LTS**; Node 23 is intentionally unsupported
 - Canonical Docker runtime: **Node 24.19.0**
 - GitLab Self-Managed compatibility floor: **14.6.1**
@@ -39,7 +39,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-5.1.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-5.1.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
