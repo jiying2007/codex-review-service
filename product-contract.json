@@ -6,10 +6,13 @@
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "a0c3419684f835108cad31eb909b3d7f7df7b260",
+  "safeCoreCommit": "1755262f51d5e15d74e432add38863d2383bb495",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
-  "supportedNodeMajors": [22, 24],
+  "supportedNodeMajors": [
+    22,
+    24
+  ],
   "nodeMajorVersion": 24,
   "minimumGitLabVersion": "14.6.1",
   "modernGitLabProfileMinimumVersion": "15.7.0",
