@@ -12,10 +12,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
-        with:
-          node-version: 22.22.2
-      - name: Adopt exact Core 4.2.0, governance and fault tests
+      - name: Pin exact Core v4.2.0 gitlink
         env:
           CORE_SHA: a0c3419684f835108cad31eb909b3d7f7df7b260
         shell: bash
@@ -25,84 +22,7 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C src/codex-safe-core fetch origin "$CORE_SHA"
           git -C src/codex-safe-core checkout --detach "$CORE_SHA"
-          node <<'NODE'
-          const fs=require('fs'); const sha=process.env.CORE_SHA;
-          const ex='.codex-safe.example.json'; const v=JSON.parse(fs.readFileSync(ex)); v.$schema=v.$schema.replace(/[0-9a-f]{40}(?=\/codex-safe\.schema\.json)/i,sha); fs.writeFileSync(ex,JSON.stringify(v,null,2)+'\n');
-          const pc='product-contract.json'; const c=JSON.parse(fs.readFileSync(pc)); c.safeCoreCommit=sha; fs.writeFileSync(pc,JSON.stringify(c,null,2)+'\n');
-          for(const vf of ['scripts/verify-family.js','scripts/verify-product-contract.js']){if(fs.existsSync(vf)){let t=fs.readFileSync(vf,'utf8');t=t.replace(/72363d4f648171242810ac5871d713b2fa9b3bb6/g,sha);fs.writeFileSync(vf,t);}}
-          const p=JSON.parse(fs.readFileSync('package.json')); p.scripts.governance='node src/codex-safe-core/scripts/verify-actions-pins.js .github/workflows && node src/codex-safe-core/scripts/verify-non-goals.js .'; p.scripts.diagnostics='node src/codex-safe-core/scripts/family-diagnostics.js'; p.scripts['test:fault']='node --test test/fault-injection.test.js'; p.scripts.preci='npm run core:init'; p.scripts.check=p.scripts.check.includes('npm run governance')?p.scripts.check:`${p.scripts.check} && npm run governance`; p.scripts.ci=p.scripts.ci.includes('npm run test:fault')?p.scripts.ci:`${p.scripts.ci} && npm run test:fault`; const extra=['src/codex-safe-core/core-contract.json','src/codex-safe-core/family-non-goals.json','src/codex-safe-core/family-error-taxonomy.json','src/codex-safe-core/scripts/family-diagnostics.js','src/codex-safe-core/scripts/verify-release-artifact.js']; for(const f of extra)if(!p.files.includes(f))p.files.push(f); fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
-          NODE
-          cat > test/fault-injection.test.js <<'NODE'
-          'use strict';
-          const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const{DatabaseSync}=require('node:sqlite');const{Store}=require('../src/db');
-          function temp(){return fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-fault-'));}
-          test('schema rejection closes SQLite handle fail-closed',()=>{const dir=temp(),dbPath=path.join(dir,'legacy.sqlite'),db=new DatabaseSync(dbPath);db.exec('CREATE TABLE legacy(id INTEGER PRIMARY KEY); PRAGMA user_version=4;');db.close();assert.throws(()=>new Store(dbPath),e=>e?.code==='EDBSCHEMA');const moved=`${dbPath}.moved`;fs.renameSync(dbPath,moved);fs.renameSync(moved,dbPath);const verify=new DatabaseSync(dbPath);assert.equal(verify.prepare('PRAGMA user_version').get().user_version,4);verify.close();fs.rmSync(dir,{recursive:true,force:true});});
-          test('publication outbox recovers exactly once after crash boundary',()=>{const dir=temp(),dbPath=path.join(dir,'state.sqlite');let store=new Store(dbPath);const job=store.enqueue({projectId:1,mrIid:1,headSha:'h',trigger:'open',dedupeKey:'f1',maxQueueDepth:10});const run=store.saveRunWithOutbox(job,{verdict:'pass',summary:'ok',coverageComplete:true,findings:[],usage:{}},1,{source:'test',fingerprint:'p'},[{projectId:1,mrIid:1,type:'summary',dedupeKey:'fault:pub',payload:{}}]);const claimed=store.claimPublication();assert.equal(claimed.run_id,run);store.close();store=new Store(dbPath);assert.equal(store.recoverPublications(),1);const retry=store.claimPublication();assert.equal(retry.id,claimed.id);store.finishPublication(retry.id);assert.equal(store.claimPublication(),null);store.close();fs.rmSync(dir,{recursive:true,force:true});});
-          test('notification outbox recovers exactly once after crash boundary',()=>{const dir=temp(),dbPath=path.join(dir,'state.sqlite');let store=new Store(dbPath);const id=store.enqueueNotification({routeName:'ops',provider:'wecom',secretRef:'ops',eventType:'service.degraded',dedupeKey:'fault:notify',payload:{type:'service.degraded'}});assert.equal(store.claimNotification().id,id);store.close();store=new Store(dbPath);assert.equal(store.recoverNotifications(),1);const retry=store.claimNotification();assert.equal(retry.id,id);store.finishNotification(id);assert.equal(store.claimNotification(),null);store.close();fs.rmSync(dir,{recursive:true,force:true});});
-          NODE
-          cat > .github/workflows/fault-injection.yml <<'YAML'
-          name: Fault Injection
-          on:
-            pull_request:
-            schedule:
-              - cron: '11 5 * * 2'
-            workflow_dispatch:
-          permissions:
-            contents: read
-          jobs:
-            durable-state:
-              strategy:
-                matrix:
-                  os: [ubuntu-24.04, windows-2025]
-              runs-on: ${{ matrix.os }}
-              steps:
-                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-                  with: {persist-credentials: false, submodules: recursive}
-                - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
-                  with: {node-version: 22.22.2}
-                - run: node --test test/fault-injection.test.js
-          YAML
-          cat > .github/workflows/dependency-review.yml <<'YAML'
-          name: Dependency Review
-          on:
-            pull_request:
-          permissions:
-            contents: read
-          jobs:
-            dependency-review:
-              runs-on: ubuntu-24.04
-              steps:
-                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-                  with: {persist-credentials: false, submodules: recursive}
-                - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
-                  with: {node-version: 22.22.2}
-                - id: graph
-                  env: {GH_TOKEN: "${{ github.token }}"}
-                  shell: bash
-                  run: |
-                    if gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/sbom" >/dev/null 2>&1; then echo 'enabled=true' >> "$GITHUB_OUTPUT"; else echo 'enabled=false' >> "$GITHUB_OUTPUT"; fi
-                - if: steps.graph.outputs.enabled == 'true'
-                  uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
-                  with: {fail-on-severity: high, deny-licenses: "GPL-2.0, GPL-3.0, AGPL-3.0"}
-                - if: steps.graph.outputs.enabled != 'true'
-                  shell: bash
-                  run: |
-                    npm ci --ignore-scripts --no-audit --no-fund
-                    npm audit --audit-level=high --omit=dev
-                    node src/codex-safe-core/scripts/verify-package-licenses.js .
-          YAML
-          cat > .github/workflows/family-release-guard.yml <<'YAML'
-          name: Family Release Guard
-          on:
-            pull_request:
-          permissions:
-            contents: read
-          jobs:
-            guard:
-              uses: jiying2007/codex-safe-core/.github/workflows/family-release-guard.yml@a0c3419684f835108cad31eb909b3d7f7df7b260
-              with:
-                product: codex-review-service
-                expected_core_sha: a0c3419684f835108cad31eb909b3d7f7df7b260
-          YAML
-          rm .github/workflows/family-governance-bootstrap.yml
-          git add -A && git commit -m 'feat: adopt Codex Safe family governance v4.2.0' && git push origin HEAD:family-governance-v4.2.0
+          git add src/codex-safe-core
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: pin Codex Safe Core v4.2.0'
+          git push origin HEAD:family-governance-v4.2.0
