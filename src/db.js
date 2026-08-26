@@ -12,7 +12,7 @@ function json(value){return JSON.stringify(value??null);}
 function parseJson(value){try{return JSON.parse(value);}catch{return null;}}
 
 class Store{
-  constructor(dbPath){fs.mkdirSync(path.dirname(dbPath),{recursive:true,mode:0o700});this.db=new DatabaseSync(dbPath);this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');this.initializeSchema();}
+  constructor(dbPath){fs.mkdirSync(path.dirname(dbPath),{recursive:true,mode:0o700});this.db=new DatabaseSync(dbPath);try{this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');this.initializeSchema();}catch(error){try{this.db.close();}catch{}throw error;}}
   withTransaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){try{this.db.exec('ROLLBACK');}catch{}throw error;}}
   initializeSchema(){
     const current=Number(this.db.prepare('PRAGMA user_version').get().user_version||0);
