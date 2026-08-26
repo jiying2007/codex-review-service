@@ -1,0 +1,25 @@
+name: Fault Injection
+on:
+  pull_request:
+  schedule:
+    - cron: '11 5 * * 2'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  durable-state:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: 22.22.2
+      - name: Exercise durable SQLite crash/reopen boundaries
+        run: node --test test/fault-injection.test.js
