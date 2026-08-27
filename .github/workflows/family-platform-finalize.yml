@@ -33,12 +33,14 @@ jobs:
           from pathlib import Path
           p=Path('scripts/finalize-family-platform.py')
           s=p.read_text().replace('async listOpenMergeRequests(projectId)', 'listOpenMergeRequests(projectId)')
+          s=s.replace("SQLite schema [45]\\\\b|SQLite Schema [45]\\\\b|Schema [45] database|schema [45]\\\\b", "SQLite schema 4|SQLite Schema 4|Schema 4 database|schema 4\\\\b")
           p.write_text(s)
           PY
           python3 scripts/finalize-family-platform.py
           python3 scripts/finalize-quality-refinements.py
           python3 - <<'PY'
           from pathlib import Path
+          import json
           p=Path('scripts/verify-family.js')
           s=p.read_text()
           old="'src/codex-safe-core/scripts/verify-release-artifact.js'];"
@@ -46,10 +48,13 @@ jobs:
           if old not in s:
               raise SystemExit('verify-family package allowlist marker missing')
           p.write_text(s.replace(old,new,1))
+          pkg=json.loads(Path('package.json').read_text())
+          pkg['scripts']['docs:verify']='node scripts/generate-contract-docs.js && git diff --exit-code -- README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md'
+          Path('package.json').write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
           PY
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           node scripts/generate-contract-docs.js
-          git add docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
+          git add README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
           rm scripts/finalize-family-platform.py scripts/finalize-quality-refinements.py
       - name: Run full Service CI
         shell: bash
