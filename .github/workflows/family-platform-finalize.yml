@@ -51,6 +51,11 @@ jobs:
           pkg=json.loads(Path('package.json').read_text())
           pkg['scripts']['docs:verify']='node scripts/generate-contract-docs.js && git diff --exit-code -- README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md'
           Path('package.json').write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+          ch=Path('CHANGELOG.md').read_text()
+          if '## 5.2.0 - 2026-08-27' not in ch:
+              notes='''\n## 5.2.0 - 2026-08-27\n\n### Quality Platform and durable database evolution\n\n- Add explicit SQLite Schema 5 -> 6 migration with pre/post integrity checks, mode-0600 backup and fault-tested transactional rollback.\n- Add append-only human finding-resolution history and Admin CLI metrics without automatic prompt/model learning.\n- Adopt Safe Core 4.4 operator review profiles, exact-head Impact Evidence, pre-generated SARIF evidence and GenAI semantic token telemetry.\n- Add a real storage replacement boundary and governed HA thresholds while intentionally keeping SQLite as the only shipped backend.\n- Generate current product-contract facts in Architecture and both READMEs from machine contracts to eliminate version/Core/DB documentation drift.\n'''
+              ch=ch.replace('# Changelog\n','# Changelog\n'+notes,1)
+              Path('CHANGELOG.md').write_text(ch)
           PY
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           node scripts/generate-contract-docs.js
