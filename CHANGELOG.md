@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.2.2 - 2026-08-27
+
+### Migration safety patch
+
+- Verify every Schema 5 migration backup independently with a read-only SQLite handle, `integrity_check`, and source `user_version` before Schema 6 DDL begins.
+- Close backup verification handles deterministically so Windows does not retain a file lock after validation; add a cross-platform regression test for cleanup and schema-mismatch failure.
+
 ## 5.2.1 - 2026-08-27
 
 ### Supply-chain patch
