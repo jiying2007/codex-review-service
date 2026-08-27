@@ -54,9 +54,11 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./product-contract.json').serviceVersion")"
+          database_schema="$(node -p "require('./product-contract.json').databaseSchemaVersion")"
+          config_schema="$(node -p "require('./product-contract.json').configSchemaVersion")"
           canonical_node="$(node -p "require('./product-contract.json').canonicalNodeVersion")"
           test "$(docker inspect -f '{{.Config.User}}' codex-review-service:ci)" = "codex-review"
-          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(c.serviceVersion!==process.argv[1]||c.databaseSchemaVersion!==5||c.configSchemaVersion!==1||process.versions.node!==process.argv[2])process.exit(1)" "$version" "$canonical_node"
+          docker run --rm --entrypoint node codex-review-service:ci -e "const c=require('./product-contract.json');if(String(c.serviceVersion)!==process.argv[1]||String(c.databaseSchemaVersion)!==process.argv[2]||String(c.configSchemaVersion)!==process.argv[3]||process.versions.node!==process.argv[4])process.exit(1)" "$version" "$database_schema" "$config_schema" "$canonical_node"
           docker run --rm --entrypoint sh codex-review-service:ci -ec 'command -v node >/dev/null; command -v codex >/dev/null; ! command -v npm; ! command -v npx; ! command -v yarn; ! command -v yarnpkg; ! command -v corepack'
       - name: Compose syntax and security boundary
         run: |
