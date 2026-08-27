@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.2.1 - 2026-08-27
+
+### Supply-chain patch
+
+- Repin the exact Safe Core 4.4.1 immutable-release publication patch; Service runtime, DB Schema 6, Config Schema 1 and Review Receipt v4 remain unchanged.
+- Publish new package/OCI/SBOM/checksum assets only under repository-level immutable Releases and verify the resulting immutable Release in CI.
+
 ## 5.2.0 - 2026-08-27
 
 ### Quality Platform and durable database evolution

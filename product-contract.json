@@ -1,12 +1,12 @@
 {
-  "serviceVersion": "5.2.0",
+  "serviceVersion": "5.2.1",
   "databaseSchemaVersion": 6,
   "configSchemaVersion": 1,
   "policySchemaVersion": 3,
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "c59a036cdb0b5839fe0e794031d38fd274bc116b",
+  "safeCoreCommit": "0caabb91ad7f2bcedb9f3e5ac50ba4c68a315d46",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
   "supportedNodeMajors": [

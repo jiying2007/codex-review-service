@@ -10,13 +10,13 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**5.2.0**
+- Service：**5.2.1**
 - Database Schema：**6**
 - Config Schema：**1**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
-- Safe Core：精确提交 `c59a036cdb0b5839fe0e794031d38fd274bc116b`
+- Safe Core：精确提交 `0caabb91ad7f2bcedb9f3e5ac50ba4c68a315d46`
 - Quality Platform：**1**
 - Review Profile：**1**
 - Impact Evidence：**1**
@@ -47,7 +47,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-5.2.0.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-5.2.1.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
