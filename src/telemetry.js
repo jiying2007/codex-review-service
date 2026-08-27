@@ -4,6 +4,7 @@ const crypto=require('node:crypto');
 function hex(bytes){return crypto.randomBytes(bytes).toString('hex');}
 function safeAttr(value){if(typeof value==='number'||typeof value==='boolean')return value;return String(value??'').slice(0,512);}
 function otlpValue(value){if(typeof value==='boolean')return{boolValue:value};if(typeof value==='number')return Number.isInteger(value)?{intValue:String(value)}:{doubleValue:value};return{stringValue:String(value)};}
+function genAiUsageAttributes(usage={},extra={}){return Object.freeze({'gen_ai.usage.input_tokens':Number(usage.inputTokens||0),'gen_ai.usage.cache_read.input_tokens':Number(usage.cachedInputTokens||0),'gen_ai.usage.cache_creation.input_tokens':Number(usage.cacheWriteInputTokens||0),'gen_ai.usage.output_tokens':Number(usage.outputTokens||0),'gen_ai.usage.reasoning.output_tokens':Number(usage.reasoningOutputTokens||0),...extra});}
 class Metrics{
   constructor(){this.counters=new Map();this.histograms=new Map();}
   inc(name,value=1){this.counters.set(name,(this.counters.get(name)||0)+value);}
@@ -17,4 +18,4 @@ class Telemetry{
   exportSpan(span){const task=(async()=>{try{const url=this.endpoint.endsWith('/v1/traces')?this.endpoint:`${this.endpoint}/v1/traces`;const attributes=Object.entries(span.attrs||{}).filter(([,v])=>v!==undefined&&v!==null).map(([key,value])=>({key,value:otlpValue(safeAttr(value))}));const body={resourceSpans:[{resource:{attributes:[{key:'service.name',value:{stringValue:this.serviceName}}]},scopeSpans:[{scope:{name:'codex-review-service'},spans:[{traceId:span.traceId,spanId:span.spanId,name:span.name,kind:1,startTimeUnixNano:String(span.startUnix),endTimeUnixNano:String(span.endUnix),attributes,status:span.status}]}]}]};await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(this.timeoutMs)});}catch(error){this.logger.warn?.({event:'otel_export_failed',code:error?.code||'EOTEL'});}})();this.pending.add(task);task.finally(()=>this.pending.delete(task));}
   async flush(){await Promise.allSettled([...this.pending]);}
 }
-module.exports={Telemetry,Metrics};
+module.exports={Telemetry,Metrics,genAiUsageAttributes};

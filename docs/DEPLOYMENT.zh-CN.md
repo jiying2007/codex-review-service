@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.1.1 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 5、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
+部署前先读取 `product-contract.json`。Codex Review Service 5.2.0 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
 
 GitLab 14.6.1 是兼容下限，不是推荐长期运行版本。条件允许时，生产环境应运行 GitLab 官方仍支持的版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
@@ -98,7 +98,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor 会检查 product/config identity、SQLite Schema 5 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；部署证据应记录 `profile`、`webhookAuth` 和 `webhookReplayWindow`。
+Doctor 会检查 product/config identity、SQLite Schema 6 与完整性、Codex capability contract、GitLab 连接/版本/profile 及完整 Project/Group scope。低于 GitLab 14.6.1 会 fail closed；部署证据应记录 `profile`、`webhookAuth` 和 `webhookReplayWindow`。
 
 ## 启动 systemd
 
@@ -202,7 +202,7 @@ npm run admin -- drain 120
 
 ## Upgrade
 
-从 v5.0.0 起，已发布 DB/Config 兼容性是正式产品契约。任何后续 Schema 转换都必须有显式 migration 与测试。
+从 v5.0.0 起，已发布 DB/Config 兼容性是正式产品契约。任何后续 Schema 转换都必须有显式 migration 与测试。 本版本支持显式 Schema 5 -> 6 启动迁移：迁移前完整性检查、mode-0600 已验证备份、单事务迁移，以及迁移后 integrity/foreign-key 校验。
 
 1. 阅读 Release Notes / rollback boundary。
 2. 创建并验证备份。

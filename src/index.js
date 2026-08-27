@@ -1,7 +1,7 @@
 'use strict';
 
 const { loadConfig }=require('./config');
-const { Store }=require('./db');
+const { createStorage }=require('./storage');
 const { installFairScheduling }=require('./fair-scheduler');
 const { GitLabClient }=require('./gitlab');
 const { applyGitLabCapabilities }=require('./gitlab-capabilities');
@@ -22,7 +22,7 @@ async function main(){
   const logger={info:v=>log('info',v),warn:v=>log('warn',v),error:v=>log('error',v)};
   const telemetry=new Telemetry({logger,endpoint:config.otelEndpoint,serviceName:config.otelServiceName,timeoutMs:config.otelExportTimeoutMs});
   const capability=await probeCodexCapabilities(config);logger.info({event:'codex_ready',mode:config.runnerMode,version:capability.version,versionMatched:capability.versionMatched,runnerCapability:capability.runnerCapability||null});if(capability.versionMatched===false)logger.warn({event:'codex_version_policy_warning',version:capability.version});
-  const store=new Store(config.dbPath),scheduler=installFairScheduling(store),recoveredJobs=store.recoverInterruptedJobs(),recoveredPublications=store.recoverPublications(),recoveredNotifications=store.recoverNotifications();
+  const store=createStorage({dbPath:config.dbPath}),scheduler=installFairScheduling(store),recoveredJobs=store.recoverInterruptedJobs(),recoveredPublications=store.recoverPublications(),recoveredNotifications=store.recoverNotifications();
   if(recoveredJobs)logger.info({event:'jobs_recovered',count:recoveredJobs});if(recoveredPublications)logger.info({event:'publications_recovered',count:recoveredPublications});if(recoveredNotifications)logger.info({event:'notifications_recovered',count:recoveredNotifications});
   const gitlab=new GitLabClient(config),gitlabVersion=await gitlab.getVersion(),gitlabCapabilities=await gitlab.getCapabilities();config=applyGitLabCapabilities(config,gitlabCapabilities);gitlab.config=config;
   logger.info({event:'gitlab_capabilities_ready',version:gitlabVersion.version,profile:gitlabCapabilities.profile,webhookAuth:gitlabCapabilities.webhookAuth,diffCompleteness:gitlabCapabilities.diffCompleteness});

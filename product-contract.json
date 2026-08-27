@@ -1,18 +1,25 @@
 {
-  "serviceVersion": "5.1.1",
-  "databaseSchemaVersion": 5,
+  "serviceVersion": "5.2.0",
+  "databaseSchemaVersion": 6,
   "configSchemaVersion": 1,
   "policySchemaVersion": 3,
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "a4a8acab6565bdb7e5f7927d2a4db14d31a6e895",
+  "safeCoreCommit": "c59a036cdb0b5839fe0e794031d38fd274bc116b",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
-  "supportedNodeMajors": [22, 24],
+  "supportedNodeMajors": [
+    22,
+    24
+  ],
   "nodeMajorVersion": 24,
   "minimumGitLabVersion": "14.6.1",
   "modernGitLabProfileMinimumVersion": "15.7.0",
   "standardWebhookMinimumGitLabVersion": "19.1.0",
-  "recommendedGitLabPolicy": "vendor-supported"
+  "recommendedGitLabPolicy": "vendor-supported",
+  "qualityPlatformVersion": 1,
+  "reviewProfileVersion": 1,
+  "impactEvidenceVersion": 1,
+  "analyzerFindingVersion": 1
 }

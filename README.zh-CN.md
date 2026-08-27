@@ -2,30 +2,38 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前正式产品基线为 **v5.1.1**：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
+面向 **GitLab Self-Managed Merge Request** 的生产级、自托管 Codex Review 服务。当前产品身份由下方机器生成契约区块定义：一个管理/安全信任域可覆盖多个显式 Project / Group，同时提供 durable GitLab Publication 与可选的飞书/Lark、企业微信确定性通知。
 
 ## 产品契约
 
-`product-contract.json` 是唯一机器校验的产品事实源：
+<!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-- Service：**5.1.1**
-- Database Schema：**5**
+`product-contract.json` 是唯一机器校验的当前产品身份：
+
+- Service：**5.2.0**
+- Database Schema：**6**
 - Config Schema：**1**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
-- Safe Core：精确提交 `1755262f51d5e15d74e432add38863d2383bb495`
+- Safe Core：精确提交 `c59a036cdb0b5839fe0e794031d38fd274bc116b`
+- Quality Platform：**1**
+- Review Profile：**1**
+- Impact Evidence：**1**
+- Analyzer Finding：**1**
 - Native/systemd Node.js：**Node 22 LTS >=22.22.2，或 Node 24 LTS >=24.19.0**；明确不支持 Node 23
 - 官方 Docker runtime：**Node 24.19.0**
 - GitLab Self-Managed 兼容下限：**14.6.1**
-- GitLab 推荐策略：生产环境应运行 **GitLab 官方仍支持的版本**，兼容 14.6.1+ 不代表建议长期停留在旧版本
+- GitLab 推荐策略：生产环境应运行 **GitLab 官方仍支持的版本**，兼容下限不代表建议长期停留在旧版本
+
+<!-- END GENERATED PRODUCT CONTRACT -->
 
 GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断：
 
 - **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
 - **Modern profile**（`>=15.7`）：继续使用分页 `/diffs` + `/versions` + `real_size` 证明完整 diff 覆盖。
 
-任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v5.1 不改变共享 Review 协议。
+任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v5.2 不改变共享 Review 协议。
 
 ## 适用场景
 
@@ -39,7 +47,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-5.1.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-5.2.0.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review

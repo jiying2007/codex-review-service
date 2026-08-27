@@ -23,6 +23,10 @@ assert.equal(core.SAFE_CORE_VERSION,contract.safeCoreMajorVersion,'Safe Core maj
 assert.equal(core.SAFE_CONTRACT_VERSION,contract.safeContractVersion,'Safe Contract must match product contract');
 assert.equal(core.POLICY_SCHEMA_VERSION,contract.policySchemaVersion,'Policy schema must match product contract');
 assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION,contract.reviewReceiptVersion,'Review Receipt schema must match product contract');
+assert.equal(core.CORE_CONTRACT.qualityPlatformVersion,contract.qualityPlatformVersion,'Quality Platform must match product contract');
+assert.equal(core.CORE_CONTRACT.reviewProfileVersion,contract.reviewProfileVersion,'Review Profile must match product contract');
+assert.equal(core.CORE_CONTRACT.impactEvidenceVersion,contract.impactEvidenceVersion,'Impact Evidence must match product contract');
+assert.equal(core.CORE_CONTRACT.analyzerFindingVersion,contract.analyzerFindingVersion,'Analyzer Finding contract must match product contract');
 const staged=execFileSync('git',['ls-files','--stage','src/codex-safe-core'],{cwd:root,encoding:'utf8'}).trim();
 assert.match(staged,new RegExp(`^160000 ${contract.safeCoreCommit} 0\\tsrc/codex-safe-core$`),'Safe Core gitlink must match product contract');
 
