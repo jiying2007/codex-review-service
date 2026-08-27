@@ -1,0 +1,60 @@
+name: Diagnose remaining Service 5.2 runtime error
+
+on:
+  push:
+    branches: [family-platform-v4.4.0]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: family-platform-v4.4.0
+          submodules: recursive
+          fetch-depth: 2
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22.22.2'
+      - name: Apply exact 5.2 runtime transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_sha='c59a036cdb0b5839fe0e794031d38fd274bc116b'
+          git -C src/codex-safe-core fetch --quiet origin "$core_sha"
+          git -C src/codex-safe-core checkout --quiet "$core_sha"
+          git add src/codex-safe-core
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/finalize-family-platform.py')
+          s=p.read_text().replace('async listOpenMergeRequests(projectId)', 'listOpenMergeRequests(projectId)')
+          s=s.replace("SQLite schema [45]\\\\b|SQLite Schema [45]\\\\b|Schema [45] database|schema [45]\\\\b", "SQLite schema 4|SQLite Schema 4|Schema 4 database|schema 4\\\\b")
+          p.write_text(s)
+          PY
+          python3 scripts/finalize-family-platform.py
+          python3 scripts/finalize-quality-refinements.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/quality.js')
+          s=p.read_text()
+          old="  const tree = await gitlab.listRepositoryTree(sourceProjectId, headSha);"
+          new="  let tree; try { tree = await gitlab.listRepositoryTree(sourceProjectId, headSha); } catch { return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true }); }\n  if (!tree || !Array.isArray(tree.items)) return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true });"
+          if old in s: s=s.replace(old,new,1)
+          p.write_text(s)
+
+          p=Path('src/service.js')
+          s=p.read_text()
+          old="async reviewSnapshot(job,mr,fullDiffs,policy,controller,incremental=null){const qualityEvidence=await collectServiceQualityEvidence(this.gitlab,mr,fullDiffs,this.config),profile=qualityEvidence.profile||resolveReviewProfile(this.config.reviewProfile||'standard');"
+          new="async reviewSnapshot(job,mr,fullDiffs,policy,controller,incremental=null){let qualityEvidence;try{qualityEvidence=await collectServiceQualityEvidence(this.gitlab,mr,fullDiffs,this.config);}catch(error){this.logger.warn?.({event:'quality_evidence_degraded',jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,code:error?.code||'EQUALITYEVIDENCE'});qualityEvidence={profile:resolveReviewProfile(this.config.reviewProfile||'standard'),impact:{nodes:[],edges:[],text:'',bytes:0,complete:false,truncated:true},analyzerFindings:[],analyzerEvidence:{text:'',included:0,total:0,bytes:0,truncated:false}};}const profile=qualityEvidence.profile||resolveReviewProfile(this.config.reviewProfile||'standard');"
+          if old in s: s=s.replace(old,new,1)
+          marker="this.logger.error?.({event:shouldRetry?'review_retry':'review_failed',traceId:job.trace_id,jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,attempt:job.attempt,code,status:error?.status||null});"
+          replacement="this.logger.error?.({event:shouldRetry?'review_retry':'review_failed',traceId:job.trace_id,jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,attempt:job.attempt,code,status:error?.status||null,message:String(error?.message||'').slice(0,500),stack:String(error?.stack||'').slice(0,2000)});"
+          if marker not in s: raise SystemExit('service error log marker missing')
+          p.write_text(s.replace(marker,replacement,1))
+          PY
+      - name: Run focused diagnostic
+        run: node --test test/service-diagnostic.test.js
