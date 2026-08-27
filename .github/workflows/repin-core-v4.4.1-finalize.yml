@@ -66,6 +66,7 @@ jobs:
               p.write_text(s)
           PY
           node scripts/generate-contract-docs.js
+          git add README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
       - name: Run full Service CI
         run: npm run ci
       - name: Push validated non-workflow state
