@@ -3,8 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { CURRENT_SCHEMA_VERSION, FINDING_RESOLUTIONS, migrateDatabase } = require('./db-migrations');
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 const TERMINAL_JOB_STATUSES = Object.freeze(['pass','needs_attention','blocked','incomplete','failed','superseded','cancelled','unauthorized','duplicate','skipped']);
 const TERMINAL_PUBLICATION_STATUSES = Object.freeze(['published','failed','cancelled']);
 function isoAfter(ms){return new Date(Date.now()+Math.max(0,ms)).toISOString();}
@@ -12,13 +13,14 @@ function json(value){return JSON.stringify(value??null);}
 function parseJson(value){try{return JSON.parse(value);}catch{return null;}}
 
 class Store{
-  constructor(dbPath){fs.mkdirSync(path.dirname(dbPath),{recursive:true,mode:0o700});this.db=new DatabaseSync(dbPath);try{this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');this.initializeSchema();}catch(error){try{this.db.close();}catch{}throw error;}}
+  constructor(dbPath,{migrationHooks={}}={}){this.dbPath=dbPath;this.migrationHooks=migrationHooks;if(dbPath!==':memory:')fs.mkdirSync(path.dirname(dbPath),{recursive:true,mode:0o700});this.db=new DatabaseSync(dbPath);try{this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');this.initializeSchema();}catch(error){try{this.db.close();}catch{}throw error;}}
   withTransaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const value=fn();this.db.exec('COMMIT');return value;}catch(error){try{this.db.exec('ROLLBACK');}catch{}throw error;}}
   initializeSchema(){
     const current=Number(this.db.prepare('PRAGMA user_version').get().user_version||0);
     const existing=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(row=>row.name);
     if(current===SCHEMA_VERSION)return;
-    if(current!==0||existing.length){const error=new Error(`Unsupported database schema ${current}; Codex Review Service first release requires a fresh Schema ${SCHEMA_VERSION} database`);error.code='EDBSCHEMA';throw error;}
+    if(current===5){this.lastMigration=migrateDatabase(this.db,this.dbPath,current,this.migrationHooks);return;}
+    if(current!==0||existing.length){const error=new Error(`Unsupported database schema ${current}; expected fresh database, Schema 5 migration source, or Schema ${SCHEMA_VERSION}`);error.code='EDBSCHEMA';throw error;}
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS webhook_events(id INTEGER PRIMARY KEY AUTOINCREMENT,webhook_id TEXT NOT NULL UNIQUE,event_type TEXT NOT NULL,project_id INTEGER,mr_iid INTEGER,received_at TEXT NOT NULL,processed_at TEXT);
       CREATE TABLE IF NOT EXISTS review_jobs(id INTEGER PRIMARY KEY AUTOINCREMENT,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,base_sha TEXT NOT NULL DEFAULT '',start_sha TEXT NOT NULL DEFAULT '',head_sha TEXT NOT NULL DEFAULT '',dedupe_key TEXT NOT NULL,status TEXT NOT NULL,trigger TEXT NOT NULL,attempt INTEGER NOT NULL DEFAULT 0,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,requested_by_user_id INTEGER,request_webhook_id TEXT,source_branch TEXT NOT NULL DEFAULT '',available_at TEXT NOT NULL DEFAULT '',status_project_id INTEGER,pipeline_id INTEGER,trace_id TEXT NOT NULL DEFAULT '',UNIQUE(project_id,mr_iid,dedupe_key));
@@ -27,7 +29,14 @@ class Store{
       CREATE TABLE IF NOT EXISTS publication_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL,mr_iid INTEGER NOT NULL,action_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);
       CREATE TABLE IF NOT EXISTS notification_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER REFERENCES review_runs(id) ON DELETE CASCADE,project_id INTEGER NOT NULL DEFAULT 0,mr_iid INTEGER NOT NULL DEFAULT 0,route_name TEXT NOT NULL,provider TEXT NOT NULL,secret_ref TEXT NOT NULL,event_type TEXT NOT NULL,dedupe_key TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempt INTEGER NOT NULL DEFAULT 0,available_at TEXT NOT NULL,remote_id TEXT,error_code TEXT,created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT);
     `);
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT '');
+      CREATE TABLE IF NOT EXISTS finding_resolutions(id INTEGER PRIMARY KEY AUTOINCREMENT,finding_id INTEGER NOT NULL REFERENCES review_findings(id) ON DELETE CASCADE,resolution TEXT NOT NULL CHECK(resolution IN ('fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception')),note TEXT NOT NULL DEFAULT '',actor TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_finding_resolutions_finding ON finding_resolutions(finding_id,id);
+      CREATE INDEX IF NOT EXISTS idx_finding_resolutions_created ON finding_resolutions(created_at,id);
+    `);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_review_jobs_status_available ON review_jobs(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_review_jobs_mr ON review_jobs(project_id,mr_iid,id);CREATE INDEX IF NOT EXISTS idx_review_runs_job ON review_runs(job_id,id);CREATE INDEX IF NOT EXISTS idx_review_runs_created ON review_runs(created_at,id);CREATE INDEX IF NOT EXISTS idx_webhooks_processed ON webhook_events(processed_at,received_at);CREATE INDEX IF NOT EXISTS idx_outbox_status_available ON publication_outbox(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_outbox_run ON publication_outbox(run_id,id);CREATE INDEX IF NOT EXISTS idx_notification_status_available ON notification_outbox(status,available_at,id);CREATE INDEX IF NOT EXISTS idx_notification_run ON notification_outbox(run_id,id);PRAGMA user_version=${SCHEMA_VERSION};`);
+    this.db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)').run(SCHEMA_VERSION,new Date().toISOString(),'fresh');
   }
   schemaVersion(){return Number(this.db.prepare('PRAGMA user_version').get().user_version||0);}
   synchronousMode(){return Number(this.db.prepare('PRAGMA synchronous').get().synchronous);}
@@ -67,9 +76,13 @@ class Store{
   failPublication(id,errorCode){this.db.prepare("UPDATE publication_outbox SET status='failed',error_code=?,finished_at=? WHERE id=?").run(errorCode,new Date().toISOString(),id);}
   cancelPublication(id,errorCode='ECANCELLED'){this.db.prepare("UPDATE publication_outbox SET status='cancelled',error_code=?,finished_at=? WHERE id=?").run(errorCode,new Date().toISOString(),id);}
   tokenUsageSince(projectId,sinceIso){const row=this.db.prepare(`SELECT COALESCE(SUM(r.input_tokens+r.output_tokens),0) tokens FROM review_runs r JOIN review_jobs j ON j.id=r.job_id WHERE j.project_id=? AND r.created_at>=?`).get(projectId,sinceIso);return Number(row.tokens||0);}
+  recordFindingResolution(findingId,resolution,{note='',actor=''}={}){const id=Number(findingId),value=String(resolution||'');if(!Number.isInteger(id)||id<=0){const error=new Error('findingId must be a positive integer');error.code='EFINDINGRESOLUTION';throw error;}if(!FINDING_RESOLUTIONS.includes(value)){const error=new Error(`Unsupported finding resolution: ${value}`);error.code='EFINDINGRESOLUTION';throw error;}const text=String(note||'').trim(),who=String(actor||'').trim();if(text.length>2000||who.length>255||/[\r\n\0]/.test(who)){const error=new Error('Finding resolution metadata is invalid');error.code='EFINDINGRESOLUTION';throw error;}if(!this.db.prepare('SELECT id FROM review_findings WHERE id=?').get(id)){const error=new Error(`Finding ${id} does not exist`);error.code='EFINDINGNOTFOUND';throw error;}const result=this.db.prepare('INSERT INTO finding_resolutions(finding_id,resolution,note,actor,created_at) VALUES(?,?,?,?,?)').run(id,value,text,who,new Date().toISOString());return Number(result.lastInsertRowid);}
+  findingResolutionHistory(findingId){return this.db.prepare('SELECT * FROM finding_resolutions WHERE finding_id=? ORDER BY id').all(Number(findingId));}
+  latestFindingResolution(findingId){return this.db.prepare('SELECT * FROM finding_resolutions WHERE finding_id=? ORDER BY id DESC LIMIT 1').get(Number(findingId))||null;}
+  resolutionMetrics(since=''){const rows=since?this.db.prepare('SELECT resolution,COUNT(*) count FROM finding_resolutions WHERE created_at>=? GROUP BY resolution ORDER BY resolution').all(String(since)):this.db.prepare('SELECT resolution,COUNT(*) count FROM finding_resolutions GROUP BY resolution ORDER BY resolution').all();return Object.freeze(Object.fromEntries(rows.map(row=>[row.resolution,Number(row.count)])));}
   stats(){const jobs=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM review_jobs GROUP BY status').all().map(r=>[r.status,Number(r.count)])),publications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM publication_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),notifications=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM notification_outbox GROUP BY status').all().map(r=>[r.status,Number(r.count)])),usage=this.db.prepare('SELECT COALESCE(SUM(input_tokens),0) input,COALESCE(SUM(cached_input_tokens),0) cached,COALESCE(SUM(output_tokens),0) output,COALESCE(SUM(reasoning_output_tokens),0) reasoning FROM review_runs').get();return{jobs,publications,notifications,webhookCount:Number(this.db.prepare('SELECT COUNT(*) count FROM webhook_events').get().count),findings:Number(this.db.prepare('SELECT COUNT(*) count FROM review_findings').get().count),schemaVersion:this.schemaVersion(),usage};}
   prune({dataRetentionDays,webhookRetentionDays}){const jobCutoff=new Date(Date.now()-dataRetentionDays*86400000).toISOString(),webhookCutoff=new Date(Date.now()-webhookRetentionDays*86400000).toISOString();return this.withTransaction(()=>{const webhooks=this.db.prepare('DELETE FROM webhook_events WHERE processed_at IS NOT NULL AND received_at<?').run(webhookCutoff).changes,placeholders=TERMINAL_JOB_STATUSES.map(()=>'?').join(','),jobs=this.db.prepare(`DELETE FROM review_jobs WHERE status IN (${placeholders}) AND finished_at IS NOT NULL AND finished_at<?`).run(...TERMINAL_JOB_STATUSES,jobCutoff).changes;return{webhooks,jobs};});}
   checkpoint(){try{return this.db.prepare('PRAGMA wal_checkpoint(PASSIVE)').get();}catch{return null;}}
   close(){this.db.close();}
 }
-module.exports={Store,SCHEMA_VERSION,TERMINAL_JOB_STATUSES,TERMINAL_PUBLICATION_STATUSES};
+module.exports={Store,SCHEMA_VERSION,FINDING_RESOLUTIONS,TERMINAL_JOB_STATUSES,TERMINAL_PUBLICATION_STATUSES};

@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.2.0 - 2026-08-27
+
+### Quality Platform and durable database evolution
+
+- Add explicit SQLite Schema 5 -> 6 migration with pre/post integrity checks, mode-0600 backup and fault-tested transactional rollback.
+- Add append-only human finding-resolution history and Admin CLI metrics without automatic prompt/model learning.
+- Adopt Safe Core 4.4 operator review profiles, exact-head Impact Evidence, pre-generated SARIF evidence and GenAI semantic token telemetry.
+- Add a real storage replacement boundary and governed HA thresholds while intentionally keeping SQLite as the only shipped backend.
+- Generate current product-contract facts in Architecture and both READMEs from machine contracts to eliminate version/Core/DB documentation drift.
+
 ## 5.1.1 - 2026-08-26
 
 ### Family governance and durable-state verification

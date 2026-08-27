@@ -49,7 +49,8 @@ async function collectImpact(gitlab, mr, diffResult, profile) {
   const headSha = String(mr.diff_refs?.head_sha || mr.sha || '');
   if (!sourceProjectId || !headSha) return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true });
   const diff = unifiedDiffText(diffResult), signals = extractImpactSignals(diff);
-  const tree = await gitlab.listRepositoryTree(sourceProjectId, headSha);
+  let tree; try { tree = await gitlab.listRepositoryTree(sourceProjectId, headSha); } catch { return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true }); }
+  if (!tree || !Array.isArray(tree.items)) return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true });
   const ranked = tree.items.slice(0, MAX_TREE_ITEMS).filter(item => item?.type === 'blob' && textCandidate(String(item.path || '')))
     .map(item => ({ path: String(item.path), score: cheapScore(String(item.path), signals) }))
     .sort((a,b) => b.score - a.score || a.path.localeCompare(b.path));
@@ -85,8 +86,9 @@ async function collectServiceQualityEvidence(gitlab, mr, diffResult, config) {
   const analyzerEvidence = formatAnalyzerEvidence(analyzerFindings, { maxFindings: 80, maxBytes: 64 * 1024 });
   return Object.freeze({ profile, impact, analyzerFindings, analyzerEvidence });
 }
+function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||'').replace(/\\/g,'/'),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||'').replace(/\\/g,'/'));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\n${side}\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}
 function qualityContextBlocks(evidence) {
   return Object.freeze([String(evidence?.impact?.text || ''), String(evidence?.analyzerEvidence?.text || '')].filter(Boolean));
 }
 
-module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, loadSarif, collectServiceQualityEvidence, qualityContextBlocks });
+module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, loadSarif, collectServiceQualityEvidence, qualityContextBlocks, anchorAnalyzerFindings });

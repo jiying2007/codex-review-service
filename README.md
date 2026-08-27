@@ -2,30 +2,38 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. Service **v5.1.1** is the current compatibility/operations baseline: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
+Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed merge requests**. The current product identity is defined by the machine-generated contract block below: one administrative/security trust domain can cover multiple explicit Projects and/or Groups, with durable GitLab publication and optional deterministic Feishu/Lark or WeCom attention routing.
 
 ## Product contract
 
-`product-contract.json` is the single machine-checked source for product identity and compatibility:
+<!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-- Service: **5.1.1**
-- Database Schema: **5**
+`product-contract.json` is the single machine-checked source for the current product identity:
+
+- Service: **5.2.0**
+- Database Schema: **6**
 - Config Schema: **1**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
-- Safe Core: exact commit `1755262f51d5e15d74e432add38863d2383bb495`
-- Native/systemd Node.js: **22.22.2+ on Node 22 LTS, or 24.19.0+ on Node 24 LTS**; Node 23 is intentionally unsupported
+- Safe Core: exact commit `c59a036cdb0b5839fe0e794031d38fd274bc116b`
+- Quality Platform: **1**
+- Review Profile: **1**
+- Impact Evidence: **1**
+- Analyzer Finding: **1**
+- Native/systemd Node.js: **22 LTS >=22.22.2, or 24 LTS >=24.19.0**; Node 23 is intentionally unsupported
 - Canonical Docker runtime: **Node 24.19.0**
 - GitLab Self-Managed compatibility floor: **14.6.1**
-- GitLab recommendation: run a **vendor-supported GitLab release** even though older 14.6.1+ installations are compatibility-tested
+- GitLab recommendation: run a **vendor-supported GitLab release**; the compatibility floor is not a recommendation to stay on an old release
+
+<!-- END GENERATED PRODUCT CONTRACT -->
 
 GitLab compatibility is capability-driven rather than a pile of scattered version branches:
 
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v5.1 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v5.2 does not change the shared review protocol.
 
 ## Start here
 
@@ -39,7 +47,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-5.1.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-5.2.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -171,7 +179,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 5 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 6 verification pass.
 
 ## Failure semantics
 

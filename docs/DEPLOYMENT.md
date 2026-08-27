@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. Codex Review Service 5.1.1 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 5 and Config Schema 1. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
+Read `product-contract.json` before deployment. Codex Review Service 5.2.0 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and Config Schema 1. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
 
 GitLab 14.6.1 is the compatibility floor, not the recommended server lifecycle target. Production operators should run a vendor-supported GitLab release when practical. Service compatibility is proven against real GitLab 14.6.1, 17.11.7 and 19.3.0.
 
@@ -100,7 +100,7 @@ sudo -u codex-review /usr/bin/node \
   src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 5/integrity, Codex capability contract, GitLab connectivity/version/profile and complete Project/Group scope. A GitLab version below 14.6.1 fails closed. Record `profile`, `webhookAuth` and `webhookReplayWindow` in deployment evidence.
+Doctor validates product/config identity, SQLite Schema 6/integrity, Codex capability contract, GitLab connectivity/version/profile and complete Project/Group scope. A GitLab version below 14.6.1 fails closed. Record `profile`, `webhookAuth` and `webhookReplayWindow` in deployment evidence.
 
 ## Start systemd
 
@@ -204,7 +204,7 @@ npm run admin -- drain 120
 
 ## Upgrade
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Any future schema transition must be documented and tested.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Any future schema transition must be documented and tested. This release supports the explicit Schema 5 -> 6 startup migration: pre-migration integrity check, mode-0600 verified backup, one transactional migration, and post-migration integrity/foreign-key verification.
 
 1. Read release notes and rollback boundary.
 2. Create/verify backup.
