@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const { migrateDatabase, integrityCheck, CURRENT_SCHEMA_VERSION } = require('../src/db-migrations');
+const { migrateDatabase, integrityCheck, verifyMigrationBackup, CURRENT_SCHEMA_VERSION } = require('../src/db-migrations');
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-db5-'));
@@ -48,12 +48,25 @@ test('Schema 5 migrates transactionally to 6 with verified backup and preserved 
     assert.equal(result.to, CURRENT_SCHEMA_VERSION);
     assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version), 6);
     assert.equal(db.prepare('SELECT title FROM review_findings WHERE id=1').get().title, 'bad');
-    assert.ok(fs.existsSync(result.applied[0].backupPath));
-    assert.equal(new DatabaseSync(result.applied[0].backupPath, { readOnly: true }).prepare('PRAGMA user_version').get().user_version, 5);
+    const backupPath = result.applied[0].backupPath;
+    assert.ok(fs.existsSync(backupPath));
+    assert.equal(verifyMigrationBackup(backupPath, 5), true);
+    const backup = new DatabaseSync(backupPath, { readOnly: true });
+    try { assert.equal(backup.prepare('PRAGMA user_version').get().user_version, 5); }
+    finally { backup.close(); }
     assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='finding_resolutions'").get().count, 1);
     assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=6').get().version, 6);
     assert.equal(integrityCheck(db), true);
   } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('migration backup verification rejects schema mismatch and releases the read-only handle', () => {
+  const { dir, file } = fixture();
+  try {
+    assert.throws(() => verifyMigrationBackup(file, 6), error => error?.code === 'EDBMIGRATION');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('migration fault rolls DDL back and preserves schema 5 plus backup', () => {
@@ -69,6 +82,7 @@ test('migration fault rolls DDL back and preserves schema 5 plus backup', () => 
     assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='finding_resolutions'").get().count, 0);
     assert.equal(db.prepare('SELECT title FROM review_findings WHERE id=1').get().title, 'bad');
     assert.ok(backupPath && fs.existsSync(backupPath));
+    assert.equal(verifyMigrationBackup(backupPath, 5), true);
   } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
