@@ -37,6 +37,27 @@ jobs:
       - run: npm run ci
       - run: npm pack --dry-run --ignore-scripts
 
+  migration-portability:
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.22.2, 24.19.0]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify SQLite migration portability
+        run: node --test test/db-migrations.test.js
+
   docker-smoke:
     timeout-minutes: 15
     runs-on: ubuntu-latest
