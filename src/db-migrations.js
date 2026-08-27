@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
 
 const CURRENT_SCHEMA_VERSION = 6;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
@@ -22,6 +23,23 @@ function migrationBackupPath(dbPath, fromVersion) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return `${dbPath}.schema${fromVersion}-${stamp}.bak`;
 }
+function verifyMigrationBackup(backupPath, fromVersion) {
+  let backup;
+  try {
+    backup = new DatabaseSync(backupPath, { readOnly: true });
+    integrityCheck(backup, 'migration-backup');
+    const version = Number(backup.prepare('PRAGMA user_version').get().user_version);
+    if (version !== Number(fromVersion)) {
+      const error = new Error(`SQLite migration backup schema mismatch: expected ${fromVersion}, got ${version}.`);
+      error.code = 'EDBMIGRATION';
+      error.backupPath = backupPath;
+      throw error;
+    }
+    return true;
+  } finally {
+    if (backup) backup.close();
+  }
+}
 function createBackup(db, dbPath, fromVersion) {
   if (!dbPath || dbPath === ':memory:') {
     const error = new Error('Durable schema migration requires a filesystem-backed SQLite database.');
@@ -32,6 +50,7 @@ function createBackup(db, dbPath, fromVersion) {
   fs.mkdirSync(path.dirname(backupPath), { recursive: true, mode: 0o700 });
   db.exec(`VACUUM INTO ${sqlString(backupPath)}`);
   fs.chmodSync(backupPath, 0o600);
+  verifyMigrationBackup(backupPath, fromVersion);
   return backupPath;
 }
 function migrate5To6(db, dbPath, hooks = {}) {
@@ -109,6 +128,7 @@ module.exports = Object.freeze({
   MIGRATIONS,
   integrityCheck,
   migrationBackupPath,
+  verifyMigrationBackup,
   createBackup,
   migrationPlan,
   migrateDatabase,
