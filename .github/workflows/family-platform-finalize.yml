@@ -37,6 +37,16 @@ jobs:
           PY
           python3 scripts/finalize-family-platform.py
           python3 scripts/finalize-quality-refinements.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/verify-family.js')
+          s=p.read_text()
+          old="'src/codex-safe-core/scripts/verify-release-artifact.js'];"
+          new="'src/codex-safe-core/scripts/verify-release-artifact.js','docs/PRODUCT_CONTRACT.md','docs/QUALITY_PLATFORM.md','docs/QUALITY_PLATFORM.zh-CN.md','docs/STORAGE_AND_MIGRATIONS.md','src/codex-safe-core/quality-platform.js'];"
+          if old not in s:
+              raise SystemExit('verify-family package allowlist marker missing')
+          p.write_text(s.replace(old,new,1))
+          PY
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           node scripts/generate-contract-docs.js
           git add docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
