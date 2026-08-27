@@ -4,6 +4,7 @@ const http = require('node:http');
 const { outputSchema } = require('./review');
 const { createProcessRunner } = require('./codex-safe-core/process-runner');
 const { createCodexCli } = require('./codex-safe-core/codex-cli');
+const { usageShape: normalizeUsage, extractCodexUsage } = require('./codex-safe-core/efficiency-planner');
 const {
   SAFE_CORE_VERSION,
   SAFE_CONTRACT_VERSION,
@@ -31,8 +32,8 @@ function filteredEnv(config) {
 }
 
 function buildCodexArgs(schemaPath, model) { return buildSafeCodexArgs(schemaPath, model); }
-function usageShape(value = {}) { return { inputTokens:Number(value.input_tokens??value.inputTokens??0),cachedInputTokens:Number(value.cached_input_tokens??value.cachedInputTokens??0),cacheWriteInputTokens:Number(value.cache_write_input_tokens??value.cacheWriteInputTokens??0),outputTokens:Number(value.output_tokens??value.outputTokens??0),reasoningOutputTokens:Number(value.reasoning_output_tokens??value.reasoningOutputTokens??0) }; }
-function extractUsage(stdout) { let usage=usageShape(); for(const line of String(stdout||'').split(/\r?\n/).filter(Boolean)){let event;try{event=JSON.parse(line);}catch{continue;}if(event?.type==='turn.completed'&&event.usage)usage=usageShape(event.usage);}return usage; }
+function usageShape(value = {}) { return { ...normalizeUsage(value) }; }
+function extractUsage(stdout) { return { ...extractCodexUsage(stdout) }; }
 function parseJsonlEvents(stdout) { const cli=createCodexCli({runPreparedProcess:async()=>{throw new Error('not executable');}}); return { message:cli.parseCodexJsonl(stdout), usage:extractUsage(stdout) }; }
 function parseJsonl(stdout) { return parseJsonlEvents(stdout).message; }
 
@@ -75,7 +76,7 @@ async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindi
   try {
     const result=await cli.runStructuredCodex({codexPath:config.codexPath,model:config.codexModel||'',timeoutMs:config.reviewTimeoutSeconds*1000,schema:outputSchema(maxFindings),input:prompt,schemaFileName:'review-schema.json',token,maxStdoutBytes:6*1024*1024,maxStderrBytes:1024*1024,processOptions:{detached:process.platform!=='win32'}});
     const version=result.resolved.version||'unknown';
-    return {parsed:result.parsed,version,versionMatched:checkVersionPolicy(version,config),usage:extractUsage(result.processResult.stdout),model:config.codexModel||'',mode:'local'};
+    return {parsed:result.parsed,version,versionMatched:checkVersionPolicy(version,config),usage:usageShape(result.usage),requestEstimate:result.requestEstimate,durationMs:result.durationMs,model:config.codexModel||'',mode:'local'};
   } catch (error) {
     if (signal?.aborted) throw abortReason(signal);
     if (error?.code==='ETIMEDOUT') error.code='ECODEXTIMEOUT';
