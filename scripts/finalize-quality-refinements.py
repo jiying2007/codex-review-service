@@ -5,7 +5,17 @@ from pathlib import Path
 q=Path('src/quality.js')
 s=q.read_text()
 if "function anchorAnalyzerFindings" not in s:
-    s=s.replace("function qualityContextBlocks(evidence){", "function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||'').replace(/\\\\/g,'/'),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||'').replace(/\\\\/g,'/'));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\\n${side}\\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}\nfunction qualityContextBlocks(evidence){",1)
+    anchor="function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||'').replace(/\\\\/g,'/'),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||'').replace(/\\\\/g,'/'));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\\n${side}\\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}\n"
+    inserted=False
+    for marker in ("function qualityContextBlocks(evidence){","function qualityContextBlocks(evidence) {"):
+        if marker in s:
+            s=s.replace(marker,anchor+marker,1)
+            inserted=True
+            break
+    if not inserted:
+        raise SystemExit('qualityContextBlocks insertion marker missing')
+if "function anchorAnalyzerFindings" not in s:
+    raise SystemExit('anchorAnalyzerFindings insertion failed')
 export_old="module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, loadSarif, collectServiceQualityEvidence, qualityContextBlocks });"
 export_new="module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, loadSarif, collectServiceQualityEvidence, qualityContextBlocks, anchorAnalyzerFindings });"
 if export_old in s:
