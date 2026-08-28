@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.0 - 2026-08-28
+
+- Consume Core v4.6 Codex Runtime/Provider Contract. Add explicit OpenAI-compatible relay configuration, HTTP/SSE transport, dedicated provider secret bridging, live doctor probes for inline/isolated runners, split request/runtime timeouts and provider-aware diagnostics.
+
 ## 6.0.1 - 2026-08-28
 
 ### CI hygiene patch

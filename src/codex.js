@@ -27,9 +27,12 @@ function filteredEnv(config) {
   const env = {};
   for (const key of ['PATH','HOME','USERPROFILE','LANG','LC_ALL','TMPDIR','TEMP','TMP','HTTPS_PROXY','HTTP_PROXY','NO_PROXY']) if (process.env[key]) env[key] = process.env[key];
   if (config?.codexHome) env.CODEX_HOME = config.codexHome;
-  if (process.env.OPENAI_API_KEY) env.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  const credentialName=String(config?.codexProviderApiKeyEnv||'').trim();
+  if(credentialName&&process.env[credentialName])env[credentialName]=process.env[credentialName];
   return env;
 }
+
+function runtimeFromConfig(config){const mode=config.codexProviderMode||'openai';const provider=mode==='openai-compatible'?{mode,baseUrl:config.codexProviderBaseUrl||'',apiKeyEnv:config.codexProviderApiKeyEnv||'CODEX_PROVIDER_API_KEY'}:{mode:'openai'};return Object.freeze({provider:Object.freeze(provider),timeouts:Object.freeze({connectMs:(config.codexConnectTimeoutSeconds||15)*1000,requestMs:(config.codexRequestTimeoutSeconds||180)*1000,operationMs:(config.reviewTimeoutSeconds||180)*1000,idleMs:(config.codexStreamIdleTimeoutSeconds||60)*1000})});}
 
 function buildCodexArgs(schemaPath, model) { return buildSafeCodexArgs(schemaPath, model); }
 function usageShape(value = {}) { return { ...normalizeUsage(value) }; }
@@ -71,10 +74,12 @@ async function probeCodexCapabilitiesLocal(config, force=false) {
   return Object.freeze({version,versionMatched:checkVersionPolicy(version,config),mode:'local'});
 }
 
+async function probeCodexRuntimeLocal(config,force=false){if(force)capabilityCache.clear();const cli=createLocalCli(config),result=await cli.probeCodexRuntime({codexPath:config.codexPath,model:config.codexModel||'',runtime:runtimeFromConfig(config)});return Object.freeze({...result,versionMatched:checkVersionPolicy(result.codexVersion||'unknown',config),mode:'local'});}
+
 async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindings) {
   const cli=createLocalCli(config), token=cancellationToken(signal);
   try {
-    const result=await cli.runStructuredCodex({codexPath:config.codexPath,model:config.codexModel||'',timeoutMs:config.reviewTimeoutSeconds*1000,schema:outputSchema(maxFindings),input:prompt,schemaFileName:'review-schema.json',token,maxStdoutBytes:6*1024*1024,maxStderrBytes:1024*1024,processOptions:{detached:process.platform!=='win32'}});
+    const result=await cli.runStructuredCodex({codexPath:config.codexPath,model:config.codexModel||'',runtime:runtimeFromConfig(config),schema:outputSchema(maxFindings),input:prompt,schemaFileName:'review-schema.json',token,maxStdoutBytes:6*1024*1024,maxStderrBytes:1024*1024,processOptions:{detached:process.platform!=='win32'}});
     const version=result.resolved.version||'unknown';
     return {parsed:result.parsed,version,versionMatched:checkVersionPolicy(version,config),usage:usageShape(result.usage),requestEstimate:result.requestEstimate,durationMs:result.durationMs,model:config.codexModel||'',mode:'local'};
   } catch (error) {
@@ -121,6 +126,7 @@ async function probeCodexCapabilities(config, force=false) {
   const runnerCapability=assertRunnerCapability(value,config);
   return {version:value.version||'unknown',versionMatched:value.versionMatched!==false,mode:'runner',runnerCapability};
 }
+async function probeCodexRuntime(config,force=false){const socket=runnerSocket(config);if(!socket)return probeCodexRuntimeLocal(config,force);const value=await unixRequest(socket,'POST','/probe',{},(config.codexRequestTimeoutSeconds+15)*1000);return{...value,mode:'runner'};}
 async function runCodex(prompt,config,signal,maxFindings=config.maxFindings){const socket=runnerSocket(config);if(!socket)return runCodexLocal(prompt,config,signal,maxFindings);const result=await unixRequest(socket,'POST','/review',{prompt,maxFindings,reviewTimeoutSeconds:config.reviewTimeoutSeconds,model:config.codexModel||'',promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION},(config.reviewTimeoutSeconds+15)*1000,signal);return{...result,usage:usageShape(result.usage),mode:'runner'};}
 
-module.exports={runCodex,runCodexLocal,filteredEnv,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};
+module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexRuntime,probeCodexRuntimeLocal,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};
