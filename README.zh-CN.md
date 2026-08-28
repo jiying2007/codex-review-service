@@ -64,6 +64,8 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
+OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
+
 直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 2`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
 
 ```bash
@@ -76,7 +78,7 @@ curl -fsS http://127.0.0.1:8787/health/dependencies
 curl -fsS http://127.0.0.1:8787/version
 ```
 
-Doctor 会输出检测到的 GitLab 版本及 `classic` / `modern` Provider profile。Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。
+Doctor 会输出检测到的 GitLab 版本及 `classic` / `modern` Provider profile，并真实探测配置的 Codex Provider。Doctor 和 `/health/ready` 通过之前不要启用 GitLab Webhook。
 
 ## 接入 GitLab Webhook
 
@@ -163,6 +165,7 @@ Schema 5 是第一个正式生产数据库。**从 v5.0.0 起，已发布数据�
 PR/Release 覆盖 Node 22.22.2 / 24.19.0、Docker build/smoke、恢复/备份、dependency audit、CodeQL、真实 GitLab CE 14.6.1 / 17.11.7 / 19.3.0 Provider 矩阵、package boundary、OCI vulnerability scan、SBOM、checksum 与 GitHub provenance attestation。
 
 - 部署：[docs/DEPLOYMENT.zh-CN.md](docs/DEPLOYMENT.zh-CN.md)
+- Codex Provider / 中转站：[docs/CODEX_PROVIDER.zh-CN.md](docs/CODEX_PROVIDER.zh-CN.md)
 - GitLab 配置：[docs/GITLAB_SETUP.zh-CN.md](docs/GITLAB_SETUP.zh-CN.md)
 - IM 通知：[docs/NOTIFICATIONS.zh-CN.md](docs/NOTIFICATIONS.zh-CN.md)
 - Docker：[deploy/docker/README.md](deploy/docker/README.md)
