@@ -18,8 +18,8 @@
   "modernGitLabProfileMinimumVersion": "15.7.0",
   "standardWebhookMinimumGitLabVersion": "19.1.0",
   "recommendedGitLabPolicy": "vendor-supported",
-  "qualityPlatformVersion": 1,
+  "qualityPlatformVersion": 2,
   "reviewProfileVersion": 1,
-  "impactEvidenceVersion": 1,
+  "impactEvidenceVersion": 2,
   "analyzerFindingVersion": 1
 }
