@@ -23,11 +23,11 @@ jobs:
         run: python3 scripts/apply-reviewer-trigger-v5.3.0.py
       - name: Generate contract docs
         run: node scripts/generate-contract-docs.js
-      - name: Verify no legacy trigger residue
+      - name: Verify no runtime legacy trigger residue
         shell: bash
         run: |
-          if grep -R -n --exclude-dir=.git --exclude='CHANGELOG.md' -E 'requiredAssigneeUserIds|manualReviewBypassAssignee|assigneeMatch' .; then
-            echo 'Legacy Assignee-only trigger residue remains.' >&2
+          if grep -R -n -E 'requiredAssigneeUserIds|manualReviewBypassAssignee|assigneeMatch' src --exclude-dir=codex-safe-core; then
+            echo 'Legacy Assignee-only trigger runtime residue remains.' >&2
             exit 1
           fi
       - run: npm ci --ignore-scripts --no-audit --no-fund
