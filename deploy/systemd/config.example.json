@@ -83,7 +83,13 @@
     "fastModel": "",
     "home": "",
     "versionPolicy": "warn",
-    "allowedVersionPattern": ""
+    "allowedVersionPattern": "",
+    "providerMode": "openai",
+    "providerBaseUrl": "",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "connectTimeoutSeconds": 15,
+    "requestTimeoutSeconds": 180,
+    "streamIdleTimeoutSeconds": 60
   },
   "runner": {
     "mode": "inline",

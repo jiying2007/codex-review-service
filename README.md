@@ -10,16 +10,16 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **6.0.1**
+- Service: **6.1.0**
 - Database Schema: **6**
 - Config Schema: **2**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
-- Safe Core: exact commit `0caabb91ad7f2bcedb9f3e5ac50ba4c68a315d46`
-- Quality Platform: **1**
+- Safe Core: exact commit `ada3733a0d938b763fd241628da86990af7cfad7`
+- Quality Platform: **2**
 - Review Profile: **1**
-- Impact Evidence: **1**
+- Impact Evidence: **2**
 - Analyzer Finding: **1**
 - Native/systemd Node.js: **22 LTS >=22.22.2, or 24 LTS >=24.19.0**; Node 23 is intentionally unsupported
 - Canonical Docker runtime: **Node 24.19.0**
@@ -33,7 +33,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.0 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.1 does not change the shared review protocol.
 
 ## Start here
 
@@ -47,7 +47,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-6.0.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-6.1.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
