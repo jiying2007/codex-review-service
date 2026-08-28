@@ -1,6 +1,6 @@
 services:
   codex-review-service:
-    image: ${CODEX_REVIEW_IMAGE:-ghcr.io/jiying2007/codex-review-service:6.1.0}
+    image: ${CODEX_REVIEW_IMAGE:-ghcr.io/jiying2007/codex-review-service:6.1.1}
     restart: unless-stopped
     read_only: true
     tmpfs:
