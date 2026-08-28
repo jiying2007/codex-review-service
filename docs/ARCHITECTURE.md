@@ -4,12 +4,12 @@
 
 <!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-Codex Review Service **5.2.2** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **6.0.0** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 5.2.2
+Service 6.0.0
 DB Schema 6
-Config Schema 1
+Config Schema 2
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
@@ -39,7 +39,7 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └──────── Config Schema 1 ────────────┘
+              └──────── Config Schema 2 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver

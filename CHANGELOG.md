@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.0.0 - 2026-08-28
+
+### Reviewer-native GitLab trigger contract
+
+- Hard-cut Config Schema 2 from the Assignee-only trigger fields to one typed `review.triggerAssignment` contract with `reviewer`, `assignee`, `either`, and `always` modes.
+- Make GitLab Reviewer the default automatic-review role; empty `userIds` means any current Reviewer, while configured IDs restrict triggering to explicit GitLab users.
+- Treat a matching Reviewer/Assignee assignment update on an already-open MR as a review trigger without requiring a source push; removals and unrelated metadata updates do not trigger.
+- Keep `/codex review` as an explicit assignment-bypass command while preserving project, identity/access, self-trigger, evidence, publication, and safety gates.
+- Remove `requiredAssigneeUserIds`, `manualReviewBypassAssignee`, and the Assignee-specific test surface with no compatibility translation or residual runtime path.
+
 ## 5.2.2 - 2026-08-27
 
 ### Migration safety patch

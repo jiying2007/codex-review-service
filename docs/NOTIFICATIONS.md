@@ -8,7 +8,7 @@ A completed review persists GitLab publication actions and notification actions 
 
 ## Routes and secrets
 
-Enable `notifications.enabled` in Config Schema 1 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu` or `wecom`, a `secretRef`, and optional event filtering.
+Enable `notifications.enabled` in Config Schema 2 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu` or `wecom`, a `secretRef`, and optional event filtering.
 
 `secretRef: "embedded"` resolves the webhook from `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` or the production-preferred file form `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`. A direct value and `_FILE` form are mutually exclusive. Webhook URLs are never stored in JSON or SQLite. Feishu routes require official `open.feishu.cn`/`open.larksuite.com` bot URLs; WeCom routes require `qyapi.weixin.qq.com`.
 

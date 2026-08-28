@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. Codex Review Service 5.2.2 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and Config Schema 1. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
+Read `product-contract.json` before deployment. Codex Review Service 6.0.0 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and Config Schema 2. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
 
 GitLab 14.6.1 is the compatibility floor, not the recommended server lifecycle target. Production operators should run a vendor-supported GitLab release when practical. Service compatibility is proven against real GitLab 14.6.1, 17.11.7 and 19.3.0.
 
@@ -49,13 +49,16 @@ sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/sy
 
 Create each secret file as `root:codex-review` mode `0640`. For isolated mode, give the Runner-owned OpenAI secret to the Runner group/user instead of the Controller group. Also install `codex-review-runner.service` and its environment example.
 
-## Configure Config Schema 1
+
+> **v6.0.0 Config Schema 2 breaking boundary:** v5 Config Schema 1 files must be rewritten before restart. The v6 runtime does not parse or translate Schema 1. Use `review.triggerAssignment` and choose `reviewer`, `assignee`, `either`, or `always`. Rollback to v5 requires restoring the matching Schema 1 file.
+
+## Configure Config Schema 2
 
 The file must explicitly contain:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "server": { "host": "127.0.0.1", "port": 8787, "dataDir": "/var/lib/codex-review" },
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",

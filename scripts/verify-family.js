@@ -37,4 +37,4 @@ const sourceFiles=fs.readdirSync(path.join(root,'src')).filter(name=>name.endsWi
 
 for(const doc of ['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','LONG_TERM_ASSET.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md','docs/TOKEN_EFFICIENCY.md','docs/TOKEN_EFFICIENCY.zh-CN.md','SUPPORT.md']){const text=fs.readFileSync(path.join(root,doc),'utf8');assert.doesNotMatch(text,/\.codex-review\.json/);if(!doc.includes('NOTIFICATIONS')&&!doc.includes('GITLAB_SETUP'))assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|\bNode 22\.13\b/i,`${doc} carries stale current product facts`);}
 
-console.log(`Codex Review Service ${contract.serviceVersion}: compatibility profiles + Service v5 operations + exact Safe Core Family v4 boundary verified.`);
+console.log(`Codex Review Service ${contract.serviceVersion}: compatibility profiles + Service v6 operations + exact Safe Core Family v4 boundary verified.`);

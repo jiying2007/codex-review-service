@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。Codex Review Service 5.2.2 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、Config Schema 1。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
+部署前先读取 `product-contract.json`。Codex Review Service 6.0.0 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、Config Schema 2。官方 Docker 镜像仍固定 canonical Node 24.19.0，因此容器部署不依赖主机 Node 版本。
 
 GitLab 14.6.1 是兼容下限，不是推荐长期运行版本。条件允许时，生产环境应运行 GitLab 官方仍支持的版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
@@ -47,13 +47,16 @@ sudo install -m 0644 deploy/systemd/codex-review-service.service /etc/systemd/sy
 
 每个 Controller Secret 文件使用 `root:codex-review`、`0640`。isolated 模式下，OpenAI Secret 应只授权 Runner 用户/组，并安装 `codex-review-runner.service` 与对应 env example。
 
-## 配置 Config Schema 1
+
+> **v6.0.0 Config Schema 2 破坏性边界：** v5 的 Config Schema 1 配置必须在重启前人工改写。v6 运行时不会解析或转换 Schema 1。请使用 `review.triggerAssignment` 并明确选择 `reviewer`、`assignee`、`either` 或 `always`。回滚到 v5 前必须同时恢复匹配的 Schema 1 配置。
+
+## 配置 Config Schema 2
 
 配置文件必须显式包含：
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "server": { "host": "127.0.0.1", "port": 8787, "dataDir": "/var/lib/codex-review" },
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",

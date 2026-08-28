@@ -1,7 +1,7 @@
 {
-  "serviceVersion": "5.2.2",
+  "serviceVersion": "6.0.0",
   "databaseSchemaVersion": 6,
-  "configSchemaVersion": 1,
+  "configSchemaVersion": 2,
   "policySchemaVersion": 3,
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
