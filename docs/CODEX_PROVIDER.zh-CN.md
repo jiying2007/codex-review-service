@@ -1,6 +1,6 @@
 # Codex Provider 与中转站配置
 
-Codex Review Service 6.1.0 使用 `codex-safe-core` 的共享 Codex Runtime/Provider Contract。Service 为保持 Safe Contract，会主动隔离用户 Codex 配置，因此不要依赖 `~/.codex/config.toml` 给 Service 注入中转站。
+Codex Review Service 6.1.1 使用 `codex-safe-core` 的共享 Codex Runtime/Provider Contract。Service 为保持 Safe Contract，会主动隔离用户 Codex 配置，因此不要依赖 `~/.codex/config.toml` 给 Service 注入中转站。
 
 ## 两种 Provider 模式
 

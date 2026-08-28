@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "6.1.0",
+  "version": "6.1.1",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -59,6 +59,8 @@
     "src/codex-safe-core/family-error-taxonomy.json",
     "src/codex-safe-core/scripts/family-diagnostics.js",
     "src/codex-safe-core/scripts/verify-release-artifact.js",
+    "docs/CODEX_PROVIDER.md",
+    "docs/CODEX_PROVIDER.zh-CN.md",
     "docs/PRODUCT_CONTRACT.md",
     "docs/QUALITY_PLATFORM.md",
     "docs/QUALITY_PLATFORM.zh-CN.md",
