@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. Codex Review Service 6.1.0 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and Config Schema 2. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
+Read `product-contract.json` before deployment. Codex Review Service 6.1.1 supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and Config Schema 2. The official Docker image remains pinned to canonical Node 24.19.0, so host Node is irrelevant for Docker deployment.
 
 GitLab 14.6.1 is the compatibility floor, not the recommended server lifecycle target. Production operators should run a vendor-supported GitLab release when practical. Service compatibility is proven against real GitLab 14.6.1, 17.11.7 and 19.3.0.
 

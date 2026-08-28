@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1.1 - 2026-08-28
+
+- Publish the complete bilingual Codex Provider/relay deployment guide and include it in the immutable service package; runtime, schemas, Safe Contract and Core pin are unchanged.
+
 ## 6.1.0 - 2026-08-28
 
 - Consume Core v4.6 Codex Runtime/Provider Contract. Add explicit OpenAI-compatible relay configuration, HTTP/SSE transport, dedicated provider secret bridging, live doctor probes for inline/isolated runners, split request/runtime timeouts and provider-aware diagnostics.

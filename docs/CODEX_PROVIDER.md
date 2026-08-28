@@ -1,6 +1,6 @@
 # Codex Provider and Relay Configuration
 
-Codex Review Service 6.1.0 consumes the shared Codex Runtime/Provider Contract from `codex-safe-core`. The Service intentionally isolates user Codex configuration to preserve the Safe Contract, so do not rely on `~/.codex/config.toml` to inject a relay into the Service.
+Codex Review Service 6.1.1 consumes the shared Codex Runtime/Provider Contract from `codex-safe-core`. The Service intentionally isolates user Codex configuration to preserve the Safe Contract, so do not rely on `~/.codex/config.toml` to inject a relay into the Service.
 
 ## Provider modes
 
