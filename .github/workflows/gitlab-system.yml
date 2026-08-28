@@ -63,23 +63,34 @@ jobs:
             fi
             sleep 5
           done
-      - name: Create deterministic test token and verify authenticated API
+      - name: Create deterministic test token and verify stable authenticated API
         run: |
           set -euo pipefail
           docker exec gitlab gitlab-rails runner "u=User.find_by_username('root'); raise 'root user missing' unless u; u.personal_access_tokens.where(name: 'codex-review-ci').delete_all; t=u.personal_access_tokens.create(scopes: ['api'], name: 'codex-review-ci', expires_at: 1.day.from_now); t.set_token('token-string-here123'); t.save!"
-          for i in $(seq 1 60); do
+          stable=0
+          for i in $(seq 1 100); do
             if curl -fsS \
               --header 'PRIVATE-TOKEN: token-string-here123' \
-              http://127.0.0.1:8080/api/v4/version >/tmp/gitlab-version.json; then
-              cat /tmp/gitlab-version.json
-              exit 0
+              http://127.0.0.1:8080/api/v4/version >/tmp/gitlab-version.json \
+              && curl -fsS \
+              --header 'PRIVATE-TOKEN: token-string-here123' \
+              'http://127.0.0.1:8080/api/v4/projects?simple=true&per_page=1' >/dev/null; then
+              stable=$((stable + 1))
+              if [ "$stable" -ge 6 ]; then
+                cat /tmp/gitlab-version.json
+                echo 'Authenticated GitLab API stable for six consecutive probes.'
+                exit 0
+              fi
+            else
+              stable=0
             fi
-            if [ "$i" = 60 ]; then
-              echo 'Authenticated GitLab API did not become ready'
+            if [ "$i" = 100 ]; then
+              echo "Authenticated GitLab API did not remain stable; consecutive_successes=$stable"
+              docker exec gitlab gitlab-ctl status || true
               docker logs gitlab
               exit 1
             fi
-            sleep 2
+            sleep 3
           done
       - name: Run real GitLab provider contract
         env:
