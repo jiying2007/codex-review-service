@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.0.1 - 2026-08-28
+
+### CI hygiene patch
+
+- Remove the trailing blank line in `OPERATIONS.md` that caused the post-merge `git diff --check HEAD^ HEAD` gate to fail.
+- Preserve the complete v6.0.0 Reviewer-native trigger behavior, Config Schema 2, database schema, Safe Core pin, and GitLab provider contracts unchanged.
+
 ## 6.0.0 - 2026-08-28
 
 ### Reviewer-native GitLab trigger contract

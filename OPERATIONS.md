@@ -358,4 +358,3 @@ CI actions are immutable full-SHA pinned. Release changes are reviewed through P
 Service 6.0.0 is a breaking configuration release. Config Schema 1 is not accepted by the runtime. Before restarting 6.0.0, rewrite the configuration to `schemaVersion: 2` and replace the removed Assignee-only fields with `review.triggerAssignment`. To preserve the old automatic Assignee gate, use `{"mode":"assignee","userIds":[...]}`. The recommended new deployment uses `{"mode":"reviewer","userIds":[]}` or explicit Reviewer IDs. The manual `/codex review` command is always an explicit assignment-gate bypass in v6; there is no compatibility equivalent for the removed `manualReviewBypassAssignee: false`.
 
 Rollback to v5 requires restoring a matching Config Schema 1 file before starting the v5 binary. There is intentionally no runtime Schema 1 parser, silent translation, dual-read path, or compatibility flag in v6.
-
