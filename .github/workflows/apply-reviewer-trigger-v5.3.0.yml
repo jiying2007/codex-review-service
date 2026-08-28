@@ -35,8 +35,8 @@ jobs:
             echo 'Legacy Assignee-only trigger runtime residue remains.' >&2
             exit 1
           fi
-          if grep -R -n -E '5\.2\.2|5\.3\.0|Config Schema 1|schemaVersion: 1|"schemaVersion": 1' README.md README.zh-CN.md OPERATIONS.md SECURITY.md LONG_TERM_ASSET.md SUPPORT.md VERIFY_RELEASE.md docs deploy/docker/README.md deploy/docker/compose.yaml --exclude-dir=codex-safe-core; then
-            echo 'Stale current-state v5/config-schema-1 facts remain.' >&2
+          if grep -R -n -E '5\.2\.2|5\.3\.0|schemaVersion: 1|"schemaVersion": 1' README.md README.zh-CN.md SECURITY.md LONG_TERM_ASSET.md SUPPORT.md VERIFY_RELEASE.md docs deploy/docker/README.md deploy/docker/compose.yaml --exclude-dir=codex-safe-core; then
+            echo 'Stale current-state release/config example remains.' >&2
             exit 1
           fi
       - run: npm ci --ignore-scripts --no-audit --no-fund
