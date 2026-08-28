@@ -64,6 +64,8 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 ```
 
+For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
+
 Configure `schemaVersion: 2`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
@@ -76,7 +78,7 @@ curl -fsS http://127.0.0.1:8787/health/dependencies
 curl -fsS http://127.0.0.1:8787/version
 ```
 
-Doctor reports the detected GitLab version and `classic`/`modern` provider profile. Do not enable GitLab webhooks until Doctor and `/health/ready` pass.
+Doctor reports the detected GitLab version and `classic`/`modern` provider profile and performs a live probe of the configured Codex provider. Do not enable GitLab webhooks until Doctor and `/health/ready` pass.
 
 ## Docker / Compose
 
@@ -204,6 +206,7 @@ Schema 5 is the first supported production database. **v5.0.0 is the line after 
 PR/release gates include Node 22.22.2 and 24.19.0 tests, Docker build/smoke, recovery/backup tests, dependency audit, CodeQL, real GitLab CE 14.6.1/17.11.7/19.3.0 provider matrix, package boundary, OCI vulnerability scan, SBOM, checksum and GitHub provenance attestations.
 
 - Deployment: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- Codex provider / relay: [docs/CODEX_PROVIDER.md](docs/CODEX_PROVIDER.md)
 - GitLab setup: [docs/GITLAB_SETUP.md](docs/GITLAB_SETUP.md)
 - IM notifications: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 - Docker: [deploy/docker/README.md](deploy/docker/README.md)
