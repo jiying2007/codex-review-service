@@ -5,7 +5,7 @@
 Codex Review Service **5.1.0** is the compatibility/production-operations baseline. Machine-readable compatibility is owned by `product-contract.json`:
 
 - Database Schema 5
-- Config Schema 1
+- Config Schema 2
 - Policy Schema 3
 - Review Receipt 4
 - Safe Contract 2 / Safe Core Family v4 exact commit pin
@@ -40,7 +40,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 System deployment:
 
 ```text
-/etc/codex-review/config.json        Config Schema 1, non-secret
+/etc/codex-review/config.json        Config Schema 2, non-secret
 /etc/codex-review/secrets/*          protected secret files
 /etc/codex-review-service.env        paths to secret files + process selection only
 /var/lib/codex-review                SQLite/state
@@ -76,7 +76,7 @@ A direct value and matching `_FILE` value are mutually exclusive. Secret files m
 2. Install/authenticate the approved Codex CLI when using native/systemd; the release image contains its tested runtime.
 3. Install a verified release tgz or verified OCI image.
 4. Confirm GitLab is >=14.6.1. Do not treat compatibility with an old GitLab as a recommendation to leave it unpatched indefinitely.
-5. Create Config Schema 1 file.
+5. Create Config Schema 2 file.
 6. Provision file-backed secrets.
 7. Run `npm run doctor`; record GitLab version/profile.
 8. Require `/health/ready` = 200 before enabling webhooks.
@@ -254,7 +254,7 @@ Raise limits only after observing the bottleneck. PostgreSQL/HA is a future expl
 
 ## Upgrade contract
 
-Schema 5 is the first supported production database and Config Schema 1 is the first supported configuration schema.
+Schema 5 is the first supported production database and Config Schema 2 is the first supported configuration schema.
 
 **After v5.0.0, hard deletion of released persistence/config compatibility is forbidden.** Any future schema change must include:
 
@@ -352,3 +352,10 @@ Before release require all of the following:
 ## Repository governance
 
 CI actions are immutable full-SHA pinned. Release changes are reviewed through PR and squash merge. Temporary branches are removed after merge. Safe Core remains exact commit-pinned; service-only compatibility/operations/OCI/notification features must not leak into shared protocol layers.
+
+## v6.0.0 Config Schema 2 hard cut
+
+Service 6.0.0 is a breaking configuration release. Config Schema 1 is not accepted by the runtime. Before restarting 6.0.0, rewrite the configuration to `schemaVersion: 2` and replace the removed Assignee-only fields with `review.triggerAssignment`. To preserve the old automatic Assignee gate, use `{"mode":"assignee","userIds":[...]}`. The recommended new deployment uses `{"mode":"reviewer","userIds":[]}` or explicit Reviewer IDs. The manual `/codex review` command is always an explicit assignment-gate bypass in v6; there is no compatibility equivalent for the removed `manualReviewBypassAssignee: false`.
+
+Rollback to v5 requires restoring a matching Config Schema 1 file before starting the v5 binary. There is intentionally no runtime Schema 1 parser, silent translation, dual-read path, or compatibility flag in v6.
+

@@ -18,7 +18,7 @@ The planner applies these controls in order:
 
 ## Defaults
 
-When omitted from Config Schema 1, the production defaults are:
+When omitted from Config Schema 2, the production defaults are:
 
 - `review.maxTotalDiffBytes`: same as `review.maxDiffBytes` (1 MiB by default)
 - `review.incrementalReviewEnabled`: `true`

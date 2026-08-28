@@ -18,7 +18,7 @@ Planner 按以下顺序执行：
 
 ## 默认值
 
-Config Schema 1 未显式配置时：
+Config Schema 2 未显式配置时：
 
 - `review.maxTotalDiffBytes`：默认等于 `review.maxDiffBytes`（默认 1 MiB）
 - `review.incrementalReviewEnabled`：`true`
