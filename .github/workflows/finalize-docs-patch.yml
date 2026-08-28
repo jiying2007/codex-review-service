@@ -1,0 +1,60 @@
+name: Finalize docs patch
+on:
+  push:
+    branches: [release-v6.1.1-docs]
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - name: Prepare v6.1.1
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const version='6.1.1';
+          const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          const contract=JSON.parse(fs.readFileSync('product-contract.json','utf8'));
+          pkg.version=version;
+          for (const doc of ['docs/CODEX_PROVIDER.md','docs/CODEX_PROVIDER.zh-CN.md']) if(!pkg.files.includes(doc)) pkg.files.splice(pkg.files.indexOf('docs/PRODUCT_CONTRACT.md'),0,doc);
+          lock.version=version;
+          lock.packages[''].version=version;
+          contract.serviceVersion=version;
+          fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');
+          fs.writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n');
+          fs.writeFileSync('product-contract.json',JSON.stringify(contract,null,2)+'\n');
+          let changelog=fs.readFileSync('CHANGELOG.md','utf8');
+          if(!changelog.includes(`## ${version}`)) changelog=changelog.replace('# Changelog\n',`# Changelog\n\n## ${version} - 2026-08-28\n\n- Publish the complete bilingual Codex Provider/relay deployment guide and include it in the immutable service package; runtime, schemas, Safe Contract and Core pin are unchanged.\n`);
+          fs.writeFileSync('CHANGELOG.md',changelog);
+          for (const file of ['docs/CODEX_PROVIDER.md','docs/CODEX_PROVIDER.zh-CN.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']) {
+            let text=fs.readFileSync(file,'utf8');
+            text=text.replaceAll('6.1.0','6.1.1');
+            fs.writeFileSync(file,text);
+          }
+          NODE
+          node scripts/generate-contract-docs.js
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          npm pack --dry-run --ignore-scripts
+          npm pack --dry-run --ignore-scripts --json | grep -q 'docs/CODEX_PROVIDER.md'
+          npm pack --dry-run --ignore-scripts --json | grep -q 'docs/CODEX_PROVIDER.zh-CN.md'
+      - name: Commit final release candidate
+        run: |
+          set -euo pipefail
+          rm .github/workflows/finalize-docs-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json product-contract.json CHANGELOG.md README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/CODEX_PROVIDER.md docs/CODEX_PROVIDER.zh-CN.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md .github/workflows/finalize-docs-patch.yml
+          git diff --cached --check
+          git commit -m 'chore(release): prepare v6.1.1'
+          git push origin HEAD:release-v6.1.1-docs
