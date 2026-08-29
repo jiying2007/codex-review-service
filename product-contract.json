@@ -6,7 +6,7 @@
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "9efb165bb8f2b9b71aeb944f978bc5740629979b",
+  "safeCoreCommit": "e99962ca45f832211a58fe7eac229f6c648c5152",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
   "supportedNodeMajors": [
