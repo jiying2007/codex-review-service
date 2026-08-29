@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false, fetch-depth: 0 }
-      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
         with: { node-version: '24.19.0', cache: npm }
       - id: version
         env:
@@ -133,7 +133,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
           submodules: recursive
-      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
         with: { node-version: '${{ matrix.node }}', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run ci
@@ -156,7 +156,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           submodules: recursive
-      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
         with: { node-version: '24.19.0', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
 
