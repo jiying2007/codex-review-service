@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34/codex-safe.schema.json",
+  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/b71e11ef3eafba5aa4359376c79a792a05ee85eb/codex-safe.schema.json",
   "schemaVersion": 3,
   "review": {
     "language": "zh-CN",
@@ -9,7 +9,17 @@
     "confidenceThreshold": 0.7,
     "timeoutSeconds": 120,
     "extraInstructions": "重点检查资源生命周期、并发和错误处理。",
-    "rules": {"requireTestsForCodeChanges":true,"codePathPrefixes":["src/"],"testPathPrefixes":["test/","tests/"],"forbiddenPathPrefixes":[]}
+    "rules": {
+      "requireTestsForCodeChanges": true,
+      "codePathPrefixes": [
+        "src/"
+      ],
+      "testPathPrefixes": [
+        "test/",
+        "tests/"
+      ],
+      "forbiddenPathPrefixes": []
+    }
   },
   "reviewService": {"maxContextBytes":131072,"maxContextFiles":20,"contextLines":40,"skipGeneratedFiles":true,"blockUnreviewableFiles":false}
 }
