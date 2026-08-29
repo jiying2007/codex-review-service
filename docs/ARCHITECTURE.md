@@ -4,20 +4,23 @@
 
 <!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-Codex Review Service **6.1.1** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **6.2.0** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 6.1.1
+Service 6.2.0
 DB Schema 6
-Config Schema 2
+Config Schema 3
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
-Safe Core e99962ca45f832211a58fe7eac229f6c648c5152
+Safe Core e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34
 Quality Platform 2
 Review Profile 1
+Profile Pack 1
 Impact Evidence 2
+Test Impact 1
 Analyzer Finding 1
+Analyzer Adapter 1
 Native Node: 22 LTS >=22.22.2 OR 24 LTS >=24.19.0
 Canonical Docker Node: 24.19.0
 GitLab compatibility floor: 14.6.1
@@ -26,11 +29,11 @@ GitLab recommendation: vendor-supported release
 
 <!-- END GENERATED PRODUCT CONTRACT -->
 
-Service-owned responsibilities: GitLab provider semantics/capability selection, immutable snapshot acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
+Service-owned responsibilities: GitLab provider semantics/capability selection, immutable snapshot acquisition, CI analyzer artifact acquisition/adapters, Test Impact candidate acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
 
-Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 3, Review Evidence chunking, deterministic Review Rules and Review Receipt 4.
+Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 3, Review Evidence chunking, deterministic Review Rules, Review Profile Packs, Analyzer Finding normalization, Test Impact ranking/evidence and Review Receipt 4.
 
-IM, Docker, Admin, GitLab version/profile logic and deployment concerns must not be added to Safe Core.
+IM, Docker, Admin, GitLab version/profile logic, CI artifact retrieval and deployment concerns must not be added to Safe Core. The Service never executes repository-defined analyzer commands and Test Impact never executes tests.
 
 ## Configuration and deployment boundary
 
@@ -39,7 +42,7 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └──────── Config Schema 2 ────────────┘
+              └──────── Config Schema 3 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver
@@ -62,6 +65,16 @@ ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
 ```
 
 Runtime does not infer root, sudo, or systemd. Docker consumes the same Config Schema and durable state model; its release manifest points to a canonical OCI digest. Native/systemd supports explicit Node 22/24 LTS ranges; canonical Docker deliberately stays on one Node 24.19 runtime.
+
+## Quality evidence boundary
+
+The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 3 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
+
+Finding-like analyzer results are normalized through the Core Analyzer Finding contract and can become changed-line evidence only after exact path/line anchoring. Coverage, SBOM and test metadata remain evidence metadata rather than fabricated source findings.
+
+Review Profile Pack v1 selects bounded engineering emphasis such as general, security, C++, embedded Linux/MCU, driver, kernel and realtime. Packs cannot weaken Safe Contract, coverage or finding anchoring.
+
+Test Impact retrieves candidate test files at the exact MR head SHA, then delegates deterministic ranking/evidence projection to Safe Core. The result is a recommendation/evidence set only; the Service does not execute tests and never treats a recommendation as test-pass evidence.
 
 ## Security/trust domain
 
@@ -150,11 +163,11 @@ Secret file indirection belongs to Service deployment/runtime, not Safe Core.
 
 ## Provider boundary
 
-GitLab-specific behavior stays behind provider modules: capability selection, scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, notes/discussions and statuses.
+GitLab-specific behavior stays behind provider modules: capability selection, scope discovery, webhook semantics, MR/diff APIs, pipelines, repository reads, CI job/artifact reads, notes/discussions and statuses.
 
 Classic/Modern are **first-class provider capability profiles**, not temporary compatibility residue. A profile is allowed only when it has one centralized selector, deterministic fail-closed semantics and permanent real-version contract coverage.
 
-Review construction, finding validation, deterministic gate, budgets and receipt semantics remain provider-independent and model-unprivileged.
+Review construction, finding validation, deterministic gate, budgets, Test Impact ranking and receipt semantics remain provider-independent and model-unprivileged.
 
 ## Publication boundary
 
@@ -197,4 +210,4 @@ Production Docker does not rebuild source on target hosts.
 
 Provider, Project Scope, storage and Runner remain explicit replacement boundaries. Future PostgreSQL/HA or another provider may replace one boundary only after preserving transaction/idempotency/snapshot/recovery contracts.
 
-Do not reintroduce scattered version branches, one-off legacy fallbacks, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, or ad-hoc database mutation paths. A compatibility profile is a product contract only when centrally selected, fail-closed, documented and permanently tested against a real representative release.
+Do not reintroduce scattered version branches, one-off legacy fallbacks, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, repository-defined analyzer execution, implicit test execution, or ad-hoc database mutation paths. A compatibility profile is a product contract only when centrally selected, fail-closed, documented and permanently tested against a real representative release.

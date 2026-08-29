@@ -1,5 +1,16 @@
 # Changelog
 
+## 6.2.0 - 2026-08-29
+
+### Analyzer evidence, engineering profiles and test impact
+
+- Hard-cut Config Schema 3 from the single repository `sarifFiles` surface to structured operator-controlled `analyzerReports`; no compatibility translation or repository-defined analyzer command execution remains.
+- Add the Analyzer Adapter Hub for already-produced GitLab CI artifacts: SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, GCC/Clang/MSVC diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks. Finding-like evidence is normalized through Safe Core while coverage/SBOM/test metadata remains evidence rather than fabricated source findings.
+- Adopt released Safe Core v4.8.0 Review Profile Pack v1 and expose bounded engineering profiles including general, security, C++, embedded Linux/MCU, driver, kernel and realtime without weakening Safe Contract, coverage or changed-line anchoring.
+- Add deterministic Test Impact v1 candidate acquisition/ranking from the exact MR head SHA. The Service recommends impacted tests only; it never executes tests or treats recommendations as test-pass evidence.
+- Repin the complete runtime/release package and Family Release Guard to exact Safe Core `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`, preserving Safe Contract v2, Policy Schema v3 and Review Receipt v4.
+- Keep PR/MR narrative generation and SCM-side MR creation outside the product boundary.
+
 ## 6.1.1 - 2026-08-28
 
 - Publish the complete bilingual Codex Provider/relay deployment guide and include it in the immutable service package; runtime, schemas, Safe Contract and Core pin are unchanged.

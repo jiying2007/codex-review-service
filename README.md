@@ -10,17 +10,20 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **6.1.1**
+- Service: **6.2.0**
 - Database Schema: **6**
-- Config Schema: **2**
+- Config Schema: **3**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
-- Safe Core: exact commit `e99962ca45f832211a58fe7eac229f6c648c5152`
+- Safe Core: exact commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`
 - Quality Platform: **2**
 - Review Profile: **1**
+- Profile Pack: **1**
 - Impact Evidence: **2**
+- Test Impact: **1**
 - Analyzer Finding: **1**
+- Analyzer Adapter: **1**
 - Native/systemd Node.js: **22 LTS >=22.22.2, or 24 LTS >=24.19.0**; Node 23 is intentionally unsupported
 - Canonical Docker runtime: **Node 24.19.0**
 - GitLab Self-Managed compatibility floor: **14.6.1**
@@ -33,7 +36,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.1 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.2 does not change the shared review protocol.
 
 ## Start here
 
@@ -47,7 +50,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-6.1.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-6.2.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -66,7 +69,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 
 For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 2`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 3`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -190,7 +193,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 2
+/etc/codex-review/config.json      non-secret Config Schema 3
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```

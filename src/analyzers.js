@@ -1,5 +1,6 @@
 'use strict';
 
+require('./gitlab-evidence');
 const crypto = require('node:crypto');
 const { evaluateReviewRules } = require('./codex-safe-core/review-rules');
 
@@ -46,35 +47,15 @@ function runDeterministicAnalyzers(snapshot, policy) {
     const file = byPath.get(violation.path);
     if (!file) continue;
     if (violation.rule === 'forbiddenPathPrefix') {
-      const item = finding(
-        file,
-        'high',
-        'correctness',
-        'Forbidden path changed',
-        `Target-branch review policy forbids changes under ${violation.prefix}.`
-      );
+      const item = finding(file,'high','correctness','Forbidden path changed',`Target-branch review policy forbids changes under ${violation.prefix}.`);
       if (item) findings.push(item);
     } else if (violation.rule === 'requireTestsForCodeChanges') {
-      const item = finding(
-        file,
-        'medium',
-        'test',
-        'Code changed without test changes',
-        'Target-branch policy requires a matching test-path change when configured code paths change.'
-      );
+      const item = finding(file,'medium','test','Code changed without test changes','Target-branch policy requires a matching test-path change when configured code paths change.');
       if (item) findings.push(item);
     }
   }
 
-  return {
-    summary: '',
-    findings,
-    violations: evaluated.violations,
-    rejected: 0,
-    filtered: 0,
-    modelFindingCount: 0,
-    deterministicFindingCount: findings.length
-  };
+  return {summary:'',findings,violations:evaluated.violations,rejected:0,filtered:0,modelFindingCount:0,deterministicFindingCount:findings.length};
 }
 
 module.exports = { runDeterministicAnalyzers, firstAnchor };
