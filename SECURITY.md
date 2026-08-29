@@ -2,7 +2,7 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **6.2.0** owns production operations while shared safety, review-profile, Test Impact and diagnosis primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **6.2.1** owns production operations while shared safety, review-profile, Test Impact and diagnosis primitives remain in exact-pinned Safe Core Family v4.
 
 Machine-checked security identity lives in `product-contract.json`: Database Schema 6, Config Schema 3, Policy Schema 3, Review Receipt 4, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`.
 
@@ -62,7 +62,7 @@ The Admin CLI is the supported mutation boundary. Current backup acceptance requ
 
 The historical **Schema 5 -> 6 migration** remains an explicit supported migration path with source integrity verification, a mode-0600 verified backup, transactional migration and post-migration verification. From v5.0.0 onward, any DB/Config schema change requires explicit migration/upgrade fixtures and a documented rollback boundary.
 
-Service 6.2.0 also introduces a Config Schema 2 -> 3 configuration hard cut. Rollback to a Config Schema 2 release requires restoring that release's matching configuration file. Never assume an older binary can translate a newer configuration or irreversible database schema.
+Service 6.2.1 also introduces a Config Schema 2 -> 3 configuration hard cut. Rollback to a Config Schema 2 release requires restoring that release's matching configuration file. Never assume an older binary can translate a newer configuration or irreversible database schema.
 
 ## Fatal integrity behavior
 

@@ -1,5 +1,5 @@
 {
-  "serviceVersion": "6.2.0",
+  "serviceVersion": "6.2.1",
   "databaseSchemaVersion": 6,
   "configSchemaVersion": 3,
   "policySchemaVersion": 3,
@@ -9,7 +9,10 @@
   "safeCoreCommit": "e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
-  "supportedNodeMajors": [22,24],
+  "supportedNodeMajors": [
+    22,
+    24
+  ],
   "nodeMajorVersion": 24,
   "minimumGitLabVersion": "14.6.1",
   "modernGitLabProfileMinimumVersion": "15.7.0",
