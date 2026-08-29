@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.2.1 - 2026-08-29
+
+- Maintenance-only supply-chain refresh; product behavior and schemas are unchanged.
+- Update actions/setup-node to the verified 94196ee commit.
+- Update actions/dependency-review-action to v5.0.0 at verified a1d282b commit.
+- Update CodeQL init/analyze together to v4.37.9 at verified cdf488f commit and synchronize the governance pin.
+- Preserve exact Codex Safe Core v4.8.0 pin e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34.
+
 ## 6.2.0 - 2026-08-29
 
 ### Analyzer evidence, engineering profiles and test impact
