@@ -10,17 +10,20 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**6.1.1**
+- Service：**6.2.0**
 - Database Schema：**6**
-- Config Schema：**2**
+- Config Schema：**3**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
-- Safe Core：精确提交 `e99962ca45f832211a58fe7eac229f6c648c5152`
+- Safe Core：精确提交 `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`
 - Quality Platform：**2**
 - Review Profile：**1**
+- Profile Pack：**1**
 - Impact Evidence：**2**
+- Test Impact：**1**
 - Analyzer Finding：**1**
+- Analyzer Adapter：**1**
 - Native/systemd Node.js：**Node 22 LTS >=22.22.2，或 Node 24 LTS >=24.19.0**；明确不支持 Node 23
 - 官方 Docker runtime：**Node 24.19.0**
 - GitLab Self-Managed 兼容下限：**14.6.1**
@@ -33,7 +36,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 - **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
 - **Modern profile**（`>=15.7`）：继续使用分页 `/diffs` + `/versions` + `real_size` 证明完整 diff 覆盖。
 
-任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.1 不改变共享 Review 协议。
+任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.2 不改变共享 Review 协议。
 
 ## 适用场景
 
@@ -47,7 +50,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-6.1.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-6.2.0.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -66,7 +69,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 
 OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
 
-直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 2`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
+直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 3`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
 
 ```bash
 cd /opt/codex-review-service
@@ -154,7 +157,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 5 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
+备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 6 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
 
 ## Upgrade 契约
 
