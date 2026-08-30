@@ -13,7 +13,7 @@ Config Schema 3
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
-Safe Core 25ef338202fb9c6262b86e4af2e9ba3444fdc9df
+Safe Core 43e818dc9ae91051f55374a9f9a47b9df6420cd6
 Quality Platform 3
 Review Profile 1
 Profile Pack 1
