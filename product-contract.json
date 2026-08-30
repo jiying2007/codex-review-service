@@ -6,7 +6,7 @@
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "f43505e9e34b8da1170aafc72673569183137b04",
+  "safeCoreCommit": "2011591e76cf73c0890b702a5bcd3499de91bbbc",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
   "supportedNodeMajors": [
@@ -28,5 +28,5 @@
   "productContractVersion": 1,
   "productId": "codex-review-service",
   "productVersion": "6.3.0",
-  "safeCoreVersion": "4.9.2"
+  "safeCoreVersion": "4.9.3"
 }
