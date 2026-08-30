@@ -1,0 +1,24 @@
+name: Sync Core v4.9.2 docs once
+on:
+  push:
+    branches: [repin-core-v4.9.2]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+      - name: Generate contract docs and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/generate-contract-docs.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
+          git rm .github/workflows/sync-core-v4.9.2-docs-once.yml
+          git commit -m 'docs(family): regenerate Core v4.9.2 identity'
+          git push origin HEAD:repin-core-v4.9.2
