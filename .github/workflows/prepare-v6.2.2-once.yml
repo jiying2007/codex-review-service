@@ -12,18 +12,20 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 0
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
-        with:
-          node-version: '22.22.2'
-      - name: Prepare release metadata
+      - name: Synchronize current release documentation
+        shell: bash
         run: |
           set -euo pipefail
-          node scripts/release.js prepare 6.2.2
-          node -e "const fs=require('fs');let s=fs.readFileSync('CHANGELOG.md','utf8');s=s.replace('- Release prepared. Replace this line with final release notes before merge.','- Maintenance-only Family release on immutable Codex Safe Core v4.8.1; product behavior and protocol/schema contracts are unchanged.');fs.writeFileSync('CHANGELOG.md',s)"
-          git update-index --add --cacheinfo 160000,d06383ecf58b8153ddbd9d0b26a4f83b6e0515c2,src/codex-safe-core
+          old='b71e11ef3eafba5aa4359376c79a792a05ee85eb'
+          new='d06383ecf58b8153ddbd9d0b26a4f83b6e0515c2'
+          core_docs=(.codex-safe.example.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md product-contract.json)
+          version_docs=(LONG_TERM_ASSET.md OPERATIONS.md README.md README.zh-CN.md SECURITY.md deploy/docker/compose.yaml docs/ARCHITECTURE.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md docs/PRODUCT_CONTRACT.md)
+          for f in "${core_docs[@]}"; do sed -i "s/${old}/${new}/g" "$f"; done
+          for f in "${version_docs[@]}"; do sed -i 's/6\.2\.1/6.2.2/g' "$f"; done
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package.json package-lock.json product-contract.json CHANGELOG.md
+          git add "${core_docs[@]}" "${version_docs[@]}"
           git diff --cached --check
-          git commit -m 'chore(release): prepare Service v6.2.2 metadata'
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'docs: synchronize Service v6.2.2 and Core v4.8.1 identity'
           git push origin HEAD:release-v6.2.2-core-v4.8.1
