@@ -1,0 +1,36 @@
+name: Fix Service v6.3.1 deployment identity once
+on:
+  push:
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: github.ref == 'refs/heads/fix-review-time-v6.3.1'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix-review-time-v6.3.1
+          persist-credentials: true
+      - name: Refresh deployment current-state identity
+        env:
+          OLD_CORE: 10393a0035ce5168b3d0e88822af0d74fe85ec6c
+          NEW_CORE: bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          for(const p of ['docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']){
+            let s=fs.readFileSync(p,'utf8');
+            s=s.replaceAll('6.3.0','6.3.1').replaceAll(process.env.OLD_CORE,process.env.NEW_CORE);
+            fs.writeFileSync(p,s);
+          }
+          const p='deploy/docker/compose.yaml';
+          let s=fs.readFileSync(p,'utf8').replace('codex-review-service:6.3.0','codex-review-service:6.3.1');
+          fs.writeFileSync(p,s);
+          NODE
+          git config user.name jiying2007
+          git config user.email 33591504+jiying2007@users.noreply.github.com
+          git add docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md deploy/docker/compose.yaml
+          git commit -m 'docs(service): align v6.3.1 deployment identity'
+          git push origin HEAD:fix-review-time-v6.3.1
