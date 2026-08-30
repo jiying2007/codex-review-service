@@ -38,3 +38,7 @@ Token Budget 显式配置为 `0` 时表示关闭对应预算。
 Prometheus 输出累计 input、cached-input、cache-write-input、output、reasoning-output Token，同时记录 chunk 估算 Token、风险分数、增量审核次数、继承 finding 数、Diff 预算遗漏 chunk 数和 Token preflight 阻断次数。
 
 结合 `review_runs` 已持久化的 Token 列，可以直接对真实 MR 流量进行 Full Review / Incremental Review 成本对比。
+
+## 在线 Token 校准
+
+Core v4.9 从保守的 2 UTF-8 bytes/token 开始，只有积累足够真实样本后才启用有界 provider+model EWMA。校准状态只保存临时数值，不保存 prompt 或源码，也不能绕过既有 Token Budget。

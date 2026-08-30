@@ -115,3 +115,7 @@ tar -tzf codex-review-service-<version>.tgz | less
 ```
 
 Attestation 证明产物来自声明的仓库/工作流，但不能替代代码审查、真实 GitLab 系统测试、漏洞策略和生产验收。
+
+## SLSA v1.2 Build alignment
+
+Release artifacts are built by hosted GitHub Actions from an exact reviewed commit, checksummed, SBOM-bound and covered by GitHub build-provenance attestations. This documents the Build provenance controls in SLSA v1.2 terms; it does not claim Source L4/two-party governance.

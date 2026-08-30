@@ -38,3 +38,7 @@ Budget controls never silently claim full coverage. If the MR total diff budget 
 Prometheus output includes cumulative input, cached-input, cache-write-input, output and reasoning-output token counters, plus estimated chunk-token and chunk-risk histograms. Incremental runs, carried findings, diff-budget omissions and preflight blocks are also counted.
 
 Use these metrics together with the persisted `review_runs` token columns to compare full-review and incremental-review behavior on real MR traffic.
+
+## Online token calibration
+
+Core v4.9 starts from the conservative 2 UTF-8 bytes/token estimate and activates a bounded provider+model EWMA only after enough real samples. The calibration state is ephemeral numeric data only; it never stores prompts or source text and never bypasses configured token budgets.
