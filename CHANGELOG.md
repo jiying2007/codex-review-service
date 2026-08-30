@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.2.2
+
+- Maintenance-only Family release on immutable Codex Safe Core v4.8.1; product behavior and protocol/schema contracts are unchanged.
+
 ## 6.2.1 - 2026-08-29
 
 - Maintenance-only supply-chain refresh; product behavior and schemas are unchanged.

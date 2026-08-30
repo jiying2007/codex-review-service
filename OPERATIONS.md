@@ -2,7 +2,7 @@
 
 ## Product baseline
 
-Codex Review Service **6.2.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **6.2.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 6
 - Config Schema 3
@@ -184,7 +184,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 6.2.1 introduces a **Config Schema 2 -> 3 hard cut** while retaining Database Schema 6. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 6.2.2 introduces a **Config Schema 2 -> 3 hard cut** while retaining Database Schema 6. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
