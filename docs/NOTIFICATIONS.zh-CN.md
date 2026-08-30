@@ -37,5 +37,4 @@ npm run admin -- retry-notification <id>
 
 事故处理不要删除 `notification_outbox` 行。
 
-
-Notification event timestamps are canonical UTC ISO-8601 values and review notifications use the exact persisted Review Receipt time, not delayed delivery time.
+通知事件时间统一使用 canonical UTC ISO-8601。对于 Review 通知，卡片时间精确复用已持久化的 Review Receipt v4 `createdAt`，表示实际审查完成时间，而不是 notification outbox 延迟后的投递时间。
