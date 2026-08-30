@@ -36,3 +36,6 @@ npm run admin -- retry-notification <id>
 ```
 
 Do not delete `notification_outbox` rows as an incident workaround.
+
+
+Notification event timestamps are canonical UTC ISO-8601 values and review notifications use the exact persisted Review Receipt time, not delayed delivery time.

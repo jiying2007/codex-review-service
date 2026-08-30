@@ -4,16 +4,16 @@ This file is generated from `product-contract.json` and the exact Safe Core cont
 
 <!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-Codex Review Service **6.3.0** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **6.3.1** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 6.3.0
+Service 6.3.1
 DB Schema 6
 Config Schema 3
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
-Safe Core 2011591e76cf73c0890b702a5bcd3499de91bbbc
+Safe Core bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8
 Quality Platform 3
 Review Profile 1
 Profile Pack 1

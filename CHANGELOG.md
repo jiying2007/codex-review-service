@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.3.1 - 2026-08-30
+
+- Bind GitLab MR summaries and review notifications to the exact Review Receipt v4 creation time.
+- Label all server-side human timestamps explicitly as UTC so delayed outbox delivery cannot be confused with review execution time.
+- Preserve GitLab 14.6.1 Classic, 17.11.7 Modern and 19.3.0 Standard-HMAC compatibility behavior unchanged.
+
 ## 6.3.0
 
 - Adopt immutable Safe Core v4.9.0 and Product Contract v1 with Atomic Family/Manifest v3 compatibility.
