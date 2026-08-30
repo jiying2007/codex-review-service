@@ -2,15 +2,15 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 6.2.2** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、**Config Schema 3**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 6.3.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、**Config Schema 3**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
-Safe Core 精确固定到 `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
+Safe Core 精确固定到 `10393a0035ce5168b3d0e88822af0d74fe85ec6c`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
 ## Config Schema 3 硬切边界
 
-Service 6.2.2 将质量配置硬切到 Config Schema 3。Runtime 不翻译 Config Schema 2；升级前必须重写配置，并删除已退役的 `review.sarifFiles`。
+Service 6.3.0 将质量配置硬切到 Config Schema 3。Runtime 不翻译 Config Schema 2；升级前必须重写配置，并删除已退役的 `review.sarifFiles`。
 
 新的质量入口：
 
@@ -161,7 +161,7 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 6.2.2 仍使用 Database Schema 6，但 Config Schema 2 -> 3 是明确的**配置硬切**：必须在 restart 前重写配置。回滚到 Config Schema 2 Release 时必须同步恢复匹配的配置文件。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 6.3.0 仍使用 Database Schema 6，但 Config Schema 2 -> 3 是明确的**配置硬切**：必须在 restart 前重写配置。回滚到 Config Schema 2 Release 时必须同步恢复匹配的配置文件。
 
 历史 Database Schema 5 -> 6 Startup Migration 继续保持显式、受测试：migration 前 integrity check、mode-0600 verified backup、单事务迁移和迁移后的 integrity/foreign-key verification。
 

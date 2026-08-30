@@ -13,6 +13,8 @@ const core=require('../src/codex-safe-core');
 const {selectGitLabCapabilities}=require('../src/gitlab-capabilities');
 const {FORMATS}=require('../src/analyzer-adapters');
 
+require('../src/codex-safe-core/scripts/verify-consumer-product-contract').verify(root,contract.safeCoreCommit,'codex-review-service');
+assert.equal(contract.productVersion,contract.serviceVersion,'Product Contract v1 productVersion must match serviceVersion');
 assert.equal(pkg.version,contract.serviceVersion,'package version must come from product contract');
 assert.equal(lock.version,contract.serviceVersion,'lockfile version must match product contract');
 assert.equal(lock.packages[''].version,contract.serviceVersion,'lock root package version must match product contract');

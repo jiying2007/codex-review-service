@@ -1,12 +1,12 @@
 {
-  "serviceVersion": "6.2.2",
+  "serviceVersion": "6.3.0",
   "databaseSchemaVersion": 6,
   "configSchemaVersion": 3,
   "policySchemaVersion": 3,
   "reviewReceiptVersion": 4,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "d06383ecf58b8153ddbd9d0b26a4f83b6e0515c2",
+  "safeCoreCommit": "10393a0035ce5168b3d0e88822af0d74fe85ec6c",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
   "supportedNodeMajors": [
@@ -18,11 +18,15 @@
   "modernGitLabProfileMinimumVersion": "15.7.0",
   "standardWebhookMinimumGitLabVersion": "19.1.0",
   "recommendedGitLabPolicy": "vendor-supported",
-  "qualityPlatformVersion": 2,
+  "qualityPlatformVersion": 3,
   "reviewProfileVersion": 1,
   "profilePackVersion": 1,
   "impactEvidenceVersion": 2,
   "testImpactVersion": 1,
   "analyzerFindingVersion": 1,
-  "analyzerAdapterVersion": 1
+  "analyzerAdapterVersion": 1,
+  "productContractVersion": 1,
+  "productId": "codex-review-service",
+  "productVersion": "6.3.0",
+  "safeCoreVersion": "4.9.0"
 }

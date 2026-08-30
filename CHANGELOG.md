@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.3.0
+
+- Adopt immutable Safe Core v4.9.0 and Product Contract v1 with Atomic Family/Manifest v3 compatibility.
+- Add bounded provider/model token-estimator calibration using actual input-token telemetry without persisting prompt/source text.
+- Export current OpenTelemetry GenAI client operation-duration and token-usage metrics while preserving existing Prometheus counters.
+- Harden analyzer ingestion with deterministic seeded fuzz/property coverage and normalized fail-closed SARIF format errors.
+- Document SLSA v1.2 Build provenance alignment; no SCM authority or review semantics are expanded.
+
 ## 6.2.2
 
 - Maintenance-only Family release on immutable Codex Safe Core v4.8.1; product behavior and protocol/schema contracts are unchanged.
