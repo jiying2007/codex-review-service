@@ -1,0 +1,29 @@
+name: Prepare Service v6.2.2 once
+on:
+  push:
+    branches: [release-v6.2.2-core-v4.8.1]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: '22.22.2'
+      - name: Prepare release metadata
+        run: |
+          set -euo pipefail
+          node scripts/release.js prepare 6.2.2
+          node -e "const fs=require('fs');let s=fs.readFileSync('CHANGELOG.md','utf8');s=s.replace('- Release prepared. Replace this line with final release notes before merge.','- Maintenance-only Family release on immutable Codex Safe Core v4.8.1; product behavior and protocol/schema contracts are unchanged.');fs.writeFileSync('CHANGELOG.md',s)"
+          git update-index --add --cacheinfo 160000,d06383ecf58b8153ddbd9d0b26a4f83b6e0515c2,src/codex-safe-core
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json product-contract.json CHANGELOG.md
+          git diff --cached --check
+          git commit -m 'chore(release): prepare Service v6.2.2 metadata'
+          git push origin HEAD:release-v6.2.2-core-v4.8.1
