@@ -12,7 +12,7 @@ jobs:
         with:
           ref: repin-core-v4.9.3
           persist-credentials: true
-      - name: Repin exact Core, regenerate docs and remove one-shot workflow
+      - name: Repin ordinary files and exact Core gitlink
         env:
           OLD_SHA: f43505e9e34b8da1170aafc72673569183137b04
           NEW_SHA: 2011591e76cf73c0890b702a5bcd3499de91bbbc
@@ -21,19 +21,14 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const fs=require('fs'); const old=process.env.OLD_SHA, neu=process.env.NEW_SHA;
-          for(const p of ['.codex-safe.example.json','.github/workflows/family-release-guard.yml']){
-            let s=fs.readFileSync(p,'utf8').replaceAll(old,neu); fs.writeFileSync(p,s);
-          }
+          let s=fs.readFileSync('.codex-safe.example.json','utf8').replaceAll(old,neu); fs.writeFileSync('.codex-safe.example.json',s);
           const p='product-contract.json', j=JSON.parse(fs.readFileSync(p)); j.safeCoreVersion='4.9.3'; j.safeCoreCommit=neu; fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');
           NODE
           git update-index --cacheinfo 160000,$NEW_SHA,src/codex-safe-core
-          git checkout $NEW_SHA -- /dev/null 2>/dev/null || true
           git submodule update --init src/codex-safe-core
           node scripts/generate-contract-docs.js
-          rm .github/workflows/repin-core-v4.9.3-once.yml
           git config user.name jiying2007
           git config user.email 33591504+jiying2007@users.noreply.github.com
-          git add .codex-safe.example.json .github/workflows/family-release-guard.yml README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md product-contract.json .github/workflows/repin-core-v4.9.3-once.yml
-          git add -u src/codex-safe-core
+          git add .codex-safe.example.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md product-contract.json
           git commit -m 'chore(family): repin Review Service to Core v4.9.3'
           git push origin HEAD:repin-core-v4.9.3
