@@ -50,4 +50,3 @@ GitLab server upgrades remain an independent infrastructure lifecycle. Follow Gi
 ## Flow Tracking hooks
 
 When `flowTracking.enabled=true`, enable only the GitLab hooks required by the configured families: Pipeline events for Pipeline Tracking, Tag Push events for Tag Tracking, and Push events for Branch create/delete Tracking. Flow events reuse the same authenticated webhook endpoint, allowlist and durable dedupe path. They never invoke Codex.
-
