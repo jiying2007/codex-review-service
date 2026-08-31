@@ -41,4 +41,3 @@ npm run admin -- retry-notification <id>
 ## GitLab Flow 事件
 
 Config Schema 4 可以通过同一 durable outbox 路由确定性的 `gitlab.pipeline.*`、`gitlab.mr.*`、`gitlab.tag.*`、`gitlab.branch.*` 事件。事件采集由 `flowTracking` 控制，投递仍由 `notifications.routes[].events` 控制；Flow 卡片完全由本地 formatter 生成，Codex Token 消耗为 0。详见 `FLOW_TRACKING.zh-CN.md`。
-
