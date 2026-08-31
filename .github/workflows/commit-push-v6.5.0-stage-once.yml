@@ -60,6 +60,17 @@ jobs:
               lines=p.read_text().splitlines()
               lines=[line for line in lines if line.strip() not in bad_lines]
               p.write_text('\n'.join(lines)+'\n')
+          p=Path('CHANGELOG.md')
+          s=p.read_text()
+          if '## 6.5.0' not in s:
+              entry="""## 6.5.0
+
+- Add opt-in ordinary GitLab Push/Commit tracking with ref/exclusion/user filters, bounded aggregate commit details, deterministic routing, durable dedupe, and zero Codex token usage.
+- Keep Branch create/delete tracking separate so Push Hook lifecycle events are never double-notified.
+- Preserve Database Schema 7, Config Schema 4, Core v4.9.6, and GitLab 14.6.1/15.7/19.1 compatibility boundaries.
+
+"""
+              p.write_text(entry+s)
           PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Focused commit push tests
