@@ -13,10 +13,10 @@
 - Service：**6.5.0**
 - Database Schema：**7**
 - Config Schema：**4**
-- Policy Schema：**3**
+- Policy Schema：**4**
 - Review Receipt：**4**
 - Safe Contract：**2**
-- Safe Core：精确提交 `43e818dc9ae91051f55374a9f9a47b9df6420cd6`
+- Safe Core：精确提交 `57440a00030941020d5c3e9e01ced3c06062f42e`
 - Quality Platform：**3**
 - Review Profile：**1**
 - Profile Pack：**1**
