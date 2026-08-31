@@ -23,6 +23,19 @@ jobs:
         with:
           node-version: 22.22.2
           cache: npm
+      - name: Normalize patch harness literal
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/commit-push-v6.5.0-patch.js')
+          s=p.read_text()
+          old='^${}'
+          new='^\\${}'
+          if old not in s:
+              raise SystemExit('expected literal not found')
+          p.write_text(s.replace(old,new,1))
+          PY
       - name: Apply deterministic v6.5.0 patch
         run: node scripts/commit-push-v6.5.0-patch.js
       - run: npm ci --ignore-scripts --no-audit --no-fund
