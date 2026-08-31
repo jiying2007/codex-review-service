@@ -45,16 +45,21 @@ jobs:
           from pathlib import Path
           for name in ['src/flow-tracking.js','src/notification.js']:
               p=Path(name)
-              s=p.read_text().replace('\\`','`').replace('\\${','${')
+              s=p.read_text()
+              while '\\`' in s:
+                  s=s.replace('\\`','`')
+              while '\\${' in s:
+                  s=s.replace('\\${','${')
               p.write_text(s)
-          fixes={
-            'test/notification.test.js': "test('commit push cards aggregate bounded commit details safely'\n\n",
-            'test/flow-http.test.js': "test('authenticated ordinary Push Hook\n\n",
+          bad_lines={
+            "test('commit push cards aggregate bounded commit details safely'",
+            "test('authenticated ordinary Push Hook",
           }
-          for name,bad in fixes.items():
-              p=Path(name); s=p.read_text()
-              if bad in s: s=s.replace(bad,'',1)
-              p.write_text(s)
+          for name in ['test/notification.test.js','test/flow-http.test.js']:
+              p=Path(name)
+              lines=p.read_text().splitlines()
+              lines=[line for line in lines if line.strip() not in bad_lines]
+              p.write_text('\n'.join(lines)+'\n')
           PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Focused commit push tests
