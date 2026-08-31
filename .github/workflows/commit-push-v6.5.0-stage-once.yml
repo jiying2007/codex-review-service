@@ -64,9 +64,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Focused commit push tests
         run: node --test test/flow-tracking.test.js test/flow-http.test.js test/config.test.js test/notification.test.js test/flow-db.test.js
-      - run: npm run check
-      - run: git diff --check
-      - name: Commit validated product files
+      - name: Form local candidate commit
         shell: bash
         run: |
           set -euo pipefail
@@ -81,4 +79,7 @@ jobs:
             docs/FLOW_TRACKING.md docs/FLOW_TRACKING.zh-CN.md docs/NOTIFICATIONS.md docs/NOTIFICATIONS.zh-CN.md \
             docs/GITLAB_SETUP.md docs/GITLAB_SETUP.zh-CN.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md
           git commit -m 'feat(service): add configurable ordinary push tracking in v6.5.0'
-          git push origin HEAD:feat-commit-push-v6.5.0
+      - run: npm run check
+      - run: git diff --check HEAD^ HEAD
+      - name: Push validated candidate
+        run: git push origin HEAD:feat-commit-push-v6.5.0
