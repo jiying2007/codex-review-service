@@ -1,0 +1,53 @@
+name: Finalize atomic v6.4.0 flow tracking once
+on:
+  push:
+permissions:
+  contents: write
+jobs:
+  finalize:
+    if: github.ref == 'refs/heads/feat-flow-tracking-v6.4.0'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: 24.19.0
+      - name: Make transition and outbox persistence atomic
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          def rep(path,old,new):
+              p=Path(path); s=p.read_text()
+              if old not in s: raise SystemExit(f'missing marker in {path}: {old[:120]}')
+              p.write_text(s.replace(old,new,1))
+          p='src/db.js'
+          old="""  transitionFlowState({projectId,flowType,externalId,ref='',status,deliveryIdentity=''}){const pid=Number(projectId),type=String(flowType||''),external=String(externalId||''),next=String(status||''),now=new Date().toISOString();if(!Number.isInteger(pid)||pid<=0||!type||!external||!next){const error=new Error('Flow state identity is invalid');error.code='EFLOWSTATE';throw error;}return this.withTransaction(()=>{const row=this.db.prepare('SELECT * FROM flow_state WHERE project_id=? AND flow_type=? AND external_id=?').get(pid,type,external);if(!row){this.db.prepare('INSERT INTO flow_state(project_id,flow_type,external_id,ref,previous_status,current_status,revision,delivery_identity,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(pid,type,external,String(ref||''),'',next,1,String(deliveryIdentity||''),now);return{changed:true,previousStatus:'',revision:1};}if(row.current_status===next){this.db.prepare('UPDATE flow_state SET ref=?,delivery_identity=?,updated_at=? WHERE project_id=? AND flow_type=? AND external_id=?').run(String(ref||''),String(deliveryIdentity||''),now,pid,type,external);return{changed:false,previousStatus:next,revision:Number(row.revision)};}const revision=Number(row.revision)+1;this.db.prepare('UPDATE flow_state SET ref=?,previous_status=current_status,current_status=?,revision=?,delivery_identity=?,updated_at=? WHERE project_id=? AND flow_type=? AND external_id=?').run(String(ref||''),next,revision,String(deliveryIdentity||''),now,pid,type,external);return{changed:true,previousStatus:String(row.current_status||''),revision};});}\n"""
+          new="""  transitionFlowState({projectId,flowType,externalId,ref='',status,deliveryIdentity=''},actionFactory=null){const pid=Number(projectId),type=String(flowType||''),external=String(externalId||''),next=String(status||''),now=new Date().toISOString();if(!Number.isInteger(pid)||pid<=0||!type||!external||!next){const error=new Error('Flow state identity is invalid');error.code='EFLOWSTATE';throw error;}return this.withTransaction(()=>{const row=this.db.prepare('SELECT * FROM flow_state WHERE project_id=? AND flow_type=? AND external_id=?').get(pid,type,external),finish=transition=>{if(!transition.changed||typeof actionFactory!=='function')return transition;const actions=actionFactory(Object.freeze({...transition}))||[],insert=this.db.prepare(\"INSERT OR IGNORE INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(NULL,?,?,?,?,?,?,?,?,'pending',?,?)\");for(const action of actions)insert.run(action.payload?.projectId||0,action.payload?.mrIid||0,action.routeName,action.provider,action.secretRef,action.eventType,action.dedupeKey,json(action.payload),now,now);return{...transition,notificationCount:actions.length};};if(!row){this.db.prepare('INSERT INTO flow_state(project_id,flow_type,external_id,ref,previous_status,current_status,revision,delivery_identity,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(pid,type,external,String(ref||''),'',next,1,String(deliveryIdentity||''),now);return finish({changed:true,previousStatus:'',revision:1});}if(row.current_status===next){this.db.prepare('UPDATE flow_state SET ref=?,delivery_identity=?,updated_at=? WHERE project_id=? AND flow_type=? AND external_id=?').run(String(ref||''),String(deliveryIdentity||''),now,pid,type,external);return{changed:false,previousStatus:next,revision:Number(row.revision)};}const revision=Number(row.revision)+1;this.db.prepare('UPDATE flow_state SET ref=?,previous_status=current_status,current_status=?,revision=?,delivery_identity=?,updated_at=? WHERE project_id=? AND flow_type=? AND external_id=?').run(String(ref||''),next,revision,String(deliveryIdentity||''),now,pid,type,external);return finish({changed:true,previousStatus:String(row.current_status||''),revision});});}\n"""
+          rep(p,old,new)
+          p='src/flow-tracking.js'
+          old="""  handle(payload,headers,webhookId){const flow=normalizeFlowEvent(payload,headers,this.config);if(!flow||!flow.projectId||!this.config.gitlabProjectAllowlist?.has(Number(flow.projectId)))return{status:'ignored'};const transition=this.store.transitionFlowState({projectId:flow.projectId,flowType:flow.kind,externalId:flow.externalId,ref:flow.ref,status:flow.state,deliveryIdentity:webhookId});if(!transition.changed)return{status:'flow_duplicate'};if(!flow.eventType)return{status:'tracked'};const event=notificationEvent(flow,transition.previousStatus),runKey=`flow:${flow.projectId}:${flow.kind}:${flow.externalId}:${transition.revision}`,actions=this.planNotificationActions(this.config,event,runKey);for(const action of actions)this.store.enqueueNotification(action);this.logger.info?.({event:'gitlab_flow_transition',projectId:flow.projectId,kind:flow.kind,externalId:flow.externalId,previousStatus:transition.previousStatus||null,status:flow.state,eventType:flow.eventType,notifications:actions.length});return{status:actions.length?'notified':'tracked',eventType:flow.eventType,notifications:actions.length};}\n"""
+          new="""  handle(payload,headers,webhookId){const flow=normalizeFlowEvent(payload,headers,this.config);if(!flow||!flow.projectId||!this.config.gitlabProjectAllowlist?.has(Number(flow.projectId)))return{status:'ignored'};let planned=[];const transition=this.store.transitionFlowState({projectId:flow.projectId,flowType:flow.kind,externalId:flow.externalId,ref:flow.ref,status:flow.state,deliveryIdentity:webhookId},state=>{if(!flow.eventType)return[];const event=notificationEvent(flow,state.previousStatus),runKey=`flow:${flow.projectId}:${flow.kind}:${flow.externalId}:${state.revision}`;planned=this.planNotificationActions(this.config,event,runKey);return planned;});if(!transition.changed)return{status:'flow_duplicate'};if(!flow.eventType)return{status:'tracked'};const notifications=Number(transition.notificationCount??planned.length);this.logger.info?.({event:'gitlab_flow_transition',projectId:flow.projectId,kind:flow.kind,externalId:flow.externalId,previousStatus:transition.previousStatus||null,status:flow.state,eventType:flow.eventType,notifications});return{status:notifications?'notified':'tracked',eventType:flow.eventType,notifications};}\n"""
+          rep(p,old,new)
+          p='test/flow-tracking.test.js'
+          old="""const transitions=[],notifications=[],store={transitionFlowState(input){transitions.push(input);if(input.status==='running')return{changed:true,previousStatus:'',revision:1};if(input.status==='failed')return{changed:true,previousStatus:'running',revision:2};return{changed:false,previousStatus:input.status,revision:2};},enqueueNotification(action){notifications.push(action);}};const plan=(cfg,event,key)=>event.type?[{routeName:'ci',provider:'feishu',secretRef:'ci',eventType:event.type,dedupeKey:key,payload:event}]:[];"""
+          new="""const transitions=[],notifications=[],store={transitionFlowState(input,factory){transitions.push(input);const state=input.status==='running'?{changed:true,previousStatus:'',revision:1}:input.status==='failed'?{changed:true,previousStatus:'running',revision:2}:{changed:false,previousStatus:input.status,revision:2};if(state.changed&&factory){const actions=factory(state)||[];notifications.push(...actions);return{...state,notificationCount:actions.length};}return state;}};const plan=(cfg,event,key)=>event.type?[{routeName:'ci',provider:'feishu',secretRef:'ci',eventType:event.type,dedupeKey:key,payload:event}]:[];"""
+          rep(p,old,new)
+          p='test/flow-db.test.js'
+          s=Path(p).read_text()
+          addition="""\ntest('flow transition and notification outbox roll back atomically',()=>{const store=new Store(':memory:');try{const circular={};circular.self=circular;assert.throws(()=>store.transitionFlowState({projectId:2,flowType:'pipeline',externalId:'10',ref:'main',status:'failed',deliveryIdentity:'x'},()=>[{routeName:'ci',provider:'feishu',secretRef:'ci',eventType:'gitlab.pipeline.failed',dedupeKey:'flow:2:pipeline:10:1',payload:circular}]));assert.equal(store.db.prepare(\"SELECT COUNT(*) count FROM flow_state WHERE project_id=2\").get().count,0);assert.equal(store.notificationDepth(),0);const result=store.transitionFlowState({projectId:2,flowType:'pipeline',externalId:'10',ref:'main',status:'failed',deliveryIdentity:'y'},state=>[{routeName:'ci',provider:'feishu',secretRef:'ci',eventType:'gitlab.pipeline.failed',dedupeKey:`flow:2:pipeline:10:${state.revision}`,payload:{type:'gitlab.pipeline.failed',projectId:2}}]);assert.equal(result.changed,true);assert.equal(result.notificationCount,1);assert.equal(store.notificationDepth(),1);}finally{store.close();}});\n"""
+          if 'roll back atomically' not in s: Path(p).write_text(s+addition)
+          PY
+          node --test test/flow-tracking.test.js test/flow-db.test.js test/notification.test.js test/http.test.js test/db.test.js test/db-migrations.test.js test/config.test.js
+          npm run check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/db.js src/flow-tracking.js test/flow-tracking.test.js test/flow-db.test.js
+          if ! git diff --cached --quiet; then
+            git commit -m "fix(service): make flow notifications crash-consistent"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
