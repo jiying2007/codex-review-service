@@ -2,15 +2,15 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 6.4.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、**Config Schema 3**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 6.4.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 6、**Config Schema 4**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
-## Config Schema 3 硬切边界
+## Config Schema 4 硬切边界
 
-Service 6.4.0 将质量配置硬切到 Config Schema 3。Runtime 不翻译 Config Schema 2；升级前必须重写配置，并删除已退役的 `review.sarifFiles`。
+Service 6.4.0 将质量配置硬切到 Config Schema 4。Runtime 不翻译 Config Schema 2；升级前必须重写配置，并删除已退役的 `review.sarifFiles`。
 
 新的质量入口：
 
@@ -84,7 +84,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 3 JSON。
+直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 4 JSON。
 
 ## Doctor Preflight
 
@@ -170,7 +170,7 @@ npm run admin -- drain 120
 1. 阅读 Release Notes 和 rollback boundary。
 2. 创建并验证 backup。
 3. drain durable work。
-4. 重写 Config Schema 3。
+4. 重写 Config Schema 4。
 5. 验证新 tgz/OCI digest/provenance。
 6. 安装精确 Release Artifact。
 7. 流量前运行 Doctor。

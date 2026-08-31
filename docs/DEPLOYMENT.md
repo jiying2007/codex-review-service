@@ -2,15 +2,15 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 6.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and **Config Schema 3**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 6.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and **Config Schema 4**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
-## Config Schema 3 breaking boundary
+## Config Schema 4 breaking boundary
 
-Service 6.4.0 hard-cuts the quality configuration to Config Schema 3. Config Schema 2 is not translated at runtime. Before rollout, rewrite the configuration and remove the retired `review.sarifFiles` field.
+Service 6.4.0 hard-cuts the quality configuration to Config Schema 4. Config Schema 2 is not translated at runtime. Before rollout, rewrite the configuration and remove the retired `review.sarifFiles` field.
 
 The quality surface is now:
 
@@ -84,7 +84,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 3 JSON.
+Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 4 JSON.
 
 ## Doctor preflight
 
@@ -170,7 +170,7 @@ Upgrade sequence:
 1. Read release notes and rollback boundary.
 2. Create and verify backup.
 3. Drain durable work.
-4. Rewrite Config Schema 3.
+4. Rewrite Config Schema 4.
 5. Verify new tgz/OCI digest and provenance.
 6. Install the exact release artifact.
 7. Run Doctor before traffic.

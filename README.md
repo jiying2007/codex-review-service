@@ -69,7 +69,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 
 For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 3`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 4`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -193,7 +193,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 3
+/etc/codex-review/config.json      non-secret Config Schema 4
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```

@@ -4,7 +4,7 @@
 
 Codex Review Service **6.2.2** owns production operations while shared safety, review-profile, Test Impact and diagnosis primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 6, Config Schema 3, Policy Schema 3, Review Receipt 4, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 6, Config Schema 4, Policy Schema 3, Review Receipt 4, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -14,9 +14,9 @@ One Service instance is one administrative/security **trust domain**. Projects c
 
 ## Configuration boundary
 
-There is one non-secret **Config Schema 3** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
+There is one non-secret **Config Schema 4** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
 
-Config Schema 3 removes the retired `review.sarifFiles` surface. Analyzer evidence is configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 2 is not translated at runtime.
+Config Schema 4 removes the retired `review.sarifFiles` surface. Analyzer evidence is configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 2 is not translated at runtime.
 
 Secrets are never stored in JSON or SQLite. Production should use protected `_FILE` inputs such as `GITLAB_API_TOKEN_FILE`, `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` and `OPENAI_API_KEY_FILE`. Direct and file forms are mutually exclusive.
 

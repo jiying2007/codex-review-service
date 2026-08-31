@@ -69,7 +69,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 
 OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
 
-直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 3`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
+直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 4`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
 
 ```bash
 cd /opt/codex-review-service
