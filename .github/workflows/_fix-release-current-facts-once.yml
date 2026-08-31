@@ -1,0 +1,38 @@
+name: Fix Service 6.5.1 Current Facts Once
+on:
+  push:
+    branches: [release/family-core-4.10.1]
+    paths: [.github/workflows/_fix-release-current-facts-once.yml]
+permissions: { contents: write }
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: release/family-core-4.10.1
+      - name: Align current deployment and test labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          core_old='43e818dc9ae91051f55374a9f9a47b9df6420cd6'
+          core_new='76418b80533c644e3ab01045290cd3cdd355622c'
+          p=Path('deploy/docker/compose.yaml'); s=p.read_text(); old='codex-review-service:6.5.0}'; assert old in s; p.write_text(s.replace(old,'codex-review-service:6.5.1}',1))
+          for name in ['docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md']:
+              p=Path(name); s=p.read_text();
+              assert 'Codex Review Service 6.5.0' in s
+              assert core_old in s
+              s=s.replace('Codex Review Service 6.5.0','Codex Review Service 6.5.1',1).replace(core_old,core_new,1)
+              p.write_text(s)
+          for p in Path('test').glob('*.test.js'):
+              s=p.read_text()
+              if 'Policy v3' in s:
+                  p.write_text(s.replace('Policy v3','Policy v4'))
+          PY
+          git add deploy/docker/compose.yaml docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md test
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'docs: align Service 6.5.1 deployment facts'
+          git push origin HEAD:release/family-core-4.10.1
