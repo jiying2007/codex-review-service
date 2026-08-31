@@ -10,10 +10,10 @@ Codex Review Service **6.5.0** owns production operations and GitLab compatibili
 Service 6.5.0
 DB Schema 7
 Config Schema 4
-Policy Schema 3
+Policy Schema 4
 Review Receipt 4
 Safe Contract 2
-Safe Core 43e818dc9ae91051f55374a9f9a47b9df6420cd6
+Safe Core 57440a00030941020d5c3e9e01ced3c06062f42e
 Quality Platform 3
 Review Profile 1
 Profile Pack 1
@@ -31,7 +31,7 @@ GitLab recommendation: vendor-supported release
 
 Service-owned responsibilities: GitLab provider semantics/capability selection, immutable snapshot acquisition, CI analyzer artifact acquisition/adapters, Test Impact candidate acquisition, SQLite durability, Review Queue, Publication Outbox, Notification Outbox, operational telemetry, Admin/DR and deployment/release artifacts.
 
-Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 3, Review Evidence chunking, deterministic Review Rules, Review Profile Packs, Analyzer Finding normalization, Test Impact ranking/evidence and Review Receipt 4.
+Safe Core-owned responsibilities: process execution, Codex capability contract, Policy Schema 4, Review Evidence chunking, deterministic Review Rules, Review Profile Packs, Analyzer Finding normalization, Test Impact ranking/evidence and Review Receipt 4.
 
 IM, Docker, Admin, GitLab version/profile logic, CI artifact retrieval and deployment concerns must not be added to Safe Core. The Service never executes repository-defined analyzer commands and Test Impact never executes tests.
 
