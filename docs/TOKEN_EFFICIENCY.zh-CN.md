@@ -45,4 +45,3 @@ Core v4.9 从保守的 2 UTF-8 bytes/token 开始，只有积累足够真实样�
 ## Flow Tracking
 
 Flow Tracking 只进行确定性的 Webhook、状态投影和通知处理，绝不调用 Codex，因此模型 Token 成本严格为 0。
-
