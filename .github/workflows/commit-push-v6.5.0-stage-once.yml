@@ -38,6 +38,24 @@ jobs:
           PY
       - name: Apply deterministic v6.5.0 patch
         run: node scripts/commit-push-v6.5.0-patch.js
+      - name: Normalize generated candidate text
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['src/flow-tracking.js','src/notification.js']:
+              p=Path(name)
+              s=p.read_text().replace('\\`','`').replace('\\${','${')
+              p.write_text(s)
+          fixes={
+            'test/notification.test.js': "test('commit push cards aggregate bounded commit details safely'\n\n",
+            'test/flow-http.test.js': "test('authenticated ordinary Push Hook\n\n",
+          }
+          for name,bad in fixes.items():
+              p=Path(name); s=p.read_text()
+              if bad in s: s=s.replace(bad,'',1)
+              p.write_text(s)
+          PY
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Focused commit push tests
         run: node --test test/flow-tracking.test.js test/flow-http.test.js test/config.test.js test/notification.test.js test/flow-db.test.js
