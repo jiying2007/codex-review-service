@@ -13,7 +13,7 @@ Config Schema 4
 Policy Schema 4
 Review Receipt 4
 Safe Contract 2
-Safe Core 57440a00030941020d5c3e9e01ced3c06062f42e
+Safe Core 76418b80533c644e3ab01045290cd3cdd355622c
 Quality Platform 3
 Review Profile 1
 Profile Pack 1
