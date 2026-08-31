@@ -1,0 +1,56 @@
+name: Fix commit push exclusion once
+
+on:
+  push:
+    branches:
+      - feat-commit-push-v6.5.0
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat-commit-push-v6.5.0
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - name: Patch empty exclusion semantics and regression test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/flow-tracking.js')
+          s=p.read_text()
+          old="if(!matches(branch,config.refs)||matches(branch,config.excludeRefs))return null;"
+          new="if(!matches(branch,config.refs)||(config.excludeRefs?.length&&matches(branch,config.excludeRefs)))return null;"
+          if old not in s:
+              raise SystemExit('commitPush exclusion expression not found')
+          p.write_text(s.replace(old,new,1))
+          p=Path('test/flow-tracking.test.js')
+          s=p.read_text()
+          marker="test('default empty commit push exclusions still allow configured refs'"
+          if marker not in s:
+              s += "\ntest('default empty commit push exclusions still allow configured refs',()=>{const c=config();c.flowCommitPush={...c.flowCommitPush,excludeRefs:[]};const flow=normalizeFlowEvent({object_kind:'push',project:{id:101},ref:'refs/heads/main',before:'a'.repeat(40),after:'b'.repeat(40),user_username:'lei',commits:[]},{},c);assert.equal(flow.eventType,'gitlab.push.committed');});\n"
+          p.write_text(s)
+          PY
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --test test/flow-tracking.test.js test/config.test.js test/notification.test.js test/flow-http.test.js test/flow-db.test.js
+      - run: npm run check
+      - run: git diff --check
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/flow-tracking.js test/flow-tracking.test.js
+          git commit -m 'fix(service): preserve empty commit push exclusion semantics'
+          git push origin HEAD:feat-commit-push-v6.5.0
