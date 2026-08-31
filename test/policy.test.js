@@ -32,19 +32,19 @@ function gitlabWith(document, seen = {}) {
   };
 }
 
-test('target Policy v3 cannot hide globally blocking findings', async () => {
+test('target Policy v4 cannot hide globally blocking findings', async () => {
   await assert.rejects(
-    () => getEffectivePolicy(gitlabWith({ schemaVersion: 3, review: { severityThreshold: 'critical' } }), 1, mr, config),
+    () => getEffectivePolicy(gitlabWith({ schemaVersion: 4, review: { severityThreshold: 'critical' } }), 1, mr, config),
     /cannot hide/
   );
-  const effective = await getEffectivePolicy(gitlabWith({ schemaVersion: 3, review: { severityThreshold: 'medium' } }), 1, mr, config);
+  const effective = await getEffectivePolicy(gitlabWith({ schemaVersion: 4, review: { severityThreshold: 'medium' } }), 1, mr, config);
   assert.equal(effective.severityThreshold, 'medium');
 });
 
-test('effective Policy v3 is pinned to target start SHA and globally capped', async () => {
+test('effective Policy v4 is pinned to target start SHA and globally capped', async () => {
   const seen = {};
   const policy = await getEffectivePolicy(gitlabWith({
-    schemaVersion: 3,
+    schemaVersion: 4,
     review: {
       language: 'en',
       maxDiffBytes: 2 * 1024 * 1024,
@@ -87,6 +87,6 @@ test('effective Policy v3 is pinned to target start SHA and globally capped', as
 test('Policy v2 is rejected with no compatibility parser', async () => {
   await assert.rejects(
     () => getEffectivePolicy(gitlabWith({ schemaVersion: 2, review: { language: 'en' } }), 1, mr, config),
-    /Policy Schema v3/
+    /Policy Schema v4/
   );
 });
