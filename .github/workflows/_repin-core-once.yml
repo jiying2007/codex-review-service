@@ -1,0 +1,32 @@
+name: Repin Service Core 4.10.2 Once
+on:
+  push:
+    branches: [chore/core-4.10.2]
+    paths: [.github/workflows/_repin-core-once.yml]
+permissions: { contents: write }
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: { ref: chore/core-4.10.2, submodules: recursive }
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with: { node-version: '24.19.0' }
+      - shell: bash
+        run: |
+          set -euo pipefail
+          core=cd9788f1280a217fbe6d0beb59682a85a8b82c4d
+          npm version 6.5.2 --no-git-tag-version --ignore-scripts
+          git -C src/codex-safe-core fetch origin "$core"
+          git -C src/codex-safe-core checkout "$core"
+          node <<'NODE'
+          const fs=require('fs');
+          const c=require('./product-contract.json');c.serviceVersion='6.5.2';c.productVersion='6.5.2';c.safeCoreVersion='4.10.2';c.safeCoreCommit='cd9788f1280a217fbe6d0beb59682a85a8b82c4d';fs.writeFileSync('product-contract.json',JSON.stringify(c,null,2)+'\n');
+          for(const f of ['README.md','README.zh-CN.md','docs/ARCHITECTURE.md','docs/PRODUCT_CONTRACT.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','deploy/docker/compose.yaml']){if(fs.existsSync(f)){let t=fs.readFileSync(f,'utf8');t=t.replaceAll('fcbe634b69088bef563440ab5ed32c33e72178db','fcbe634b69088bef563440ab5ed32c33e72178db').replaceAll('76418b80533c644e3ab01045290cd3cdd355622c','cd9788f1280a217fbe6d0beb59682a85a8b82c4d');if(f==='deploy/docker/compose.yaml')t=t.replace('codex-review-service:6.5.1}','codex-review-service:6.5.2}');if(f.includes('README')||f.includes('ARCHITECTURE')||f.includes('PRODUCT_CONTRACT')||f.includes('DEPLOYMENT'))t=t.replaceAll('6.5.1','6.5.2').replaceAll('4.10.1','4.10.2');fs.writeFileSync(f,t);}}
+          let ch=fs.readFileSync('CHANGELOG.md','utf8');if(!ch.includes('## 6.5.2'))ch=ch.replace(/^# Changelog\s*/,'# Changelog\n\n## 6.5.2\n\n- Repin to immutable Safe Core 4.10.2 so Review Service remains on the same Family trust root as the VS Code SCM UI contract release. Runtime behavior, Database Schema 7 and Config Schema 4 are unchanged.\n\n');fs.writeFileSync('CHANGELOG.md',ch);
+          NODE
+          git add package.json package-lock.json product-contract.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md deploy/docker/compose.yaml CHANGELOG.md src/codex-safe-core
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore(family): repin Service to Core 4.10.2'
+          git push origin HEAD:chore/core-4.10.2
