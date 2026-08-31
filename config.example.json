@@ -1,46 +1,239 @@
 {
-  "schemaVersion": 3,
-  "server": {"host":"127.0.0.1","port":8787},
+  "schemaVersion": 4,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
   "gitlab": {
-    "baseUrl":"https://gitlab.example.internal",
-    "projects":[101,102],
-    "groups":[{"id":20,"includeSubgroups":true}],
-    "requestTimeoutMs":30000,"maxPages":200,"statusRetries":5,"requestsPerSecond":20,"circuitFailureThreshold":8,"circuitResetMs":30000,
-    "statusName":"codex-review","statusTargetUrl":"","bindStatusPipeline":true,"botUsername":"codex-review-bot","manualMinAccessLevel":30
-  },
-  "webhook": {"expectedInstance":"https://gitlab.example.internal","requireInstanceHeader":true,"maxSkewSeconds":300,"maxBodyBytes":1048576},
-  "review": {
-    "language":"zh-CN",
-    "timeoutSeconds":180,"jobTimeoutSeconds":900,"maxJobAttempts":3,"retryBaseDelayMs":1000,"retryMaxDelayMs":60000,
-    "maxDiffBytes":1048576,"maxTotalDiffBytes":1048576,"maxReviewChunks":8,"maxFindings":40,"maxPublishedFindings":40,"minConfidence":0.7,"blockingSeverity":"high",
-    "contextEnabled":true,"adaptiveContextEnabled":true,"incrementalReviewEnabled":true,"maxContextBytes":262144,"maxContextFiles":12,"contextLines":20,
-    "blockUnreviewableFiles":false,"skipGeneratedFiles":true,"reviewDraftMergeRequests":false,"debounceMs":3000,
-    "mrMaxTokenBudget":250000,"projectDailyTokenBudget":5000000,"concurrency":2,"pollIntervalMs":1000,"maxQueueDepth":200,
-    "projectPolicyEnabled":true,"projectPolicyMaxBytes":65536,"autoResolveObsolete":true,"triggerOnOpen":true,"triggerOnPush":true,"triggerOnReopen":true,
-    "profile":"general",
-    "analyzerReports":[
-      {"format":"sarif","job":"security-*","path":"reports/security.sarif","required":false,"maxBytes":4194304},
-      {"format":"gitlab-codequality","job":"code_quality","path":"gl-code-quality-report.json","required":false,"maxBytes":4194304},
-      {"format":"junit","job":"test-*","path":"junit.xml","required":false,"maxBytes":4194304},
-      {"format":"cobertura","job":"coverage","path":"coverage/cobertura.xml","required":false,"maxBytes":4194304}
+    "baseUrl": "https://gitlab.example.internal",
+    "projects": [
+      101,
+      102
     ],
-    "testImpactEnabled":true,
-    "testPathPrefixes":["test/","tests/"],
-    "maxTestCandidates":200,
-    "maxRecommendedTests":40,
-    "triggerAssignment":{"mode":"reviewer","userIds":[]}
+    "groups": [
+      {
+        "id": 20,
+        "includeSubgroups": true
+      }
+    ],
+    "requestTimeoutMs": 30000,
+    "maxPages": 200,
+    "statusRetries": 5,
+    "requestsPerSecond": 20,
+    "circuitFailureThreshold": 8,
+    "circuitResetMs": 30000,
+    "statusName": "codex-review",
+    "statusTargetUrl": "",
+    "bindStatusPipeline": true,
+    "botUsername": "codex-review-bot",
+    "manualMinAccessLevel": 30
   },
-  "codex": {"path":"codex","model":"","fastModel":"","home":"","versionPolicy":"warn","allowedVersionPattern":"","providerMode":"openai","providerBaseUrl":"","apiKeyEnv":"OPENAI_API_KEY","connectTimeoutSeconds":15,"requestTimeoutSeconds":180,"streamIdleTimeoutSeconds":60},
-  "runner":{"mode":"inline"},
-  "publication":{"concurrency":2,"pollIntervalMs":500,"maxAttempts":8},
+  "webhook": {
+    "expectedInstance": "https://gitlab.example.internal",
+    "requireInstanceHeader": true,
+    "maxSkewSeconds": 300,
+    "maxBodyBytes": 1048576
+  },
+  "review": {
+    "language": "zh-CN",
+    "timeoutSeconds": 180,
+    "jobTimeoutSeconds": 900,
+    "maxJobAttempts": 3,
+    "retryBaseDelayMs": 1000,
+    "retryMaxDelayMs": 60000,
+    "maxDiffBytes": 1048576,
+    "maxTotalDiffBytes": 1048576,
+    "maxReviewChunks": 8,
+    "maxFindings": 40,
+    "maxPublishedFindings": 40,
+    "minConfidence": 0.7,
+    "blockingSeverity": "high",
+    "contextEnabled": true,
+    "adaptiveContextEnabled": true,
+    "incrementalReviewEnabled": true,
+    "maxContextBytes": 262144,
+    "maxContextFiles": 12,
+    "contextLines": 20,
+    "blockUnreviewableFiles": false,
+    "skipGeneratedFiles": true,
+    "reviewDraftMergeRequests": false,
+    "debounceMs": 3000,
+    "mrMaxTokenBudget": 250000,
+    "projectDailyTokenBudget": 5000000,
+    "concurrency": 2,
+    "pollIntervalMs": 1000,
+    "maxQueueDepth": 200,
+    "projectPolicyEnabled": true,
+    "projectPolicyMaxBytes": 65536,
+    "autoResolveObsolete": true,
+    "triggerOnOpen": true,
+    "triggerOnPush": true,
+    "triggerOnReopen": true,
+    "profile": "general",
+    "analyzerReports": [
+      {
+        "format": "sarif",
+        "job": "security-*",
+        "path": "reports/security.sarif",
+        "required": false,
+        "maxBytes": 4194304
+      },
+      {
+        "format": "gitlab-codequality",
+        "job": "code_quality",
+        "path": "gl-code-quality-report.json",
+        "required": false,
+        "maxBytes": 4194304
+      },
+      {
+        "format": "junit",
+        "job": "test-*",
+        "path": "junit.xml",
+        "required": false,
+        "maxBytes": 4194304
+      },
+      {
+        "format": "cobertura",
+        "job": "coverage",
+        "path": "coverage/cobertura.xml",
+        "required": false,
+        "maxBytes": 4194304
+      }
+    ],
+    "testImpactEnabled": true,
+    "testPathPrefixes": [
+      "test/",
+      "tests/"
+    ],
+    "maxTestCandidates": 200,
+    "maxRecommendedTests": 40,
+    "triggerAssignment": {
+      "mode": "reviewer",
+      "userIds": []
+    }
+  },
+  "flowTracking": {
+    "enabled": false,
+    "pipeline": {
+      "enabled": true,
+      "statuses": [
+        "failed"
+      ],
+      "refs": [
+        "*"
+      ],
+      "sources": [
+        "push",
+        "merge_request_event",
+        "web"
+      ],
+      "jobs": {
+        "mode": "failed-only",
+        "patterns": [
+          "*"
+        ],
+        "maxItems": 10
+      }
+    },
+    "mergeRequest": {
+      "enabled": true,
+      "actions": [
+        "merge"
+      ]
+    },
+    "push": {
+      "enabled": false,
+      "actions": [
+        "delete"
+      ],
+      "patterns": [
+        "*"
+      ]
+    },
+    "tag": {
+      "enabled": true,
+      "actions": [
+        "create"
+      ],
+      "patterns": [
+        "v*"
+      ]
+    }
+  },
+  "codex": {
+    "path": "codex",
+    "model": "",
+    "fastModel": "",
+    "home": "",
+    "versionPolicy": "warn",
+    "allowedVersionPattern": "",
+    "providerMode": "openai",
+    "providerBaseUrl": "",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "connectTimeoutSeconds": 15,
+    "requestTimeoutSeconds": 180,
+    "streamIdleTimeoutSeconds": 60
+  },
+  "runner": {
+    "mode": "inline"
+  },
+  "publication": {
+    "concurrency": 2,
+    "pollIntervalMs": 500,
+    "maxAttempts": 8
+  },
   "notifications": {
-    "enabled":false,"concurrency":2,"pollIntervalMs":500,"maxAttempts":8,"retryBaseDelayMs":5000,"retryMaxDelayMs":1800000,"requestTimeoutMs":10000,"topFindings":3,
-    "events":["review.blocked","review.failed","service.degraded"],
-    "routes":[
-      {"name":"embedded-review","provider":"feishu","secretRef":"embedded","projects":[101,102],"groups":[],"events":["review.blocked","review.failed"]},
-      {"name":"service-alerts","provider":"wecom","secretRef":"service_alerts","projects":[],"groups":[],"events":["service.degraded","service.recovered"]}
+    "enabled": false,
+    "concurrency": 2,
+    "pollIntervalMs": 500,
+    "maxAttempts": 8,
+    "retryBaseDelayMs": 5000,
+    "retryMaxDelayMs": 1800000,
+    "requestTimeoutMs": 10000,
+    "topFindings": 3,
+    "events": [
+      "review.blocked",
+      "review.failed",
+      "service.degraded"
+    ],
+    "routes": [
+      {
+        "name": "embedded-review",
+        "provider": "feishu",
+        "secretRef": "embedded",
+        "projects": [
+          101,
+          102
+        ],
+        "groups": [],
+        "events": [
+          "review.blocked",
+          "review.failed"
+        ]
+      },
+      {
+        "name": "service-alerts",
+        "provider": "wecom",
+        "secretRef": "service_alerts",
+        "projects": [],
+        "groups": [],
+        "events": [
+          "service.degraded",
+          "service.recovered"
+        ]
+      }
     ]
   },
-  "lifecycle":{"dataRetentionDays":30,"webhookRetentionDays":7,"maintenanceIntervalMs":3600000,"reconcileIntervalMs":300000,"readinessCacheMs":5000},
-  "observability":{"otelEndpoint":"","serviceName":"codex-review-service","exportTimeoutMs":3000}
+  "lifecycle": {
+    "dataRetentionDays": 30,
+    "webhookRetentionDays": 7,
+    "maintenanceIntervalMs": 3600000,
+    "reconcileIntervalMs": 300000,
+    "readinessCacheMs": 5000
+  },
+  "observability": {
+    "otelEndpoint": "",
+    "serviceName": "codex-review-service",
+    "exportTimeoutMs": 3000
+  }
 }

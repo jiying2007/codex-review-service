@@ -40,13 +40,13 @@ function fixture() {
   return { dir, file };
 }
 
-test('Schema 5 migrates transactionally to 6 with verified backup and preserved data', () => {
+test('Schema 5 migrates transactionally through 7 with verified backups and preserved data', () => {
   const { dir, file } = fixture();
   const db = new DatabaseSync(file);
   try {
     const result = migrateDatabase(db, file, 5);
     assert.equal(result.to, CURRENT_SCHEMA_VERSION);
-    assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version), 6);
+    assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version), CURRENT_SCHEMA_VERSION);
     assert.equal(db.prepare('SELECT title FROM review_findings WHERE id=1').get().title, 'bad');
     const backupPath = result.applied[0].backupPath;
     assert.ok(fs.existsSync(backupPath));
@@ -55,7 +55,12 @@ test('Schema 5 migrates transactionally to 6 with verified backup and preserved 
     try { assert.equal(backup.prepare('PRAGMA user_version').get().user_version, 5); }
     finally { backup.close(); }
     assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='finding_resolutions'").get().count, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='flow_state'").get().count, 1);
+    assert.deepEqual(result.applied.map(step => [step.from, step.to]), [[5,6],[6,7]]);
     assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=6').get().version, 6);
+    assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=7').get().version, 7);
+    assert.ok(fs.existsSync(result.applied[1].backupPath));
+    assert.equal(verifyMigrationBackup(result.applied[1].backupPath, 6), true);
     assert.equal(integrityCheck(db), true);
   } finally { db.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

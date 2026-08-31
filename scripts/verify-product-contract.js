@@ -49,7 +49,7 @@ assert.equal(standardWebhookCapabilities.webhookReplayWindow,true,'standard webh
 assert.equal(contract.recommendedGitLabPolicy,'vendor-supported','recommended GitLab policy must not pretend the compatibility floor is recommended');
 
 const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md'];
-for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|Schema 4 database|schema 4\b/i,`${file} contains stale Schema 4 product facts`);}
+for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|Database Schema 4|Schema 4 database/i,`${file} contains stale Schema 4 product facts`);}
 const qualityDocs=`${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.md'),'utf8')}\n${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.zh-CN.md'),'utf8')}`;
 for(const term of ['Analyzer Adapter','JUnit','Code Quality','Test Impact','Profile Pack'])assert.match(qualityDocs,new RegExp(term,'i'));
 const docker=fs.readFileSync(path.join(root,'deploy/docker/Dockerfile'),'utf8');

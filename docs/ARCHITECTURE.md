@@ -4,12 +4,12 @@
 
 <!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-Codex Review Service **6.3.1** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **6.4.0** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 6.3.1
-DB Schema 6
-Config Schema 3
+Service 6.4.0
+DB Schema 7
+Config Schema 4
 Policy Schema 3
 Review Receipt 4
 Safe Contract 2
@@ -42,7 +42,7 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └──────── Config Schema 3 ────────────┘
+              └──────── Config Schema 4 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver
@@ -68,7 +68,7 @@ Runtime does not infer root, sudo, or systemd. Docker consumes the same Config S
 
 ## Quality evidence boundary
 
-The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 3 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
+The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 4 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
 
 Finding-like analyzer results are normalized through the Core Analyzer Finding contract and can become changed-line evidence only after exact path/line anchoring. Coverage, SBOM and test metadata remain evidence metadata rather than fabricated source findings.
 
@@ -211,3 +211,7 @@ Production Docker does not rebuild source on target hosts.
 Provider, Project Scope, storage and Runner remain explicit replacement boundaries. Future PostgreSQL/HA or another provider may replace one boundary only after preserving transaction/idempotency/snapshot/recovery contracts.
 
 Do not reintroduce scattered version branches, one-off legacy fallbacks, hidden configuration precedence, deployment-mode guessing, Service concerns in Safe Core, repository-defined analyzer execution, implicit test execution, or ad-hoc database mutation paths. A compatibility profile is a product contract only when centrally selected, fail-closed, documented and permanently tested against a real representative release.
+
+## GitLab Flow Tracking Domain
+
+Authenticated GitLab webhooks are split into two orthogonal consumers: the Review Domain may enqueue Codex review work, while the Flow Tracking Domain only updates `flow_state` and creates deterministic notification actions. The Flow path cannot call Codex, mutate code, retry pipelines, or create MRs. Both paths share webhook authentication/dedupe, project scope and the durable notification outbox.

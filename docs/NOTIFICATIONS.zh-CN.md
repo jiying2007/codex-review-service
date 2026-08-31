@@ -38,3 +38,6 @@ npm run admin -- retry-notification <id>
 事故处理不要删除 `notification_outbox` 行。
 
 通知事件时间统一使用 canonical UTC ISO-8601。对于 Review 通知，卡片时间精确复用已持久化的 Review Receipt v4 `createdAt`，表示实际审查完成时间，而不是 notification outbox 延迟后的投递时间。
+## GitLab Flow 事件
+
+Config Schema 4 可以通过同一 durable outbox 路由确定性的 `gitlab.pipeline.*`、`gitlab.mr.*`、`gitlab.tag.*`、`gitlab.branch.*` 事件。事件采集由 `flowTracking` 控制，投递仍由 `notifications.routes[].events` 控制；Flow 卡片完全由本地 formatter 生成，Codex Token 消耗为 0。详见 `FLOW_TRACKING.zh-CN.md`。

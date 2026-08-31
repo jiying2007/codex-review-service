@@ -2,21 +2,21 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 6.3.1** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and **Config Schema 3**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 6.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 4**. The official Docker image uses canonical Node 24.19.0.
 
-Safe Core is exact-pinned to `bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8`. Do not replace the gitlink or copy another Core runtime into a release package.
+Safe Core is exact-pinned to `43e818dc9ae91051f55374a9f9a47b9df6420cd6`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
-## Config Schema 3 breaking boundary
+## Config Schema 4 breaking boundary
 
-Service 6.3.1 hard-cuts the quality configuration to Config Schema 3. Config Schema 2 is not translated at runtime. Before rollout, rewrite the configuration and remove the retired `review.sarifFiles` field.
+Service 6.4.0 hard-cuts the configuration to Config Schema 4. Config Schema 3 is not translated at runtime. Before rollout, rewrite the configuration and remove retired fields such as `review.sarifFiles`.
 
 The quality surface is now:
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -84,7 +84,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 3 JSON.
+Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 4 JSON.
 
 ## Doctor preflight
 
@@ -93,7 +93,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 6/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 7/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
 
 ## Start and health
 
@@ -116,7 +116,7 @@ Expose trusted HTTPS ingress to:
 https://<review-host>/webhooks/gitlab
 ```
 
-Enable **Merge request events** and **Note events**. Configure the webhook token/signing token according to Doctor's detected capability. Do not enable traffic until Doctor and `/health/ready` pass.
+Enable **Merge request events** and **Note events** for Review. When `flowTracking.enabled=true`, additionally enable only the event families actually configured: **Pipeline events**, **Tag Push events**, and/or **Push events** for Branch create/delete tracking. Configure the webhook token/signing token according to Doctor's detected capability. Do not enable traffic until Doctor and `/health/ready` pass.
 
 ## End-to-end acceptance
 
@@ -132,6 +132,7 @@ For a disposable MR:
 8. Send a duplicate webhook and verify idempotent handling.
 9. Check `/version` and `/health/dependencies`.
 10. If notifications are enabled, verify the deterministic Feishu/WeCom path without changing the Review Verdict.
+11. If Flow Tracking is enabled, verify a subscribed Pipeline/MR/Tag/Branch transition reaches `flow_state` and `notification_outbox` without starting Codex.
 
 ## Docker / Compose deployment
 
@@ -161,16 +162,16 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.3.1 keeps Database Schema 6 but moves Config Schema 2 -> 3 by a documented **configuration hard cut**: rewrite the config before restart. Rollback to a Config Schema 2 release requires restoring its matching configuration file.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.4.0 performs the explicit **Database Schema 6 -> 7** startup migration with pre-migration integrity verification, a mode-0600 verified `VACUUM INTO` backup, one transaction, and post-migration verification. Config Schema **3 -> 4** is a documented configuration hard cut: rewrite the config before restart; there is no runtime translator.
 
-The older Database Schema 5 -> 6 startup migration remains explicit and tested: pre-migration integrity check, mode-0600 verified backup, one transaction, and post-migration integrity/foreign-key verification.
+The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Rollback to a pre-6.4.0 release requires restoring the matching pre-migration Database Schema 6 backup and that release's Config Schema 3 configuration; do not attempt an in-place Schema 7 downgrade.
 
 Upgrade sequence:
 
 1. Read release notes and rollback boundary.
 2. Create and verify backup.
 3. Drain durable work.
-4. Rewrite Config Schema 3.
+4. Rewrite Config Schema 4.
 5. Verify new tgz/OCI digest and provenance.
 6. Install the exact release artifact.
 7. Run Doctor before traffic.

@@ -10,9 +10,9 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **6.3.1**
-- Database Schema: **6**
-- Config Schema: **3**
+- Service: **6.4.0**
+- Database Schema: **7**
+- Config Schema: **4**
 - Policy Schema: **3**
 - Review Receipt: **4**
 - Safe Contract: **2**
@@ -36,7 +36,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.3 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.4 does not change the shared review protocol.
 
 ## Start here
 
@@ -50,7 +50,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-6.3.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-6.4.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -69,7 +69,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 
 For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 3`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 4`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -184,7 +184,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 6 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 7 verification pass.
 
 ## Failure semantics
 
@@ -193,7 +193,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 3
+/etc/codex-review/config.json      non-secret Config Schema 4
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```
@@ -222,3 +222,7 @@ PR/release gates include Node 22.22.2 and 24.19.0 tests, Docker build/smoke, rec
 ## License
 
 MIT
+
+## GitLab Flow Tracking
+
+Optional Config Schema 4 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.

@@ -42,3 +42,6 @@ Use these metrics together with the persisted `review_runs` token columns to com
 ## Online token calibration
 
 Core v4.9 starts from the conservative 2 UTF-8 bytes/token estimate and activates a bounded provider+model EWMA only after enough real samples. The calibration state is ephemeral numeric data only; it never stores prompts or source text and never bypasses configured token budgets.
+## Flow Tracking
+
+Flow Tracking is deterministic webhook/state/notification processing and never invokes Codex. Its model-token cost is exactly zero.

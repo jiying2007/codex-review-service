@@ -5,7 +5,7 @@
 Codex Review Service **6.2.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 6
-- Config Schema 3
+- Config Schema 4
 - Policy Schema 3
 - Review Receipt 4
 - Safe Contract 2 / Safe Core Family v4 exact commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`
@@ -40,7 +40,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 System deployment:
 
 ```text
-/etc/codex-review/config.json        Config Schema 3, non-secret
+/etc/codex-review/config.json        Config Schema 4, non-secret
 /etc/codex-review/secrets/*          protected secret files
 /etc/codex-review-service.env        secret-file references + process selection
 /var/lib/codex-review                SQLite/state
@@ -48,7 +48,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 3 is a hard boundary. It removes `review.sarifFiles` and replaces it with structured `review.analyzerReports`, plus versioned `review.profile` and deterministic Test Impact configuration. Unknown fields and unsupported versions fail closed.
+Config Schema 4 is a hard boundary. It removes `review.sarifFiles` and replaces it with structured `review.analyzerReports`, plus versioned `review.profile` and deterministic Test Impact configuration. Unknown fields and unsupported versions fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -75,7 +75,7 @@ Direct and `_FILE` values are mutually exclusive. Rotate credentials atomically,
 ## Preflight
 
 1. Install/verify the exact release artifact.
-2. Create Config Schema 3.
+2. Create Config Schema 4.
 3. Provision protected secret files.
 4. Run `npm run doctor`; record GitLab version/profile and Codex runtime readiness.
 5. Require `/health/ready` = 200 before enabling webhook traffic.
@@ -188,13 +188,13 @@ From v5.0.0 onward, released DB/Config compatibility is a product contract. Serv
 
 1. create/verify backup;
 2. drain durable work;
-3. rewrite Config Schema 3 and remove `sarifFiles`;
+3. rewrite Config Schema 4 and remove `sarifFiles`;
 4. verify release tgz/OCI digest/provenance;
 5. install exact release;
 6. run Doctor before traffic;
 7. verify health/version/queues.
 
-Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a Config Schema 2 binary against a Config Schema 3 file and assume translation.
+Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a Config Schema 2 binary against a Config Schema 4 file and assume translation.
 
 ## Monitoring and SLO primitives
 

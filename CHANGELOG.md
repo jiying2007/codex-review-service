@@ -1,3 +1,12 @@
+## 6.4.0
+
+- Add opt-in GitLab Flow Tracking for Pipeline terminal states, MR lifecycle, Tag and Branch create/delete events.
+- Add Config Schema 4 with independent flow acquisition filters and existing notification-route delivery filters.
+- Add durable SQLite `flow_state` transition projection and safe Schema 6 -> 7 migration with verified backup.
+- Pipeline job summaries support deterministic failed-only/all/none filtering without sending raw logs or artifacts.
+- Flow Tracking never invokes Codex; model Token cost remains zero.
+- Preserve GitLab 14.6.1 Classic, >=15.7 Modern and >=19.1 Standard HMAC capability boundaries.
+
 # Changelog
 
 ## 6.3.1 - 2026-08-30

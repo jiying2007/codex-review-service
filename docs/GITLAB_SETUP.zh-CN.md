@@ -47,3 +47,6 @@ Doctor 根据已认证的 `/api/v4/version` 自动选择能力。
 生产环境仍应在实际 Self-Managed 实例重复验收，因为权限、Hook、diff limits 与网络策略属于具体部署环境。Classic 环境建议额外准备一个故意触发 overflow 的 MR，确认其结果是 blocked，而不是对不完整 diff 做部分 Review。
 
 GitLab 本体升级与 Review Service 部署是独立生命周期。不要仅为了 Codex Review Service 从旧版本直接跨多个 major 升级 GitLab；GitLab 升级应遵循官方 required upgrade stops 与 background migration 要求。
+## Flow Tracking Hook
+
+当 `flowTracking.enabled=true` 时，只额外开启配置实际需要的 Hook：Pipeline Tracking 开启 Pipeline events，Tag Tracking 开启 Tag Push events，Branch 创建/删除跟踪开启 Push events。Flow 事件继续复用同一个认证 Webhook、allowlist 与 durable dedupe 路径，并且绝不调用 Codex。
