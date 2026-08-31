@@ -6,4 +6,3 @@ SQLite WAL + FULL remains the only shipped backend. `src/storage.js` is the expl
 ## Schema 7
 
 Schema 7 adds `flow_state`, a compact transition projection keyed by project/type/external ID. Migration 6 -> 7 follows the existing integrity-check + verified `VACUUM INTO` backup + transactional DDL process. Old flow state is pruned with normal data retention.
-
