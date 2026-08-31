@@ -36,7 +36,7 @@ async function getEffectivePolicy(gitlab, projectId, mr, config) {
   if (Buffer.byteLength(raw,'utf8')>config.projectPolicyMaxBytes) throw policyError(`${POLICY_FILE} exceeds configured project policy byte limit`);
   let document;
   try { document=parsePolicyDocument(raw); }
-  catch(cause) { throw policyError(`${POLICY_FILE} is not valid Policy Schema v3: ${cause.message}`,cause); }
+  catch(cause) { throw policyError(`${POLICY_FILE} is not valid Policy Schema v4: ${cause.message}`,cause); }
   const review=document.review||{},service=document.reviewService||{};
   if (review.severityThreshold!==undefined && SEVERITY_ORDER[review.severityThreshold]>SEVERITY_ORDER[config.blockingSeverity]) {
     throw policyError(`review.severityThreshold cannot hide globally blocking ${config.blockingSeverity} findings`);
