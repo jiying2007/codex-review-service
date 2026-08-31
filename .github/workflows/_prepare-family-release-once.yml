@@ -1,0 +1,37 @@
+name: Prepare Review Service 6.5.1 Once
+on:
+  push:
+    branches: [release/family-core-4.10.1]
+    paths: [.github/workflows/_prepare-family-release-once.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: release/family-core-4.10.1
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with: { node-version: '24.19.0' }
+      - name: Prepare immutable Family release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm version 6.5.1 --no-git-tag-version --ignore-scripts
+          node <<'NODE'
+          const fs=require('fs');
+          const p=require('./product-contract.json');
+          p.serviceVersion='6.5.1'; p.productVersion='6.5.1';
+          fs.writeFileSync('product-contract.json',JSON.stringify(p,null,2)+'\n');
+          const f='CHANGELOG.md'; let s=fs.readFileSync(f,'utf8');
+          const entry='## 6.5.1\n\n- Publish the already-validated Review Service main line on immutable Safe Core v4.10.1 (`76418b80533c644e3ab01045290cd3cdd355622c`) and Policy Schema v4.\n- Preserve Database Schema 7, Config Schema 4, Review Receipt v4, Safe Contract v2, GitLab capability boundaries, and service runtime behavior.\n\n';
+          fs.writeFileSync(f,entry+s);
+          NODE
+          node scripts/generate-contract-docs.js
+          git add package.json package-lock.json product-contract.json CHANGELOG.md README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore(release): Review Service 6.5.1 on Core 4.10.1'
+          git push origin HEAD:release/family-core-4.10.1
