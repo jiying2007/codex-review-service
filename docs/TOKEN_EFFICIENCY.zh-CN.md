@@ -42,3 +42,7 @@ Prometheus 输出累计 input、cached-input、cache-write-input、output、reas
 ## 在线 Token 校准
 
 Core v4.9 从保守的 2 UTF-8 bytes/token 开始，只有积累足够真实样本后才启用有界 provider+model EWMA。校准状态只保存临时数值，不保存 prompt 或源码，也不能绕过既有 Token Budget。
+## Flow Tracking
+
+Flow Tracking 只进行确定性的 Webhook、状态投影和通知处理，绝不调用 Codex，因此模型 Token 成本严格为 0。
+

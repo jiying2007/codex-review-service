@@ -47,3 +47,7 @@ The repository system matrix runs the complete provider contract against real Gi
 Production acceptance should still be repeated against the actual Self-Managed instance because local permissions, hooks, diff limits and network policy are deployment-specific. For Classic installations, include an overflowed MR fixture and confirm it is blocked rather than partially reviewed.
 
 GitLab server upgrades remain an independent infrastructure lifecycle. Follow GitLab's official required upgrade stops and background migration rules rather than upgrading across several major versions only to satisfy Codex Review Service.
+## Flow Tracking hooks
+
+When `flowTracking.enabled=true`, enable only the GitLab hooks required by the configured families: Pipeline events for Pipeline Tracking, Tag Push events for Tag Tracking, and Push events for Branch create/delete Tracking. Flow events reuse the same authenticated webhook endpoint, allowlist and durable dedupe path. They never invoke Codex.
+

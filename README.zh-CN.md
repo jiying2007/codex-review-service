@@ -10,9 +10,9 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**6.3.1**
-- Database Schema：**6**
-- Config Schema：**3**
+- Service：**6.4.0**
+- Database Schema：**7**
+- Config Schema：**4**
 - Policy Schema：**3**
 - Review Receipt：**4**
 - Safe Contract：**2**
@@ -36,7 +36,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 - **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
 - **Modern profile**（`>=15.7`）：继续使用分页 `/diffs` + `/versions` + `real_size` 证明完整 diff 覆盖。
 
-任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.3 不改变共享 Review 协议。
+任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.4 不改变共享 Review 协议。
 
 ## 适用场景
 
@@ -50,7 +50,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-6.3.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-6.4.0.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -181,3 +181,7 @@ PR/Release 覆盖 Node 22.22.2 / 24.19.0、Docker build/smoke、恢复/备份、
 ## License
 
 MIT
+
+## GitLab 流程跟踪
+
+Config Schema 4 提供默认关闭的 GitLab Flow Tracking，可跟踪 Pipeline 终态、MR 生命周期、Tag 与 Branch 创建/删除，并复用现有 durable notification outbox。整个路径确定性执行且绝不调用 Codex。详见 `docs/FLOW_TRACKING.zh-CN.md`。

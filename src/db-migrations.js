@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
 
 function sqlString(value) { return `'${String(value).replace(/'/g, "''")}'`; }
@@ -94,7 +94,42 @@ function migrate5To6(db, dbPath, hooks = {}) {
   return Object.freeze({ from: 5, to: 6, backupPath });
 }
 
-const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6]]));
+function migrate6To7(db, dbPath, hooks = {}) {
+  integrityCheck(db, 'pre-migration');
+  const backupPath = createBackup(db, dbPath, 6);
+  hooks.afterBackup?.({ backupPath, from: 6, to: 7 });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS flow_state(
+        project_id INTEGER NOT NULL,
+        flow_type TEXT NOT NULL,
+        external_id TEXT NOT NULL,
+        ref TEXT NOT NULL DEFAULT '',
+        previous_status TEXT NOT NULL DEFAULT '',
+        current_status TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        delivery_identity TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(project_id,flow_type,external_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_flow_state_updated ON flow_state(updated_at,project_id,flow_type);
+    `);
+    hooks.afterDdl?.({ backupPath, from: 6, to: 7 });
+    db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)').run(7, new Date().toISOString(), backupPath);
+    db.exec('PRAGMA user_version=7');
+    hooks.beforeCommit?.({ backupPath, from: 6, to: 7 });
+    db.exec('COMMIT');
+  } catch (cause) {
+    try { db.exec('ROLLBACK'); } catch {}
+    const error = new Error(`SQLite schema migration 6 -> 7 failed; original database remains authoritative and backup is ${backupPath}`);
+    error.code = 'EDBMIGRATION'; error.backupPath = backupPath; error.cause = cause; throw error;
+  }
+  integrityCheck(db, 'post-migration');
+  return Object.freeze({ from: 6, to: 7, backupPath });
+}
+
+const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7]]));
 function migrationPlan(fromVersion, toVersion = CURRENT_SCHEMA_VERSION) {
   const plan = [];
   let current = Number(fromVersion);
@@ -132,5 +167,6 @@ module.exports = Object.freeze({
   createBackup,
   migrationPlan,
   migrateDatabase,
-  migrate5To6
+  migrate5To6,
+  migrate6To7
 });

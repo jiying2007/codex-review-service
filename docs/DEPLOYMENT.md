@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 6.3.1** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and **Config Schema 3**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 6.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 6 and **Config Schema 3**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `bc367cf3fbc57d7060bce343fcf4a6d5312f7ab8`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real pro
 
 ## Config Schema 3 breaking boundary
 
-Service 6.3.1 hard-cuts the quality configuration to Config Schema 3. Config Schema 2 is not translated at runtime. Before rollout, rewrite the configuration and remove the retired `review.sarifFiles` field.
+Service 6.4.0 hard-cuts the quality configuration to Config Schema 3. Config Schema 2 is not translated at runtime. Before rollout, rewrite the configuration and remove the retired `review.sarifFiles` field.
 
 The quality surface is now:
 
@@ -161,7 +161,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.3.1 keeps Database Schema 6 but moves Config Schema 2 -> 3 by a documented **configuration hard cut**: rewrite the config before restart. Rollback to a Config Schema 2 release requires restoring its matching configuration file.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.4.0 keeps Database Schema 6 but moves Config Schema 2 -> 3 by a documented **configuration hard cut**: rewrite the config before restart. Rollback to a Config Schema 2 release requires restoring its matching configuration file.
 
 The older Database Schema 5 -> 6 startup migration remains explicit and tested: pre-migration integrity check, mode-0600 verified backup, one transaction, and post-migration integrity/foreign-key verification.
 

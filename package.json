@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "6.3.1",
+  "version": "6.4.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -34,6 +34,8 @@
     "docs/DEPLOYMENT.zh-CN.md",
     "docs/NOTIFICATIONS.md",
     "docs/NOTIFICATIONS.zh-CN.md",
+    "docs/FLOW_TRACKING.md",
+    "docs/FLOW_TRACKING.zh-CN.md",
     "docs/GITLAB_SETUP.md",
     "docs/GITLAB_SETUP.zh-CN.md",
     "docs/TOKEN_EFFICIENCY.md",

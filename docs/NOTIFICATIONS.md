@@ -39,3 +39,7 @@ Do not delete `notification_outbox` rows as an incident workaround.
 
 
 Notification event timestamps are canonical UTC ISO-8601 values and review notifications use the exact persisted Review Receipt time, not delayed delivery time.
+## GitLab Flow events
+
+Config Schema 4 can route deterministic `gitlab.pipeline.*`, `gitlab.mr.*`, `gitlab.tag.*` and `gitlab.branch.*` events through the same durable outbox. Acquisition is controlled by `flowTracking`; delivery remains controlled by `notifications.routes[].events`. Flow cards are local deterministic formatters and consume zero Codex tokens. See `FLOW_TRACKING.md`.
+
