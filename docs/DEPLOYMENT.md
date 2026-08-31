@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 6.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 4**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 6.5.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 4**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `43e818dc9ae91051f55374a9f9a47b9df6420cd6`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real pro
 
 ## Config Schema 4 breaking boundary
 
-Service 6.4.0 hard-cuts the configuration to Config Schema 4. Config Schema 3 is not translated at runtime. Before rollout, rewrite the configuration and remove retired fields such as `review.sarifFiles`.
+Service 6.5.0 hard-cuts the configuration to Config Schema 4. Config Schema 3 is not translated at runtime. Before rollout, rewrite the configuration and remove retired fields such as `review.sarifFiles`.
 
 The quality surface is now:
 
@@ -162,7 +162,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.4.0 performs the explicit **Database Schema 6 -> 7** startup migration with pre-migration integrity verification, a mode-0600 verified `VACUUM INTO` backup, one transaction, and post-migration verification. Config Schema **3 -> 4** is a documented configuration hard cut: rewrite the config before restart; there is no runtime translator.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.5.0 performs the explicit **Database Schema 6 -> 7** startup migration with pre-migration integrity verification, a mode-0600 verified `VACUUM INTO` backup, one transaction, and post-migration verification. Config Schema **3 -> 4** is a documented configuration hard cut: rewrite the config before restart; there is no runtime translator.
 
 The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Rollback to a pre-6.4.0 release requires restoring the matching pre-migration Database Schema 6 backup and that release's Config Schema 3 configuration; do not attempt an in-place Schema 7 downgrade.
 

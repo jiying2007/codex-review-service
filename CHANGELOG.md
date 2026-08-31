@@ -1,3 +1,9 @@
+## 6.5.0
+
+- Add opt-in ordinary GitLab Push/Commit tracking with ref/exclusion/user filters, bounded aggregate commit details, deterministic routing, durable dedupe, and zero Codex token usage.
+- Keep Branch create/delete tracking separate so Push Hook lifecycle events are never double-notified.
+- Preserve Database Schema 7, Config Schema 4, Core v4.9.6, and GitLab 14.6.1/15.7/19.1 compatibility boundaries.
+
 ## 6.4.0
 
 - Add opt-in GitLab Flow Tracking for Pipeline terminal states, MR lifecycle, Tag and Branch create/delete events.

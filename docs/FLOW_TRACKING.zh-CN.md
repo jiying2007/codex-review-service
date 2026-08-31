@@ -28,3 +28,9 @@ Pipeline 的非终态可以更新状态投影但不通知。终态卡片只包�
 ## GitLab Hook
 
 Review 继续开启 Merge Request + Note events。使用 Pipeline Tracking 时额外开启 Pipeline events；Tag Tracking 开启 Tag Push events；Branch 创建/删除跟踪开启 Push events。所有事件继续复用同一 Classic Token（<19.1）或 Standard HMAC（>=19.1）认证入口以及 Project/Group allowlist。
+
+## 普通 Commit Push 跟踪
+
+Service 6.5.0 新增可选的 `flowTracking.commitPush`，用于普通分支更新通知。默认关闭，并继续坚持 Webhook-only：不会为了通知额外读取 diff、commit 或仓库 API，Codex Token 成本仍为 0。可配置 `refs`、`excludeRefs`、`ignoreUsers`、`maxCommits`、`includeMergeCommits`、`includeCommitMessage`；默认只关注 `main`、`release/*`、`hotfix/*`。一次 Push Hook 最多产生一条聚合的 `gitlab.push.committed` 事件，Commit 明细有界；Branch create/delete 继续由 `flowTracking.push` 负责，不会重复分类。
+
+从独立 GitLab 通知机器人迁移时，先开启 GitLab Push events，把 `gitlab.push.committed` 加入对应 `notifications.routes[].events`，验证目标群通知后再关闭旧 Bot Webhook 和旧服务。

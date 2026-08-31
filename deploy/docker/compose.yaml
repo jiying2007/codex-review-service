@@ -1,6 +1,6 @@
 services:
   codex-review-service:
-    image: ${CODEX_REVIEW_IMAGE:-ghcr.io/jiying2007/codex-review-service:6.4.0}
+    image: ${CODEX_REVIEW_IMAGE:-ghcr.io/jiying2007/codex-review-service:6.5.0}
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -30,16 +30,21 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"
-          memory: 8G
-        reservations:
-          cpus: "1.0"
-          memory: 1G
+          cpus: "4"
+          memory: 4G
+    networks:
+      - codex-review
+
 secrets:
   gitlab_api_token:
-    file: ./secrets/gitlab_api_token
+    file: ${GITLAB_API_TOKEN_SECRET_FILE:-./secrets/gitlab-api-token}
   gitlab_webhook_signing_token:
-    file: ./secrets/gitlab_webhook_signing_token
+    file: ${GITLAB_WEBHOOK_SIGNING_TOKEN_SECRET_FILE:-./secrets/gitlab-webhook-signing-token}
+
 volumes:
   codex-review-state:
   codex-review-home:
+
+networks:
+  codex-review:
+    driver: bridge
