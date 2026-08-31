@@ -1,3 +1,8 @@
+## 6.5.1
+
+- Publish the already-validated Review Service main line on immutable Safe Core v4.10.1 (`76418b80533c644e3ab01045290cd3cdd355622c`) and Policy Schema v4.
+- Preserve Database Schema 7, Config Schema 4, Review Receipt v4, Safe Contract v2, GitLab capability boundaries, and service runtime behavior.
+
 ## 6.5.0
 
 - Add opt-in ordinary GitLab Push/Commit tracking with ref/exclusion/user filters, bounded aggregate commit details, deterministic routing, durable dedupe, and zero Codex token usage.

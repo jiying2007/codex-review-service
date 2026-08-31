@@ -1,5 +1,5 @@
 {
-  "serviceVersion": "6.5.0",
+  "serviceVersion": "6.5.1",
   "databaseSchemaVersion": 7,
   "configSchemaVersion": 4,
   "policySchemaVersion": 4,
@@ -27,6 +27,6 @@
   "analyzerAdapterVersion": 1,
   "productContractVersion": 1,
   "productId": "codex-review-service",
-  "productVersion": "6.5.0",
+  "productVersion": "6.5.1",
   "safeCoreVersion": "4.10.1"
 }
