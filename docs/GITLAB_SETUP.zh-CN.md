@@ -50,3 +50,7 @@ GitLab 本体升级与 Review Service 部署是独立生命周期。不要仅为
 ## Flow Tracking Hook
 
 当 `flowTracking.enabled=true` 时，只额外开启配置实际需要的 Hook：Pipeline Tracking 开启 Pipeline events，Tag Tracking 开启 Tag Push events，Branch 创建/删除跟踪开启 Push events。Flow 事件继续复用同一个认证 Webhook、allowlist 与 durable dedupe 路径，并且绝不调用 Codex。
+
+## 普通 Push Hook
+
+当 Branch create/delete 跟踪或 `flowTracking.commitPush` 任一启用时，开启 GitLab Push events。普通 Push 更新只在本地做过滤，不会额外触发 GitLab API 读取。

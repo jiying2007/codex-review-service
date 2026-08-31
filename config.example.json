@@ -158,6 +158,19 @@
       "patterns": [
         "v*"
       ]
+    },
+    "commitPush": {
+      "enabled": false,
+      "refs": [
+        "main",
+        "release/*",
+        "hotfix/*"
+      ],
+      "excludeRefs": [],
+      "maxCommits": 8,
+      "includeMergeCommits": true,
+      "includeCommitMessage": true,
+      "ignoreUsers": []
     }
   },
   "codex": {

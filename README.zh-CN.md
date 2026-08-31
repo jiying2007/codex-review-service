@@ -10,7 +10,7 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**6.4.0**
+- Service：**6.5.0**
 - Database Schema：**7**
 - Config Schema：**4**
 - Policy Schema：**3**
@@ -36,7 +36,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 - **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
 - **Modern profile**（`>=15.7`）：继续使用分页 `/diffs` + `/versions` + `real_size` 证明完整 diff 覆盖。
 
-任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.4 不改变共享 Review 协议。
+任一 profile 只要无法证明 diff 完整，就会在调用 Codex 前 fail closed。真实 Provider CI 覆盖 GitLab CE **14.6.1、17.11.7、19.3.0**。Safe Core 仍是 Family v4，Service v6.5 不改变共享 Review 协议。
 
 ## 适用场景
 
@@ -50,7 +50,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-6.4.0.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-6.5.0.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
