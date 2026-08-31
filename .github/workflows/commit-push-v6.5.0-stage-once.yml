@@ -1,0 +1,48 @@
+name: Stage v6.5.0 commit push
+
+on:
+  push:
+    branches:
+      - feat-commit-push-v6.5.0
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat-commit-push-v6.5.0
+          fetch-depth: 2
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - name: Apply deterministic v6.5.0 patch
+        run: node scripts/commit-push-v6.5.0-patch.js
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Focused commit push tests
+        run: node --test test/flow-tracking.test.js test/flow-http.test.js test/config.test.js test/notification.test.js test/flow-db.test.js
+      - run: npm run check
+      - run: git diff --check
+      - name: Commit validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            src/flow-tracking.js src/config.js src/notification.js \
+            test/flow-tracking.test.js test/flow-http.test.js test/config.test.js test/notification.test.js \
+            config.example.json deploy/systemd/config.example.json deploy/docker/config.example.json \
+            package.json package-lock.json product-contract.json CHANGELOG.md LONG_TERM_ASSET.md \
+            README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md \
+            docs/FLOW_TRACKING.md docs/FLOW_TRACKING.zh-CN.md docs/NOTIFICATIONS.md docs/NOTIFICATIONS.zh-CN.md \
+            docs/GITLAB_SETUP.md docs/GITLAB_SETUP.zh-CN.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md
+          git commit -m 'feat(service): add configurable ordinary push tracking in v6.5.0'
+          git push origin HEAD:feat-commit-push-v6.5.0
