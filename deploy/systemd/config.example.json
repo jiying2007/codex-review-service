@@ -235,6 +235,20 @@
           "service.degraded",
           "service.recovered"
         ]
+      },
+      {
+        "name": "feishu-app-review",
+        "provider": "feishu_app",
+        "secretRef": "feishu_app_review",
+        "projects": [
+          101,
+          102
+        ],
+        "groups": [],
+        "events": [
+          "review.blocked",
+          "review.failed"
+        ]
       }
     ]
   },

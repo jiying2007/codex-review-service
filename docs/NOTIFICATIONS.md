@@ -8,11 +8,13 @@ A completed review persists GitLab publication actions and notification actions 
 
 ## Routes and secrets
 
-Enable `notifications.enabled` in Config Schema 2 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu` or `wecom`, a `secretRef`, and optional event filtering.
+Enable `notifications.enabled` in Config Schema 5 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.
 
 `secretRef: "embedded"` resolves the webhook from `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` or the production-preferred file form `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`. A direct value and `_FILE` form are mutually exclusive. Webhook URLs are never stored in JSON or SQLite. Feishu routes require official `open.feishu.cn`/`open.larksuite.com` bot URLs; WeCom routes require `qyapi.weixin.qq.com`.
 
 When Feishu/Lark custom-bot signature verification is enabled, use `CODEX_REVIEW_NOTIFY_<REF>_SIGNING_SECRET` or `CODEX_REVIEW_NOTIFY_<REF>_SIGNING_SECRET_FILE`. The service generates timestamp/HMAC-SHA256/Base64 at delivery time; the signing secret is never persisted. Docker production should mount these as Compose secrets under `/run/secrets/*`; system deployments should use protected local files.
+
+`feishu_app` is the directed application-bot provider. It reads `CODEX_REVIEW_NOTIFY_<REF>_APP_ID`, `CODEX_REVIEW_NOTIFY_<REF>_APP_SECRET`, and `CODEX_REVIEW_NOTIFY_<REF>_CHAT_ID` (or their mutually-exclusive `_FILE` forms). `CHAT_ID` must be an `oc_…` group ID. The service acquires and caches `tenant_access_token`, then calls `POST /im/v1/messages?receive_id_type=chat_id` with the same deterministic interactive card. No credential, tenant token, or chat ID is persisted in `notification_outbox`.
 
 Default events are intentionally quiet: `review.blocked`, `review.failed`, and `service.degraded`. Add `review.completed` explicitly for audit channels.
 
@@ -26,7 +28,7 @@ Cards include verdict, MR identity, short HEAD SHA, severity counts, duration, a
 
 ## Retry and terminal failure
 
-Retry applies only to network errors, HTTP 408/409/425/429, and 5xx. Permanent provider/configuration errors fail closed into `notification_outbox.status=failed`. Prometheus metrics expose queue state and oldest notification age.
+Retry applies only to network errors, HTTP 408/409/425/429, 5xx, and explicitly classified transient Feishu API codes. Invalid credentials, missing bot permission, invalid chat IDs, malformed cards, and other permanent provider/configuration errors fail closed into `notification_outbox.status=failed`. A rejected cached Feishu token is invalidated and refreshed once before its outbox attempt is classified. Prometheus metrics expose queue state and oldest notification age.
 
 After fixing the underlying provider/secret problem, an operator may explicitly retry one terminal failed delivery without changing the Review Verdict or rerunning Codex:
 

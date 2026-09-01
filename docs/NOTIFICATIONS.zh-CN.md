@@ -8,11 +8,13 @@ Review 成功完成时，GitLab publication actions 与 notification actions 在
 
 ## Route 与 Secret
 
-在 Config Schema 2 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu` 或 `wecom`、`secretRef` 与可选事件过滤。
+在 Config Schema 5 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
 
 `secretRef: "embedded"` 可从 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` 读取；生产环境优先使用文件形式 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`。直接值与 `_FILE` 不能同时设置。Webhook URL 不进入 JSON 或 SQLite。飞书只允许官方 `open.feishu.cn`/`open.larksuite.com` Bot URL；企业微信只允许 `qyapi.weixin.qq.com`。
 
 飞书/Lark 签名 Secret 同样支持 `CODEX_REVIEW_NOTIFY_<REF>_SIGNING_SECRET` 或 `CODEX_REVIEW_NOTIFY_<REF>_SIGNING_SECRET_FILE`。Service 在真正投递时生成 timestamp + HMAC-SHA256 + Base64 签名，Secret 不持久化。Docker 生产环境应通过 Compose secrets 挂载到 `/run/secrets/*`；systemd 使用受权限保护的本地 Secret 文件。
+
+`feishu_app` 是定向飞书应用机器人 Provider。它读取 `CODEX_REVIEW_NOTIFY_<REF>_APP_ID`、`CODEX_REVIEW_NOTIFY_<REF>_APP_SECRET`、`CODEX_REVIEW_NOTIFY_<REF>_CHAT_ID`（或彼此互斥的 `_FILE` 形式）；`CHAT_ID` 必须是 `oc_…` 群 ID。Service 获取并缓存 `tenant_access_token`，再调用 `POST /im/v1/messages?receive_id_type=chat_id`，发送与现有 Provider 相同的确定性 interactive card。凭证、tenant token 和 chat ID 均不会写入 `notification_outbox`。
 
 默认事件保持克制：`review.blocked`、`review.failed`、`service.degraded`。需要审计群时显式增加 `review.completed`。
 
@@ -26,7 +28,7 @@ MR Title、Branch、Finding Title/File、Error Code 和系统 Detail 在进入 d
 
 ## 重试与 Terminal Failure
 
-仅网络错误、HTTP 408/409/425/429 与 5xx 自动重试。Provider/配置永久错误进入 `notification_outbox.status=failed`。Prometheus 同时暴露通知 Queue 状态与 oldest notification age。
+仅网络错误、HTTP 408/409/425/429、5xx 和被明确归类为瞬态的飞书 API code 自动重试。无效凭证、缺少机器人权限、非法 chat ID、卡片格式错误和其他 Provider/配置永久错误进入 `notification_outbox.status=failed`。缓存 token 被拒绝时，会先失效并刷新一次，再对该 outbox 尝试归类。Prometheus 同时暴露通知 Queue 状态与 oldest notification age。
 
 修复真实原因后，可以通过 Admin CLI 显式重试单个 terminal failed delivery；不会改变 Review Verdict，也不会重跑 Codex：
 

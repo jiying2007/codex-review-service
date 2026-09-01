@@ -41,6 +41,9 @@ Optional OpenAI and notification secrets follow the same runtime contract, for e
 OPENAI_API_KEY_FILE=/run/secrets/openai_api_key
 CODEX_REVIEW_NOTIFY_TEAM_WEBHOOK_FILE=/run/secrets/notify_team_webhook
 CODEX_REVIEW_NOTIFY_TEAM_SIGNING_SECRET_FILE=/run/secrets/notify_team_signing_secret
+CODEX_REVIEW_NOTIFY_FEISHU_APP_REVIEW_APP_ID_FILE=/run/secrets/notify_feishu_app_review_app_id
+CODEX_REVIEW_NOTIFY_FEISHU_APP_REVIEW_APP_SECRET_FILE=/run/secrets/notify_feishu_app_review_app_secret
+CODEX_REVIEW_NOTIFY_FEISHU_APP_REVIEW_CHAT_ID_FILE=/run/secrets/notify_feishu_app_review_chat_id
 ```
 
 Add matching Compose `secrets:` entries only for routes you enable.
