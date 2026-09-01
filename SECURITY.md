@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.1.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.2.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 5, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -14,7 +14,7 @@ One Service instance is one administrative/security **trust domain**. Projects c
 
 ## Configuration boundary
 
-There is one non-secret **Config Schema 5** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
+There is one non-secret **Config Schema 6** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
 
 Config Schema 5 removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 4 is not translated at runtime.
 

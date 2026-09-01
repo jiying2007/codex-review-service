@@ -8,7 +8,7 @@ A completed review persists GitLab publication actions and notification actions 
 
 ## Routes and secrets
 
-Enable `notifications.enabled` in Config Schema 5 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.
+Enable `notifications.enabled` in Config Schema 6 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.
 
 `secretRef: "embedded"` resolves the webhook from `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` or the production-preferred file form `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`. A direct value and `_FILE` form are mutually exclusive. Webhook URLs are never stored in JSON or SQLite. Feishu routes require official `open.feishu.cn`/`open.larksuite.com` bot URLs; WeCom routes require `qyapi.weixin.qq.com`.
 
@@ -21,6 +21,10 @@ Set `statusCard: true` only on a `feishu_app` route to send one durable running 
 Concurrent token acquisition for one App is single-flight. Send and PATCH operations are throttled to 20 RPS, and provider/HTTP `Retry-After` overrides exponential delay within the configured maximum. Serialized Feishu cards have a 28,000-byte safety gate and deterministically degrade to a compact result plus the primary link when necessary.
 
 Commit pushes use a 30-second pending aggregation window per project, branch and route. Schema 8 generated columns and composite indexes expose aggregation key/deadline, operation type and status-card Job ID without full-table JSON parsing. The final card expands at most three commits while retaining the total count. Pipeline state tracking suppresses duplicate states and publishes only configured terminal states. MR correlation requires project, source branch, a 24-hour freshness window and an available matching head SHA; otherwise events remain independent.
+
+## Responsible-owner delivery
+
+`notifications.identities` maps a GitLab numeric user ID (preferred) or username to a Feishu `open_id`; display-name matching is intentionally unsupported. A `feishu_app` route may configure `responsibility` with an ordered Reviewer → Assignee → Author fallback, attention events/severities, a bounded mention count, and optional `directMessage` delivery. On a matching blocked or failed Review, the final group card renders trusted mapped mentions only. Direct messages use `receive_id_type=open_id`, have per-recipient outbox dedupe keys, and cannot change the group-card result or the Review Verdict when they fail. Direct messages are terminal one-shot cards, so they never compete with the durable group status-card `message_id`.
 
 The smoke command is dry-run unless `--send` is explicit:
 

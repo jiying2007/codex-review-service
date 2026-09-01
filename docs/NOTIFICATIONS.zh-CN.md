@@ -8,7 +8,7 @@ Review 成功完成时，GitLab publication actions 与 notification actions 在
 
 ## Route 与 Secret
 
-在 Config Schema 5 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
+在 Config Schema 6 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
 
 `secretRef: "embedded"` 可从 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` 读取；生产环境优先使用文件形式 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`。直接值与 `_FILE` 不能同时设置。Webhook URL 不进入 JSON 或 SQLite。飞书只允许官方 `open.feishu.cn`/`open.larksuite.com` Bot URL；企业微信只允许 `qyapi.weixin.qq.com`。
 
@@ -33,6 +33,12 @@ GitLab Flow 卡片也使用事件专属字段，而非复用 Review 字段：Pip
 同一 App 的并发 Token 获取使用 single-flight，发送与 PATCH 默认按 20 RPS 节流；HTTP 429 `Retry-After` 和飞书 retry-after 字段会覆盖指数退避但仍受最大延迟上限约束。飞书卡片在序列化后执行 28,000-byte 安全门禁，超限时确定性降级为结论、截断说明和主跳转按钮。
 
 Route 还支持 `branches`、`severities`、`authors`、`reviewers` 精确订阅，模式字段支持 `*`/`?`。`language` 可设为 `zh-CN` 或 `en`，`diagnosticsUrl` 会作为只读“服务诊断”按钮。没有飞书事件回调时，卡片不提供重试 Review、忽略 Finding 等写操作；失败通知仍由 Admin CLI 审计式重试。
+
+## 责任人 @ 与私聊
+
+`notifications.identities` 以 GitLab `gitlabUserId`（优先）或 `gitlabUsername` 精确映射到飞书 `feishuOpenId`；禁止按姓名猜测。`feishu_app` Route 可设置 `responsibility`：`order` 的默认优先级是 Reviewer → Assignee → Author，只有 `mentionEvents`、`mentionSeverities` 同时命中时才在最终群卡写入安全生成的 `@责任人`。`directMessage: true` 会对每位已映射责任人另投递一张终态只读私聊卡；它有独立 outbox 去重键，私聊失败不会影响群卡或 Review Verdict。
+
+私聊使用 `receive_id_type=open_id`，因此飞书应用必须具有向目标用户发送消息的权限，且目标用户必须在应用可用范围内。群内同卡仍仅由 Route 的 `chat_id` 持久化和 PATCH 更新；私聊不创建“审查中”卡片，也不会争用群卡 `message_id`。身份映射不包含密钥，但属于组织用户标识，日志和诊断输出必须脱敏。
 
 `gitlab.push.committed` 默认等待 30 秒聚合窗口。同一 Project、Branch、Route 的 pending Push 合并为一张卡，累计 Commit 数量和 SHA 范围；正文只展开最多 3 条 Commit，其余显示数量。Schema 8 用生成列和复合索引保存聚合键、截止时间、操作类型与状态卡 Job ID，Notifier 不再全表解析 JSON。Pipeline 仅选择配置的终态并沿用 `flow_state` 状态去重。Push/Pipeline 只有在 Project、Source Branch、24 小时时效和可用 Head SHA 同时匹配已有 Review Job 时才关联 MR；无法可靠关联时保持独立。
 

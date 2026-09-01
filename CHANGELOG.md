@@ -1,3 +1,8 @@
+## 7.2.0 - 2026-09-01
+
+- Add Config Schema 6 responsible-owner notification delivery: strict GitLab-to-Feishu identity mappings, bounded Reviewer → Assignee → Author resolution, safe group-card mentions, and optional per-owner direct messages.
+- Keep durable Feishu group status cards unchanged: only terminal group cards mention owners; direct messages are independently deduplicated terminal cards and cannot affect a Review Verdict or group-card delivery.
+
 ## 7.1.0 - 2026-09-01
 
 - Add durable Feishu application-bot Review status cards with Schema 8 message mapping, PATCH completion, restart reconciliation and one-shot fallback.

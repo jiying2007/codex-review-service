@@ -160,9 +160,11 @@ async function prepareNotificationRoutes(gitlab, config) {
   return Object.freeze({ ...config, notificationRoutesResolved: Object.freeze(resolved) });
 }
 
+function notificationUser(value) { const id=Number(value?.id||0),username=cardText(value?.username||'',120),name=cardText(value?.name||username,120); return Object.freeze({id:Number.isInteger(id)&&id>0?id:0,username,name}); }
+function notificationUsers(values) { return Object.freeze((values||[]).map(notificationUser).filter(item=>item.id||item.username)); }
 function eventForReview({ job, mr, snapshot, review, durationMs, topFindings = 3, occurredAt }) {
-  const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed';
-  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: cardText(mr?.author?.name || mr?.author?.username || '', 120), reviewers: Object.freeze((mr?.reviewers || []).map(item => cardText(item?.username || item?.name || '', 120)).filter(Boolean)), sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
+  const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed',authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees);
+  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
 }
 
 function eventForFailure(job, code) {
@@ -170,8 +172,13 @@ function eventForFailure(job, code) {
 }
 
 function eventForReviewStarted(job, mr) {
-  return Object.freeze({ type: 'review.started', occurredAt: canonicalUtc(), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: cardText(mr?.author?.name || mr?.author?.username || '', 120), reviewers:Object.freeze((mr?.reviewers||[]).map(item=>cardText(item?.username||item?.name||'',120)).filter(Boolean)), sourceBranch: cardText(job.source_branch || mr?.source_branch || '', 200), targetBranch: cardText(mr?.target_branch || '', 200), headSha: cardText(job.head_sha || '', 64), verdict: 'running', findingCounts: counts([]), findingCount: 0, topFindings: [], durationMs: 0 });
+  const authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees);
+  return Object.freeze({ type: 'review.started', occurredAt: canonicalUtc(), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers:Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(job.source_branch || mr?.source_branch || '', 200), targetBranch: cardText(mr?.target_branch || '', 200), headSha: cardText(job.head_sha || '', 64), verdict: 'running', findingCounts: counts([]), findingCount: 0, topFindings: [], durationMs: 0 });
 }
+
+function identityFor(user, identities = []) { const id=Number(user?.id||0),username=String(user?.username||'').toLowerCase(); return identities.find(item=>(id&&Number(item.gitlabUserId)===id)||(username&&String(item.gitlabUsername||'').toLowerCase()===username))||null; }
+function responsibleUsers(event, route, identities = []) { const policy=route.responsibility;if(!policy?.enabled)return[];const sources={reviewer:event.reviewerUsers||[],assignee:event.assigneeUsers||[],author:event.authorUser?[event.authorUser]:[]},out=[],seen=new Set();for(const kind of policy.order||[]){for(const user of sources[kind]||[]){const identity=identityFor(user,identities);if(!identity||seen.has(identity.feishuOpenId))continue;seen.add(identity.feishuOpenId);out.push(Object.freeze({openId:identity.feishuOpenId,name:identity.displayName||user.name||user.username||'责任人',source:kind}));if(out.length>=policy.maxMentions)return Object.freeze(out);}}return Object.freeze(out); }
+function responsibilityApplies(event, route) { const policy=route.responsibility;if(!policy?.enabled||!policy.mentionEvents.includes(event.type))return false;return policy.mentionSeverities.some(severity=>Number(event.findingCounts?.[severity]||0)>0); }
 
 function planStatusCardActions(config, event, jobId) {
   if (!config.notificationEnabled) return [];
@@ -196,8 +203,10 @@ function planNotificationActions(config, event, runKey, statusCardJobId = null) 
     const useStatusCard = statusCardJobId && route.provider === 'feishu_app' && route.statusCard && String(event.type).startsWith('review.');
     const aggregateUntil=(event.type==='gitlab.push.committed'||String(event.type).startsWith('gitlab.pipeline.'))?new Date(Date.now()+30000).toISOString():'';
     const aggregateKey=event.mrIid?`change:${event.projectId}:${event.mrIid}:${route.name}`:event.type==='gitlab.push.committed'?`push:${event.projectId}:${event.ref||'-'}:${route.name}`:'';
-    const localized={...event,_language:route.language||'zh-CN',_diagnosticsUrl:cardUrl(route.diagnosticsUrl),_operationType:useStatusCard?'status_update':'one_shot',...(aggregateKey?{_aggregateKey:aggregateKey}:{}),...(aggregateUntil?{_aggregateUntil:aggregateUntil}:{})};
+    const responsibilities=responsibilityApplies(event,route)?responsibleUsers(event,route,config.notificationIdentities):[];
+    const localized={...event,_language:route.language||'zh-CN',_diagnosticsUrl:cardUrl(route.diagnosticsUrl),_mentions:responsibilities,_operationType:useStatusCard?'status_update':'one_shot',...(aggregateKey?{_aggregateKey:aggregateKey}:{}),...(aggregateUntil?{_aggregateUntil:aggregateUntil}:{})};
     actions.push({ routeName: route.name, provider: route.provider, secretRef: route.secretRef, eventType: event.type, dedupeKey: `${runKey}:${route.name}:${event.type}`, statusCardJobId: useStatusCard ? Number(statusCardJobId) : null, payload: useStatusCard ? { ...localized, _statusCardOperation: 'update', _statusCardJobId: Number(statusCardJobId) } : localized });
+    if(route.provider==='feishu_app'&&route.responsibility?.directMessage)for(const recipient of responsibilities){const direct={...localized,_mentions:[],_recipient:{type:'open_id',id:recipient.openId,name:recipient.name},_directMessage:true,_operationType:'one_shot'};actions.push({routeName:route.name,provider:route.provider,secretRef:route.secretRef,eventType:event.type,dedupeKey:`${runKey}:${route.name}:${event.type}:open_id:${recipient.openId}`,statusCardJobId:null,payload:direct});}
   }
   return actions;
 }
@@ -227,6 +236,7 @@ function verdictLabel(event) {
   return cardText(event.status || event.verdict || '已完成', 40) || '已完成';
 }
 
+function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filter(item=>/^ou_[A-Za-z0-9]+$/.test(String(item?.openId||''))).slice(0,10).map(item=>`<at id=${item.openId}>${cardText(item.name||'责任人',80)}</at>`).join(' '); }
 function feishuFields(event) {
   const en=event._language==='en',field = (label, value, isShort = true) => ({ is_short: isShort, text: { tag: 'lark_md', content: `**${label}**\n${cardText(value, isShort ? 100 : 220) || '-'}` } });
   if (String(event.type || '').startsWith('gitlab.')) {
@@ -250,6 +260,7 @@ function feishuFields(event) {
   if (event.projectId) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**MR**\n!${Number(event.mrIid) || '-'}` } });
   fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Verdict':'结论'}**\n${verdictLabel(event)}` } });
   if (event.author) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Author':'作者'}**\n${cardText(event.author, 80)}` } });
+  const mentions=feishuMentionList(event._mentions); if(mentions)fields.push({is_short:true,text:{tag:'lark_md',content:`**${en?'Owner':'责任人'}**\n${mentions}`}});
   if (event.headSha) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Version':'版本'}**\n${cardText(event.headSha, 12)}` } });
   if (event.sourceBranch || event.targetBranch) fields.push({ is_short: false, text: { tag: 'lark_md', content: `**${en?'Branch':'分支'}**\n${cardText(event.sourceBranch || '-', 100)} → ${cardText(event.targetBranch || '-', 100)}` } });
   if (event.projectId) fields.push({ is_short: false, text: { tag: 'lark_md', content: `**${en?'Findings':'问题'}**\nCritical ${Number(findingCounts.critical || 0)} · High ${Number(findingCounts.high || 0)} · Medium ${Number(findingCounts.medium || 0)} · Low ${Number(findingCounts.low || 0)}` } });
@@ -369,6 +380,7 @@ class WebhookProvider {
   async send(route, event, timeoutMs) { const body = await postWebhook(webhookFor(route, this.env), payloadFor(route.provider, event, route, this.env), timeoutMs, { fetchImpl: this.fetchImpl }); return { remoteId: `${route.provider}:${route.name}`, body }; }
 }
 
+function feishuRecipient(credentials,event){const requested=event?._recipient;if(requested?.type==='open_id'&&/^ou_[A-Za-z0-9]+$/.test(String(requested.id||'')))return Object.freeze({type:'open_id',id:String(requested.id)});return Object.freeze({type:'chat_id',id:credentials.chatId});}
 class FeishuAppProvider {
   constructor({ env = process.env, fetchImpl = fetch, now = () => Date.now() } = {}) { this.env = env; this.fetchImpl = fetchImpl; this.now = now; this.tokens = new Map(); this.tokenFlights = new Map(); this.nextRequests = new Map(); }
   validate(route) { feishuAppCredentials(route, this.env); }
@@ -383,7 +395,7 @@ class FeishuAppProvider {
   }
   async sendWithToken(credentials, token, event, timeoutMs) {
     await this.throttle(this.tokenKey(credentials));
-    const body = await postJson(`${FEISHU_API_BASE}/im/v1/messages?receive_id_type=chat_id`, { receive_id: credentials.chatId, msg_type: 'interactive', content: JSON.stringify(feishuPayload(event).card) }, timeoutMs, { headers: { authorization: `Bearer ${token}` }, fetchImpl: this.fetchImpl, provider: 'Feishu message' });
+    const recipient=feishuRecipient(credentials,event),body = await postJson(`${FEISHU_API_BASE}/im/v1/messages?receive_id_type=${recipient.type}`, { receive_id: recipient.id, msg_type: 'interactive', content: JSON.stringify(feishuPayload(event).card) }, timeoutMs, { headers: { authorization: `Bearer ${token}` }, fetchImpl: this.fetchImpl, provider: 'Feishu message' });
     if (Number(body?.code) !== 0) throw feishuApiError('message', body);
     const remoteId = String(body?.data?.message_id || '').trim();
     if (!remoteId) throw notifyError('Feishu message response omitted message_id', 'EFEISHUAPI', { providerCode: 0, retryable: true });
@@ -467,4 +479,4 @@ class Notifier {
   async stop() { this.stopping = true; await Promise.allSettled(this.workers); }
 }
 
-module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES, Notifier, WebhookProvider, FeishuAppProvider, createNotificationProviders, prepareNotificationRoutes, eventForReview, eventForReviewStarted, eventForFailure, systemEvent, planStatusCardActions, planNotificationActions, payloadFor, feishuPayload, wecomPayload, cardText, cardUrl, notificationSecretEnvName, secretEnvName, signingEnvName, appIdEnvName, appSecretEnvName, chatIdEnvName, signingSecretFor, feishuSignature, webhookFor, feishuAppCredentials, retryableNotification, notificationDelay, postJson, postWebhook, feishuApiError, isFeishuTokenError };
+module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES, Notifier, WebhookProvider, FeishuAppProvider, createNotificationProviders, prepareNotificationRoutes, eventForReview, eventForReviewStarted, eventForFailure, systemEvent, planStatusCardActions, planNotificationActions, responsibleUsers, responsibilityApplies, identityFor, payloadFor, feishuPayload, wecomPayload, cardText, cardUrl, notificationSecretEnvName, secretEnvName, signingEnvName, appIdEnvName, appSecretEnvName, chatIdEnvName, signingSecretFor, feishuSignature, webhookFor, feishuAppCredentials, feishuRecipient, retryableNotification, notificationDelay, postJson, postWebhook, feishuApiError, isFeishuTokenError };

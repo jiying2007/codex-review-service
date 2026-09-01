@@ -2,10 +2,10 @@
 
 ## Product baseline
 
-Codex Review Service **7.1.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.2.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 8
-- Config Schema 5
+- Config Schema 6
 - Policy Schema 4
 - Review Receipt 5
 - Safe Contract 2 / Safe Core Family v4 exact commit `8375907712db37492aff1ac0d0013e2753b1f6ab`
@@ -40,7 +40,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 System deployment:
 
 ```text
-/etc/codex-review/config.json        Config Schema 5, non-secret
+/etc/codex-review/config.json        Config Schema 6, non-secret
 /etc/codex-review/secrets/*          protected secret files
 /etc/codex-review-service.env        secret-file references + process selection
 /var/lib/codex-review                SQLite/state
@@ -48,7 +48,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 5 is the Judgment Lifecycle v1 hard boundary. It removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Structured `review.analyzerReports`, versioned `review.profile`, and deterministic Test Impact remain explicit evidence inputs. Unknown fields and unsupported versions fail closed.
+Config Schema 6 is the responsibility-notification hard boundary. It retains the prior removal of `review.incrementalReviewEnabled`, adds strict GitLab-to-Feishu identity mappings and optional responsible-owner direct delivery, and continues to fail closed on unknown fields or unsupported versions.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -75,7 +75,7 @@ Direct and `_FILE` values are mutually exclusive. Rotate credentials atomically,
 ## Preflight
 
 1. Install/verify the exact release artifact.
-2. Create Config Schema 5.
+2. Create Config Schema 6.
 3. Provision protected secret files.
 4. Run `npm run doctor`; record GitLab version/profile and Codex runtime readiness.
 5. Require `/health/ready` = 200 before enabling webhook traffic.
@@ -169,7 +169,7 @@ A current backup is accepted only if:
 
 - `PRAGMA quick_check = ok`
 - `PRAGMA foreign_key_check` has zero violations
-- `PRAGMA user_version = 7`
+- `PRAGMA user_version = 8`
 
 The historic **Schema 5 -> 6 migration** remains a supported explicit migration path: source integrity verification, mode-0600 backup, transactional DDL/data transition and post-migration verification.
 
@@ -184,11 +184,11 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.1.0 uses Config Schema 5 and Database Schema 8; startup migrates Schema 7 only after a verified backup. Service 7.0.0 introduced the Config Schema 4 -> 5 hard cut, and runtime never translates Config Schema 4. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.2.0 uses Config Schema 6 and Database Schema 8; responsibility delivery is configuration-only and does not alter the Schema 8 database. Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
-3. rewrite Config Schema 5 and remove `incrementalReviewEnabled`;
+3. rewrite Config Schema 6, retain the removal of `incrementalReviewEnabled`, and add only verified identity mappings;
 4. verify release tgz/OCI digest/provenance;
 5. install exact release;
 6. run Doctor before traffic;

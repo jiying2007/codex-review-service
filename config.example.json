@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "server": {
     "host": "127.0.0.1",
     "port": 8787
@@ -254,7 +254,22 @@
           "review.completed",
           "review.blocked",
           "review.failed"
-        ]
+        ],
+        "responsibility": {
+          "order": ["reviewer", "assignee", "author"],
+          "mentionEvents": ["review.blocked", "review.failed"],
+          "mentionSeverities": ["critical", "high"],
+          "maxMentions": 3,
+          "directMessage": false
+        }
+      }
+    ],
+    "identities": [
+      {
+        "gitlabUserId": 18,
+        "gitlabUsername": "leiwenjun",
+        "feishuOpenId": "ou_abcdef123456",
+        "displayName": "雷文军"
       }
     ]
   },

@@ -2,21 +2,21 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.1.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 5**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.2.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 6**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `8375907712db37492aff1ac0d0013e2753b1f6ab`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
-## Config Schema 5 硬切边界
+## Config Schema 6 硬切边界
 
-Service 7.0.0 将配置硬切到 Config Schema 5。Runtime 不翻译 Config Schema 4；升级前必须设置 `schemaVersion: 5`，并删除已退役字段 `review.incrementalReviewEnabled`；持久化模型 Judgment 复用不再提供配置入口。
+Service 7.2.0 将配置硬切到 Config Schema 6。Runtime 不翻译 Config Schema 5；升级前必须设置 `schemaVersion: 6`。只有存在严格 GitLab→飞书用户映射时，才配置 `notifications.identities` 和 `feishu_app` Route `responsibility`；已退役的 `review.incrementalReviewEnabled` 保持不支持。
 
 新的质量入口：
 
 ```json
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -162,7 +162,7 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.0.0 引入 **Config Schema 4 -> 5** 硬切：Runtime 不翻译旧配置，`review.incrementalReviewEnabled` 已退役，因为持久化模型 Judgment 复用已从产品中删除。此前 Service 6.5.0 的 **Database Schema 6 -> 7** 迁移和 Config Schema **3 -> 4** 硬切继续作为历史升级边界保留。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.2.0 引入 **Config Schema 5 -> 6** 硬切，用于严格责任人身份映射；Runtime 不翻译旧配置。Service 7.0.0 引入的 **Config Schema 4 -> 5** 硬切与 `review.incrementalReviewEnabled` 退役继续作为历史升级边界保留。
 
 历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。Schema 7 -> 8 会在增加状态卡持久化前创建并验证 Schema 7 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 8 做原地降级。
 
@@ -171,7 +171,7 @@ npm run admin -- drain 120
 1. 阅读 Release Notes 和 rollback boundary。
 2. 创建并验证 backup。
 3. drain durable work。
-4. 重写 Config Schema 5。
+4. 重写 Config Schema 6。
 5. 验证新 tgz/OCI digest/provenance。
 6. 安装精确 Release Artifact。
 7. 流量前运行 Doctor。

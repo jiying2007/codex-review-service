@@ -1,10 +1,10 @@
 # Long-term asset invariants
 
-Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.1.0** is the current production-operations baseline; shared review/safety/Judgment Lifecycle semantics remain exact-pinned Safe Core Family v4.
+Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.2.0** is the current production-operations baseline; shared review/safety/Judgment Lifecycle semantics remain exact-pinned Safe Core Family v4.
 
 ## Product identity
 
-`product-contract.json` is the machine-checked product fact source: Service 7.1.0, Database Schema 8, Config Schema 5, Policy Schema 4, Review Receipt 5, Safe Contract 2, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
+`product-contract.json` is the machine-checked product fact source: Service 7.2.0, Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
 
 ## Non-negotiable invariants
 
@@ -25,7 +25,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 15. Readiness answers whether local durable webhook intake is safe; remote GitLab/scope health is a separate dependency signal. A temporary remote outage must not unnecessarily discard durable intake capacity.
 16. A Project removed from current Scope cannot receive new work or pending GitLab publication.
 17. There is exactly one non-secret JSON configuration model. Direct user mode follows XDG config/state defaults; system-level systemd explicitly pins `/etc/codex-review/config.json` and production state under `/var/lib/codex-review`. Runtime does not infer root/sudo/systemd mode.
-18. Config Schema identity is explicit. Current runtime accepts **Config Schema 5** only; unsupported or missing schema versions fail closed and hidden compatibility precedence is forbidden.
+18. Config Schema identity is explicit. Current runtime accepts **Config Schema 6** only; unsupported or missing schema versions fail closed and hidden compatibility precedence is forbidden.
 19. Config Schema 5 removes `review.incrementalReviewEnabled`. Persistent model Judgment reuse is not configurable and no compatibility translator may restore it.
 20. Analyzer Adapter Hub consumes bounded CI artifacts only through `review.analyzerReports`. The Service never executes repository-defined analyzer commands or commands embedded in untrusted report/log text.
 21. Analyzer evidence is bound to the exact MR head pipeline. Finding-like evidence passes canonical normalization and changed-line anchoring; coverage/SBOM/test metadata is not fabricated into source findings.
@@ -47,7 +47,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 37. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
 38. Service-only GitLab/IM/Docker/Admin/deployment concerns must not be pushed into exact-pinned Safe Core shared protocol layers.
 39. Compatibility inputs removed in earlier releases must not be reintroduced without an explicit architecture/version decision.
-40. Current documentation must describe Service v7.1.0, Database Schema 8, Config Schema 5, Review Receipt 5 and exact Safe Core 4.11.0 accurately; historical labels belong only in changelog/migration history.
+40. Current documentation must describe Service v7.2.0, Database Schema 8, Config Schema 6, Review Receipt 5 and exact Safe Core 4.11.0 accurately; historical labels belong only in changelog/migration history.
 41. Flow Tracking is a deterministic GitLab event/state/notification domain. It never invokes Codex, retries/fixes pipelines, mutates code, or consumes model tokens.
 42. A Flow state transition and all notification actions derived from that transition are committed in the same SQLite transaction; serialization/outbox failure rolls the transition back for safe webhook replay.
 43. Flow event acquisition and IM delivery policy remain independent: `flowTracking` chooses what is tracked, while `notifications.routes[].events` chooses what is delivered.
