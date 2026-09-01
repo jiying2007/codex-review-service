@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/76418b80533c644e3ab01045290cd3cdd355622c/codex-safe.schema.json",
+  "$schema": "https://raw.githubusercontent.com/jiying2007/codex-safe-core/8375907712db37492aff1ac0d0013e2753b1f6ab/codex-safe.schema.json",
   "schemaVersion": 4,
   "review": {
     "language": "zh-CN",
@@ -11,8 +11,13 @@
     "extraInstructions": "重点检查资源生命周期、并发和错误处理。",
     "rules": {
       "requireTestsForCodeChanges": true,
-      "codePathPrefixes": ["src/"],
-      "testPathPrefixes": ["test/", "tests/"],
+      "codePathPrefixes": [
+        "src/"
+      ],
+      "testPathPrefixes": [
+        "test/",
+        "tests/"
+      ],
       "forbiddenPathPrefixes": []
     }
   },

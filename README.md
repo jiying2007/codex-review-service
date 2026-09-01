@@ -10,13 +10,13 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **6.5.2**
+- Service: **7.0.0**
 - Database Schema: **7**
-- Config Schema: **4**
+- Config Schema: **5**
 - Policy Schema: **4**
-- Review Receipt: **4**
+- Review Receipt: **5**
 - Safe Contract: **2**
-- Safe Core: exact commit `cd9788f1280a217fbe6d0beb59682a85a8b82c4d`
+- Safe Core: exact commit `8375907712db37492aff1ac0d0013e2753b1f6ab`
 - Quality Platform: **3**
 - Review Profile: **1**
 - Profile Pack: **1**
@@ -36,7 +36,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v6.5 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v7.0 does not change the shared review protocol.
 
 ## Start here
 
@@ -50,7 +50,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-6.5.2.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-7.0.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
