@@ -2,21 +2,21 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 6.5.2** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 7、**Config Schema 4**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.0.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 7、**Config Schema 5**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
-Safe Core 精确固定到 `cd9788f1280a217fbe6d0beb59682a85a8b82c4d`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
+Safe Core 精确固定到 `8375907712db37492aff1ac0d0013e2753b1f6ab`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
-## Config Schema 4 硬切边界
+## Config Schema 5 硬切边界
 
-Service 6.5.0 将配置硬切到 Config Schema 4。Runtime 不翻译 Config Schema 3；升级前必须重写配置，并删除已退役字段，例如 `review.sarifFiles`。
+Service 7.0.0 将配置硬切到 Config Schema 5。Runtime 不翻译 Config Schema 4；升级前必须设置 `schemaVersion: 5`，并删除已退役字段 `review.incrementalReviewEnabled`；持久化模型 Judgment 复用不再提供配置入口。
 
 新的质量入口：
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -84,7 +84,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 4 JSON。
+直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 5 JSON。
 
 ## Doctor Preflight
 
@@ -162,7 +162,7 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 6.5.0 会执行显式的 **Database Schema 6 -> 7** Startup Migration：迁移前 integrity verification、mode-0600 verified `VACUUM INTO` backup、单事务迁移、迁移后验证。Config Schema **3 -> 4** 是明确的配置硬切，必须在 restart 前重写配置，Runtime 不提供 translator。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.0.0 引入 **Config Schema 4 -> 5** 硬切：Runtime 不翻译旧配置，`review.incrementalReviewEnabled` 已退役，因为持久化模型 Judgment 复用已从产品中删除。此前 Service 6.5.0 的 **Database Schema 6 -> 7** 迁移和 Config Schema **3 -> 4** 硬切继续作为历史升级边界保留。
 
 历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。回滚到 6.4.0 之前的 Release 必须恢复匹配的迁移前 Database Schema 6 verified backup 和对应 Config Schema 3 配置；禁止直接对 Schema 7 做原地降级。
 
@@ -171,7 +171,7 @@ npm run admin -- drain 120
 1. 阅读 Release Notes 和 rollback boundary。
 2. 创建并验证 backup。
 3. drain durable work。
-4. 重写 Config Schema 4。
+4. 重写 Config Schema 5。
 5. 验证新 tgz/OCI digest/provenance。
 6. 安装精确 Release Artifact。
 7. 流量前运行 Doctor。

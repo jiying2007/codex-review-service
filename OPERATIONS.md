@@ -2,20 +2,20 @@
 
 ## Product baseline
 
-Codex Review Service **6.2.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.0.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 6
-- Config Schema 4
-- Policy Schema 3
-- Review Receipt 4
-- Safe Contract 2 / Safe Core Family v4 exact commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`
+- Database Schema 7
+- Config Schema 5
+- Policy Schema 4
+- Review Receipt 5
+- Safe Contract 2 / Safe Core Family v4 exact commit `8375907712db37492aff1ac0d0013e2753b1f6ab`
 - Profile Pack 1 / Test Impact 1 / Analyzer Adapter 1
 - Native/systemd Node.js: 22 LTS >=22.22.2 or 24 LTS >=24.19.0; Node 23 unsupported
 - Canonical Docker Node.js: 24.19.0
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 6, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 7, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
@@ -40,7 +40,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 System deployment:
 
 ```text
-/etc/codex-review/config.json        Config Schema 4, non-secret
+/etc/codex-review/config.json        Config Schema 5, non-secret
 /etc/codex-review/secrets/*          protected secret files
 /etc/codex-review-service.env        secret-file references + process selection
 /var/lib/codex-review                SQLite/state
@@ -48,7 +48,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 4 is a hard boundary. It removes `review.sarifFiles` and replaces it with structured `review.analyzerReports`, plus versioned `review.profile` and deterministic Test Impact configuration. Unknown fields and unsupported versions fail closed.
+Config Schema 5 is the Judgment Lifecycle v1 hard boundary. It removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Structured `review.analyzerReports`, versioned `review.profile`, and deterministic Test Impact remain explicit evidence inputs. Unknown fields and unsupported versions fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -75,7 +75,7 @@ Direct and `_FILE` values are mutually exclusive. Rotate credentials atomically,
 ## Preflight
 
 1. Install/verify the exact release artifact.
-2. Create Config Schema 4.
+2. Create Config Schema 5.
 3. Provision protected secret files.
 4. Run `npm run doctor`; record GitLab version/profile and Codex runtime readiness.
 5. Require `/health/ready` = 200 before enabling webhook traffic.
@@ -169,7 +169,7 @@ A current backup is accepted only if:
 
 - `PRAGMA quick_check = ok`
 - `PRAGMA foreign_key_check` has zero violations
-- `PRAGMA user_version = 6`
+- `PRAGMA user_version = 7`
 
 The historic **Schema 5 -> 6 migration** remains a supported explicit migration path: source integrity verification, mode-0600 backup, transactional DDL/data transition and post-migration verification.
 
@@ -184,17 +184,17 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 6.2.2 introduces a **Config Schema 2 -> 3 hard cut** while retaining Database Schema 6. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5 hard cut** while retaining Database Schema 7; runtime does not translate Config Schema 4. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
-3. rewrite Config Schema 4 and remove `sarifFiles`;
+3. rewrite Config Schema 5 and remove `incrementalReviewEnabled`;
 4. verify release tgz/OCI digest/provenance;
 5. install exact release;
 6. run Doctor before traffic;
 7. verify health/version/queues.
 
-Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a Config Schema 2 binary against a Config Schema 4 file and assume translation.
+Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a binary against a configuration schema it does not own and assume translation.
 
 ## Monitoring and SLO primitives
 
