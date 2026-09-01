@@ -1,3 +1,10 @@
+## 7.0.0
+
+- Hard-cut persistent model-Finding carry-forward and incremental Judgment reuse; every accepted review event now produces a fresh judgment from current evidence.
+- Separate webhook-delivery idempotency from ReviewSubject identity so same-SHA analyzer/pipeline evidence can trigger a new review.
+- Adopt Safe Core 4.11.0 Judgment Lifecycle v1 and Review Receipt v5 with Evidence Manifest identity.
+- Remove the incrementalReviewEnabled configuration surface; historical findings remain post-fresh lifecycle evidence only.
+
 ## 6.5.2
 
 - Repin to immutable Safe Core v4.10.2 (`cd9788f1280a217fbe6d0beb59682a85a8b82c4d`) so Review Service remains on the same Family trust root as the VS Code SCM UI Contract release.

@@ -2,21 +2,21 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 6.5.2** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 4**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.0.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 5**. The official Docker image uses canonical Node 24.19.0.
 
-Safe Core is exact-pinned to `cd9788f1280a217fbe6d0beb59682a85a8b82c4d`. Do not replace the gitlink or copy another Core runtime into a release package.
+Safe Core is exact-pinned to `8375907712db37492aff1ac0d0013e2753b1f6ab`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
-## Config Schema 4 breaking boundary
+## Config Schema 5 breaking boundary
 
-Service 6.5.0 hard-cuts the configuration to Config Schema 4. Config Schema 3 is not translated at runtime. Before rollout, rewrite the configuration and remove retired fields such as `review.sarifFiles`.
+Service 7.0.0 hard-cuts the configuration to Config Schema 5. Config Schema 4 is not translated at runtime. Before rollout, set `schemaVersion: 5` and remove retired fields such as `review.incrementalReviewEnabled`; persisted model Judgment reuse is no longer configurable.
 
 The quality surface is now:
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -84,7 +84,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 4 JSON.
+Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 5 JSON.
 
 ## Doctor preflight
 
@@ -162,7 +162,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.5.0 performs the explicit **Database Schema 6 -> 7** startup migration with pre-migration integrity verification, a mode-0600 verified `VACUUM INTO` backup, one transaction, and post-migration verification. Config Schema **3 -> 4** is a documented configuration hard cut: rewrite the config before restart; there is no runtime translator.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5** hard cut: runtime does not translate the old configuration and `review.incrementalReviewEnabled` is retired because persisted model Judgment reuse no longer exists. The earlier Service 6.5.0 **Database Schema 6 -> 7** migration and Config Schema **3 -> 4** hard cut remain historical upgrade boundaries.
 
 The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Rollback to a pre-6.4.0 release requires restoring the matching pre-migration Database Schema 6 backup and that release's Config Schema 3 configuration; do not attempt an in-place Schema 7 downgrade.
 
@@ -171,7 +171,7 @@ Upgrade sequence:
 1. Read release notes and rollback boundary.
 2. Create and verify backup.
 3. Drain durable work.
-4. Rewrite Config Schema 4.
+4. Rewrite Config Schema 5.
 5. Verify new tgz/OCI digest and provenance.
 6. Install the exact release artifact.
 7. Run Doctor before traffic.

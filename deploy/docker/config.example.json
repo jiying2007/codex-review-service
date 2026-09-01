@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "server": {
     "host": "0.0.0.0",
     "port": 8787,
@@ -51,7 +51,6 @@
     "blockingSeverity": "high",
     "contextEnabled": true,
     "adaptiveContextEnabled": true,
-    "incrementalReviewEnabled": true,
     "maxContextBytes": 262144,
     "maxContextFiles": 12,
     "contextLines": 20,
