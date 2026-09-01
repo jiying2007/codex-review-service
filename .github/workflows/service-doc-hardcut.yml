@@ -1,0 +1,62 @@
+name: Service v7 docs hard-cut
+on:
+  push:
+    branches: [family/judgment-lifecycle-v1]
+permissions:
+  contents: write
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: family/judgment-lifecycle-v1
+          fetch-depth: 0
+      - name: Rewrite current product facts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const core='8375907712db37492aff1ac0d0013e2753b1f6ab';
+          function edit(file,replacements){let s=fs.readFileSync(file,'utf8');for(const [from,to] of replacements){if(!s.includes(from))throw new Error(`${file}: missing anchor ${from}`);s=s.replace(from,to);}fs.writeFileSync(file,s);}
+          edit('docs/DEPLOYMENT.md',[
+            ['**Codex Review Service 6.5.2** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 4**.','**Codex Review Service 7.0.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 5**.'],
+            ['`cd9788f1280a217fbe6d0beb59682a85a8b82c4d`',`\`${core}\``],
+            ['## Config Schema 4 breaking boundary','## Config Schema 5 breaking boundary'],
+            ['Service 6.5.0 hard-cuts the configuration to Config Schema 4. Config Schema 3 is not translated at runtime. Before rollout, rewrite the configuration and remove retired fields such as `review.sarifFiles`.','Service 7.0.0 hard-cuts the configuration to Config Schema 5. Config Schema 4 is not translated at runtime. Before rollout, set `schemaVersion: 5` and remove retired fields such as `review.incrementalReviewEnabled`; persisted model Judgment reuse is no longer configurable.'],
+            ['"schemaVersion": 4','"schemaVersion": 5'],
+            ['Secrets do not belong in Config Schema 4 JSON.','Secrets do not belong in Config Schema 5 JSON.'],
+            ['From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 6.5.0 performs the explicit **Database Schema 6 -> 7** startup migration with pre-migration integrity verification, a mode-0600 verified `VACUUM INTO` backup, one transaction, and post-migration verification. Config Schema **3 -> 4** is a documented configuration hard cut: rewrite the config before restart; there is no runtime translator.','From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5** hard cut: runtime does not translate the old configuration and `review.incrementalReviewEnabled` is retired because persisted model Judgment reuse no longer exists. The earlier Service 6.5.0 **Database Schema 6 -> 7** migration and Config Schema **3 -> 4** hard cut remain historical upgrade boundaries.'],
+            ['4. Rewrite Config Schema 4.','4. Rewrite Config Schema 5.']
+          ]);
+          edit('docs/DEPLOYMENT.zh-CN.md',[
+            ['**Codex Review Service 6.5.2** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 7、**Config Schema 4**。','**Codex Review Service 7.0.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 7、**Config Schema 5**。'],
+            ['`cd9788f1280a217fbe6d0beb59682a85a8b82c4d`',`\`${core}\``],
+            ['## Config Schema 4 硬切边界','## Config Schema 5 硬切边界'],
+            ['Service 6.5.0 将配置硬切到 Config Schema 4。Runtime 不翻译 Config Schema 3；升级前必须重写配置，并删除已退役字段，例如 `review.sarifFiles`。','Service 7.0.0 将配置硬切到 Config Schema 5。Runtime 不翻译 Config Schema 4；升级前必须设置 `schemaVersion: 5`，并删除已退役字段 `review.incrementalReviewEnabled`；持久化模型 Judgment 复用不再提供配置入口。'],
+            ['"schemaVersion": 4','"schemaVersion": 5'],
+            ['Secret 不进入 Config Schema 4 JSON。','Secret 不进入 Config Schema 5 JSON。'],
+            ['从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 6.5.0 会执行显式的 **Database Schema 6 -> 7** Startup Migration：迁移前 integrity verification、mode-0600 verified `VACUUM INTO` backup、单事务迁移、迁移后验证。Config Schema **3 -> 4** 是明确的配置硬切，必须在 restart 前重写配置，Runtime 不提供 translator。','从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.0.0 引入 **Config Schema 4 -> 5** 硬切：Runtime 不翻译旧配置，`review.incrementalReviewEnabled` 已退役，因为持久化模型 Judgment 复用已从产品中删除。此前 Service 6.5.0 的 **Database Schema 6 -> 7** 迁移和 Config Schema **3 -> 4** 硬切继续作为历史升级边界保留。'],
+            ['4. 重写 Config Schema 4。','4. 重写 Config Schema 5。']
+          ]);
+          edit('OPERATIONS.md',[
+            ['Codex Review Service **6.2.2** is the current production-operations baseline.','Codex Review Service **7.0.0** is the current production-operations baseline.'],
+            ['- Database Schema 6\n- Config Schema 4\n- Policy Schema 3\n- Review Receipt 4\n- Safe Contract 2 / Safe Core Family v4 exact commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`',`- Database Schema 7\n- Config Schema 5\n- Policy Schema 4\n- Review Receipt 5\n- Safe Contract 2 / Safe Core Family v4 exact commit \`${core}\``],
+            ['SQLite Schema 6, durable Review Queue','SQLite Schema 7, durable Review Queue'],
+            ['/etc/codex-review/config.json        Config Schema 4, non-secret','/etc/codex-review/config.json        Config Schema 5, non-secret'],
+            ['Config Schema 4 is a hard boundary. It removes `review.sarifFiles` and replaces it with structured `review.analyzerReports`, plus versioned `review.profile` and deterministic Test Impact configuration. Unknown fields and unsupported versions fail closed.','Config Schema 5 is the Judgment Lifecycle v1 hard boundary. It removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Structured `review.analyzerReports`, versioned `review.profile`, and deterministic Test Impact remain explicit evidence inputs. Unknown fields and unsupported versions fail closed.'],
+            ['2. Create Config Schema 4.','2. Create Config Schema 5.'],
+            ['- `PRAGMA user_version = 6`','- `PRAGMA user_version = 7`'],
+            ['From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 6.2.2 introduces a **Config Schema 2 -> 3 hard cut** while retaining Database Schema 6. Before upgrade:','From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5 hard cut** while retaining Database Schema 7; runtime does not translate Config Schema 4. Before upgrade:'],
+            ['3. rewrite Config Schema 4 and remove `sarifFiles`;','3. rewrite Config Schema 5 and remove `incrementalReviewEnabled`;'],
+            ['Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a Config Schema 2 binary against a Config Schema 4 file and assume translation.','Rollback requires the exact older release artifact, its matching configuration schema and any database backup required by that release. Never run a binary against a configuration schema it does not own and assume translation.']
+          ]);
+          NODE
+          rm .github/workflows/service-doc-hardcut.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs(service): hard-cut v7 deployment and operations facts'
+          git push origin HEAD:family/judgment-lifecycle-v1
