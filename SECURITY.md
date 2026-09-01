@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.2.1** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.3.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 7, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `7878dae982088746c06e4fe747b2468e6af274a2`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -14,11 +14,11 @@ One Service instance is one administrative/security **trust domain**. Projects c
 
 ## Configuration boundary
 
-There is one non-secret **Config Schema 6** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
+There is one non-secret **Config Schema 7** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
 
-Config Schema 5 removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 4 is not translated at runtime.
+Config Schema 7 adds Provider Contract v2 controls: `codex.credentialSource=auto|env|auth-json` and explicit `codex.allowInsecureHttp`. Non-loopback HTTP remains denied unless an operator explicitly opts in for a trusted relay; repository policy cannot provide credentials or weaken transport. Config Schema 6 remains the historical responsibility-notification boundary, while Config Schema 5 removed `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only.
 
-Secrets are never stored in JSON or SQLite. Production should use protected `_FILE` inputs such as `GITLAB_API_TOKEN_FILE`, `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` and `OPENAI_API_KEY_FILE`. Direct and file forms are mutually exclusive.
+Secrets are never stored in service JSON or SQLite. Production should use protected `_FILE` inputs such as `GITLAB_API_TOKEN_FILE`, `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` and `OPENAI_API_KEY_FILE`; compatible-provider credentials may instead remain in the configured Codex home `auth.json`, where Core accepts only `auth_mode=apikey` with a non-empty `OPENAI_API_KEY`. Secret values are not copied into argv, receipts, diagnostics or repository policy.
 
 ## Judgment lifecycle security boundary
 
@@ -64,9 +64,9 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 8.
 
-The historical **Schema 5 -> 6** and **Schema 6 -> 7** migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
+The historical **Schema 5 -> 6** and **Schema 6 -> 7** database migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Config Schema 6 -> 7 is a configuration hard cut for Provider Contract v2 and has no runtime translation. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
-Service 7.0.0 introduces a Config Schema 4 -> 5 configuration hard cut. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
+Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduces Config Schema 6 -> 7. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 
 ## Fatal integrity behavior
 
@@ -76,7 +76,7 @@ Unknown `unhandledRejection` and `uncaughtException` events trigger fatal metada
 
 System deployments should use non-login users, protected secret files, trusted TLS ingress and restricted health/metrics access. Docker release images run non-root, drop all capabilities, use `no-new-privileges`, a read-only root filesystem and a digest-pinned Node 24.19 base.
 
-For Classic webhook mode, network controls are particularly important because the upstream GitLab version cannot provide timestamped HMAC replay protection.
+For Classic webhook mode, network controls are particularly important because the upstream GitLab version cannot provide timestamped HMAC replay protection. For explicitly allowed private-network Codex HTTP relays, operators must treat the network path as trusted and isolated; HTTPS remains the preferred transport.
 
 ## Supply chain
 
