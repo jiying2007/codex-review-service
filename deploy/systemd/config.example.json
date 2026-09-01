@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "server": {
     "host": "127.0.0.1",
     "port": 8787,
@@ -185,7 +185,9 @@
     "apiKeyEnv": "OPENAI_API_KEY",
     "connectTimeoutSeconds": 15,
     "requestTimeoutSeconds": 180,
-    "streamIdleTimeoutSeconds": 60
+    "streamIdleTimeoutSeconds": 60,
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
   },
   "runner": {
     "mode": "inline",
@@ -243,7 +245,11 @@
         "statusCard": true,
         "language": "zh-CN",
         "diagnosticsUrl": "https://codex-review.example.internal/health/dependencies",
-        "branches": ["main", "release/*", "feature/*"],
+        "branches": [
+          "main",
+          "release/*",
+          "feature/*"
+        ],
         "severities": [],
         "authors": [],
         "reviewers": [],
@@ -258,9 +264,19 @@
           "review.failed"
         ],
         "responsibility": {
-          "order": ["reviewer", "assignee", "author"],
-          "mentionEvents": ["review.blocked", "review.failed"],
-          "mentionSeverities": ["critical", "high"],
+          "order": [
+            "reviewer",
+            "assignee",
+            "author"
+          ],
+          "mentionEvents": [
+            "review.blocked",
+            "review.failed"
+          ],
+          "mentionSeverities": [
+            "critical",
+            "high"
+          ],
           "maxMentions": 3,
           "directMessage": false
         }

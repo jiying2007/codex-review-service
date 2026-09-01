@@ -171,3 +171,7 @@ For Review Service production deployments, keep the separate server-side secret 
 ```text
 CODEX_PROVIDER_API_KEY[_FILE]
 ```
+
+## Provider Contract v2: auth.json and private HTTP
+
+Review Service 7.3.0 / Config Schema 7 adds `codex.credentialSource` (`auto|env|auth-json`) and `codex.allowInsecureHttp` (default `false`). `auto` prefers `codex.apiKeyEnv`, then Core reads `<codex.home>/auth.json` when `codex.home` is set, otherwise `${CODEX_HOME}/auth.json` or `~/.codex/auth.json`. The file must use `auth_mode=apikey` and `OPENAI_API_KEY`. Non-loopback HTTP is accepted only with explicit `allowInsecureHttp: true`; repository `.codex-safe.json` cannot enable it.

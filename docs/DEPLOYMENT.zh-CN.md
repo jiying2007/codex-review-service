@@ -2,21 +2,21 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.2.1** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 6**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.3.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 7**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
-Safe Core 精确固定到 `8375907712db37492aff1ac0d0013e2753b1f6ab`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
+Safe Core 精确固定到 `7878dae982088746c06e4fe747b2468e6af274a2`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
-## Config Schema 6 硬切边界
+## Config Schema 7 Provider Contract 硬切边界
 
-Service 7.2.0 将配置硬切到 Config Schema 6。Runtime 不翻译 Config Schema 5；升级前必须设置 `schemaVersion: 6`。只有存在严格 GitLab→飞书用户映射时，才配置 `notifications.identities` 和 `feishu_app` Route `responsibility`；已退役的 `review.incrementalReviewEnabled` 保持不支持。
+Service 7.3.0 将 Config Schema 6 -> 7 硬切到 Core Provider Contract v2。Runtime 不翻译 Config Schema 6；升级前必须设置 `schemaVersion: 7`。`codex.credentialSource` 支持 `auto|env|auth-json`，`codex.allowInsecureHttp` 默认 `false`；非 loopback HTTP 只有显式授权可信中转站时才允许。Service 7.2.0 的 Config Schema 5 -> 6 责任人通知边界，以及已退役的 `review.incrementalReviewEnabled`，继续作为历史升级边界保留。
 
 新的质量入口：
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -33,6 +33,13 @@ Service 7.2.0 将配置硬切到 Config Schema 6。Runtime 不翻译 Config Sche
     "maxTestCandidates": 200,
     "maxRecommendedTests": 40,
     "triggerAssignment": {"mode":"reviewer","userIds":[]}
+  },
+  "codex": {
+    "providerMode": "openai-compatible",
+    "providerBaseUrl": "http://192.168.2.109:3000/v1",
+    "apiKeyEnv": "CODEX_PROVIDER_API_KEY",
+    "credentialSource": "auth-json",
+    "allowInsecureHttp": true
   }
 }
 ```
@@ -84,7 +91,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 5 JSON。
+直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 7 JSON。使用 `credentialSource: "auth-json"` 时，Provider Key 也可以只保留在配置的 Codex Home `auth.json` 中，Key 值仍不得进入 Service JSON。
 
 ## Doctor Preflight
 
@@ -162,7 +169,7 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.2.0 引入 **Config Schema 5 -> 6** 硬切，用于严格责任人身份映射；Runtime 不翻译旧配置。Service 7.0.0 引入的 **Config Schema 4 -> 5** 硬切与 `review.incrementalReviewEnabled` 退役继续作为历史升级边界保留。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.3.0 引入当前 **Config Schema 6 -> 7** 硬切，用于 Provider Contract v2 凭据/传输控制；Service 7.2.0 的 **Config Schema 5 -> 6** 责任人身份映射，以及 Service 7.0.0 的 **Config Schema 4 -> 5** 与 `review.incrementalReviewEnabled` 退役继续作为历史边界。Runtime 不翻译这些配置版本。
 
 历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。Schema 7 -> 8 会在增加状态卡持久化前创建并验证 Schema 7 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 8 做原地降级。
 
@@ -171,7 +178,7 @@ npm run admin -- drain 120
 1. 阅读 Release Notes 和 rollback boundary。
 2. 创建并验证 backup。
 3. drain durable work。
-4. 重写 Config Schema 6。
+4. 重写 Config Schema 7，并显式复核 `codex.credentialSource` / `codex.allowInsecureHttp`。
 5. 验证新 tgz/OCI digest/provenance。
 6. 安装精确 Release Artifact。
 7. 流量前运行 Doctor。

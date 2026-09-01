@@ -1,3 +1,11 @@
+## 7.3.0 - 2026-09-01
+
+- Pin Codex Safe Core 4.12.0 and consume Codex Runtime / Provider Contract v2.
+- Hard-cut Config Schema 6 to Config Schema 7 while preserving Database Schema 8 and the full 7.2.1 notification/product line.
+- Add `codex.credentialSource` with `auto`, `env`, and `auth-json`; `auto` prefers the configured environment variable and otherwise resolves the API key from the configured Codex home, `CODEX_HOME`, or the OS user Codex home.
+- Accept `auth.json` only for `auth_mode=apikey` with a non-empty `OPENAI_API_KEY`; resolved secrets remain child-process-only and are excluded from argv, receipts, settings, and diagnostics.
+- Add explicit `codex.allowInsecureHttp` for trusted private-network OpenAI-compatible relays; HTTPS remains the default and repository policy cannot enable insecure transport.
+
 ## 7.2.1 - 2026-09-01
 
 - Show the GitLab repository path on Review and Flow notification cards so multi-repository notifications are distinguishable.

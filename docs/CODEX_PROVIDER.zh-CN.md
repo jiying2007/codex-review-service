@@ -173,3 +173,7 @@ CODEX_PROVIDER_API_KEY[_FILE]
 ```
 
 这样开发者工作站与服务器 Secret 生命周期保持独立。
+
+## Provider Contract v2：auth.json 与局域网 HTTP
+
+Review Service 7.3.0 / Config Schema 7 新增 `codex.credentialSource`（`auto|env|auth-json`）和 `codex.allowInsecureHttp`（默认 `false`）。`auto` 优先读取 `codex.apiKeyEnv`；若不存在，配置了 `codex.home` 时 Core 读取 `<codex.home>/auth.json`，否则读取 `${CODEX_HOME}/auth.json` 或 `~/.codex/auth.json`。文件必须使用 `auth_mode=apikey` 并包含 `OPENAI_API_KEY`。非 loopback HTTP 只有显式设置 `allowInsecureHttp: true` 才允许，仓库 `.codex-safe.json` 无权开启。
