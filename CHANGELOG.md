@@ -1,3 +1,8 @@
+## 6.5.2
+
+- Repin to immutable Safe Core v4.10.2 (`cd9788f1280a217fbe6d0beb59682a85a8b82c4d`) so Review Service remains on the same Family trust root as the VS Code SCM UI Contract release.
+- Preserve Database Schema 7, Config Schema 4, Review Receipt v4, Safe Contract v2, GitLab compatibility boundaries, and service runtime behavior.
+
 ## 6.5.1
 
 - Publish the already-validated Review Service main line on immutable Safe Core v4.10.1 (`76418b80533c644e3ab01045290cd3cdd355622c`) and Policy Schema v4.
