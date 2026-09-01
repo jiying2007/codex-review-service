@@ -10,13 +10,13 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **7.2.1**
+- Service: **7.3.0**
 - Database Schema: **8**
-- Config Schema: **6**
+- Config Schema: **7**
 - Policy Schema: **4**
 - Review Receipt: **5**
 - Safe Contract: **2**
-- Safe Core: exact commit `8375907712db37492aff1ac0d0013e2753b1f6ab`
+- Safe Core: exact commit `7878dae982088746c06e4fe747b2468e6af274a2`
 - Quality Platform: **3**
 - Review Profile: **1**
 - Profile Pack: **1**
@@ -36,7 +36,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v7.2 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v7.3 does not change the shared review protocol.
 
 ## Start here
 
@@ -50,7 +50,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-7.2.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-7.3.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "server": {
     "host": "0.0.0.0",
     "port": 8787,
@@ -156,7 +156,9 @@
     "apiKeyEnv": "OPENAI_API_KEY",
     "connectTimeoutSeconds": 15,
     "requestTimeoutSeconds": 180,
-    "streamIdleTimeoutSeconds": 60
+    "streamIdleTimeoutSeconds": 60,
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
   },
   "runner": {
     "mode": "inline"

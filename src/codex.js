@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('node:http');
+const path = require('node:path');
 const { outputSchema } = require('./review');
 const { createProcessRunner } = require('./codex-safe-core/process-runner');
 const { createCodexCli } = require('./codex-safe-core/codex-cli');
@@ -32,7 +33,7 @@ function filteredEnv(config) {
   return env;
 }
 
-function runtimeFromConfig(config){const mode=config.codexProviderMode||'openai';const provider=mode==='openai-compatible'?{mode,baseUrl:config.codexProviderBaseUrl||'',apiKeyEnv:config.codexProviderApiKeyEnv||'CODEX_PROVIDER_API_KEY'}:{mode:'openai'};return Object.freeze({provider:Object.freeze(provider),timeouts:Object.freeze({connectMs:(config.codexConnectTimeoutSeconds||15)*1000,requestMs:(config.codexRequestTimeoutSeconds||180)*1000,operationMs:(config.reviewTimeoutSeconds||180)*1000,idleMs:(config.codexStreamIdleTimeoutSeconds||60)*1000})});}
+function runtimeFromConfig(config){const mode=config.codexProviderMode||'openai';const provider=mode==='openai-compatible'?{mode,baseUrl:config.codexProviderBaseUrl||'',apiKeyEnv:config.codexProviderApiKeyEnv||'CODEX_PROVIDER_API_KEY',credentialSource:config.codexProviderCredentialSource||'auto',allowInsecureHttp:Boolean(config.codexProviderAllowInsecureHttp),authJsonPath:config.codexHome?path.join(config.codexHome,'auth.json'):''}:{mode:'openai'};return Object.freeze({provider:Object.freeze(provider),timeouts:Object.freeze({connectMs:(config.codexConnectTimeoutSeconds||15)*1000,requestMs:(config.codexRequestTimeoutSeconds||180)*1000,operationMs:(config.reviewTimeoutSeconds||180)*1000,idleMs:(config.codexStreamIdleTimeoutSeconds||60)*1000})});}
 
 function buildCodexArgs(schemaPath, model) { return buildSafeCodexArgs(schemaPath, model); }
 function usageShape(value = {}) { return { ...normalizeUsage(value) }; }
