@@ -1,3 +1,8 @@
+## 7.2.1 - 2026-09-01
+
+- Show the GitLab repository path on Review and Flow notification cards so multi-repository notifications are distinguishable.
+- Record direct-message delivery as provider acceptance rather than an unsupported user-read claim.
+
 ## 7.2.0 - 2026-09-01
 
 - Add Config Schema 6 responsible-owner notification delivery: strict GitLab-to-Feishu identity mappings, bounded Reviewer → Assignee → Author resolution, safe group-card mentions, and optional per-owner direct messages.

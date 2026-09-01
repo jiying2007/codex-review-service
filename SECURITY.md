@@ -2,7 +2,7 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.2.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.2.1** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
 
 Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
 

@@ -40,7 +40,11 @@ Route 还支持 `branches`、`severities`、`authors`、`reviewers` 精确订阅
 
 私聊使用 `receive_id_type=open_id`，因此飞书应用必须具有向目标用户发送消息的权限，且目标用户必须在应用可用范围内。群内同卡仍仅由 Route 的 `chat_id` 持久化和 PATCH 更新；私聊不创建“审查中”卡片，也不会争用群卡 `message_id`。身份映射不包含密钥，但属于组织用户标识，日志和诊断输出必须脱敏。
 
+Notifier 的 `provider_accepted` 表示飞书 API 已接受请求并创建消息会话，不表示用户客户端已读或一定弹出系统通知；飞书客户端的会话可见性、免打扰和应用通知设置由用户/管理员控制。
+
 `gitlab.push.committed` 默认等待 30 秒聚合窗口。同一 Project、Branch、Route 的 pending Push 合并为一张卡，累计 Commit 数量和 SHA 范围；正文只展开最多 3 条 Commit，其余显示数量。Schema 8 用生成列和复合索引保存聚合键、截止时间、操作类型与状态卡 Job ID，Notifier 不再全表解析 JSON。Pipeline 仅选择配置的终态并沿用 `flow_state` 状态去重。Push/Pipeline 只有在 Project、Source Branch、24 小时时效和可用 Head SHA 同时匹配已有 Review Job 时才关联 MR；无法可靠关联时保持独立。
+
+每张 Review、Push、Pipeline、MR、Tag 与分支卡片都会显示“仓库”。Review 优先使用 GitLab `references.full` 中的 `group/project!IID` 路径，Flow 通知使用 webhook 的 `project.path_with_namespace`；缺失时隐藏字段，而不是以不稳定的 Project ID 伪装仓库名。
 
 真实飞书验收默认使用 dry-run，不产生外部消息；只有显式 `--send` 才会创建并 PATCH 测试卡：
 

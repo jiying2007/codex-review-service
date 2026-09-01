@@ -1,10 +1,10 @@
 # Long-term asset invariants
 
-Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.2.0** is the current production-operations baseline; shared review/safety/Judgment Lifecycle semantics remain exact-pinned Safe Core Family v4.
+Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.2.1** is the current production-operations baseline; shared review/safety/Judgment Lifecycle semantics remain exact-pinned Safe Core Family v4.
 
 ## Product identity
 
-`product-contract.json` is the machine-checked product fact source: Service 7.2.0, Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
+`product-contract.json` is the machine-checked product fact source: Service 7.2.1, Database Schema 8, Config Schema 6, Policy Schema 4, Review Receipt 5, Safe Contract 2, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
 
 ## Non-negotiable invariants
 
@@ -47,7 +47,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 37. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
 38. Service-only GitLab/IM/Docker/Admin/deployment concerns must not be pushed into exact-pinned Safe Core shared protocol layers.
 39. Compatibility inputs removed in earlier releases must not be reintroduced without an explicit architecture/version decision.
-40. Current documentation must describe Service v7.2.0, Database Schema 8, Config Schema 6, Review Receipt 5 and exact Safe Core 4.11.0 accurately; historical labels belong only in changelog/migration history.
+40. Current documentation must describe Service v7.2.1, Database Schema 8, Config Schema 6, Review Receipt 5 and exact Safe Core 4.11.0 accurately; historical labels belong only in changelog/migration history.
 41. Flow Tracking is a deterministic GitLab event/state/notification domain. It never invokes Codex, retries/fixes pipelines, mutates code, or consumes model tokens.
 42. A Flow state transition and all notification actions derived from that transition are committed in the same SQLite transaction; serialization/outbox failure rolls the transition back for safe webhook replay.
 43. Flow event acquisition and IM delivery policy remain independent: `flowTracking` chooses what is tracked, while `notifications.routes[].events` chooses what is delivered.

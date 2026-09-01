@@ -162,9 +162,10 @@ async function prepareNotificationRoutes(gitlab, config) {
 
 function notificationUser(value) { const id=Number(value?.id||0),username=cardText(value?.username||'',120),name=cardText(value?.name||username,120); return Object.freeze({id:Number.isInteger(id)&&id>0?id:0,username,name}); }
 function notificationUsers(values) { return Object.freeze((values||[]).map(notificationUser).filter(item=>item.id||item.username)); }
+function projectNameForMr(mr) { return cardText(mr?.references?.full||mr?.path_with_namespace||mr?.project?.path_with_namespace||mr?.project?.name||'',240).replace(/!\d+$/,''); }
 function eventForReview({ job, mr, snapshot, review, durationMs, topFindings = 3, occurredAt }) {
-  const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed',authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees);
-  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
+  const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed',authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees),projectName=projectNameForMr(mr);
+  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
 }
 
 function eventForFailure(job, code) {
@@ -172,8 +173,8 @@ function eventForFailure(job, code) {
 }
 
 function eventForReviewStarted(job, mr) {
-  const authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees);
-  return Object.freeze({ type: 'review.started', occurredAt: canonicalUtc(), projectId: Number(job.project_id), mrIid: Number(job.mr_iid), title: cardText(mr?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers:Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(job.source_branch || mr?.source_branch || '', 200), targetBranch: cardText(mr?.target_branch || '', 200), headSha: cardText(job.head_sha || '', 64), verdict: 'running', findingCounts: counts([]), findingCount: 0, topFindings: [], durationMs: 0 });
+  const authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees),projectName=projectNameForMr(mr);
+  return Object.freeze({ type: 'review.started', occurredAt: canonicalUtc(), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers:Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(job.source_branch || mr?.source_branch || '', 200), targetBranch: cardText(mr?.target_branch || '', 200), headSha: cardText(job.head_sha || '', 64), verdict: 'running', findingCounts: counts([]), findingCount: 0, topFindings: [], durationMs: 0 });
 }
 
 function identityFor(user, identities = []) { const id=Number(user?.id||0),username=String(user?.username||'').toLowerCase(); return identities.find(item=>(id&&Number(item.gitlabUserId)===id)||(username&&String(item.gitlabUsername||'').toLowerCase()===username))||null; }
@@ -240,23 +241,25 @@ function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filte
 function feishuFields(event) {
   const en=event._language==='en',field = (label, value, isShort = true) => ({ is_short: isShort, text: { tag: 'lark_md', content: `**${label}**\n${cardText(value, isShort ? 100 : 220) || '-'}` } });
   if (String(event.type || '').startsWith('gitlab.')) {
-    if (event.flowKind === 'pipeline') return [field('Pipeline', `#${event.externalId || '-'}`), field(en?'Status':'状态', event.status), field('Ref', event.ref), field(en?'Source':'来源', event.source || '-')];
+    const project=event.projectName?[field(en?'Repository':'仓库',event.projectName,false)]:[];
+    if (event.flowKind === 'pipeline') return [...project,field('Pipeline', `#${event.externalId || '-'}`), field(en?'Status':'状态', event.status), field('Ref', event.ref), field(en?'Source':'来源', event.source || '-')];
     if (event.flowKind === 'merge_request') {
-      const out = [field('MR', `!${event.mrIid || '-'}`), field(en?'Status':'状态', event.status)];
+      const out = [...project,field('MR', `!${event.mrIid || '-'}`), field(en?'Status':'状态', event.status)];
       if (event.sourceBranch || event.targetBranch) out.push(field(en?'Branch':'分支', `${event.sourceBranch || '-'} → ${event.targetBranch || '-'}`, false));
       if (event.actor) out.push(field(en?'Actor':'操作者', event.actor));
       return out;
     }
     if (event.flowKind === 'commit_push') {
-      const out = [field(en?'Branch':'分支', event.ref), field(en?'Commits':'提交数', String(Number(event.commitCount || 0)))];
+      const out = [...project,field(en?'Branch':'分支', event.ref), field(en?'Commits':'提交数', String(Number(event.commitCount || 0)))];
       if (event.beforeSha && event.afterSha) out.push(field(en?'Range':'范围', `${cardText(event.beforeSha, 12)} → ${cardText(event.afterSha, 12)}`, false));
       if (event.actor) out.push(field(en?'Pusher':'推送者', event.actor));
       return out;
     }
-    return [field(event.flowKind === 'tag' ? 'Tag' : en?'Branch':'分支', event.ref || event.externalId), field(en?'Status':'状态', event.status), ...(event.actor ? [field(en?'Actor':'操作者', event.actor)] : [])];
+    return [...project,field(event.flowKind === 'tag' ? 'Tag' : en?'Branch':'分支', event.ref || event.externalId), field(en?'Status':'状态', event.status), ...(event.actor ? [field(en?'Actor':'操作者', event.actor)] : [])];
   }
   const findingCounts = event.findingCounts || counts([]);
   const fields = [];
+  if(event.projectName)fields.push({is_short:false,text:{tag:'lark_md',content:`**${en?'Repository':'仓库'}**\n${cardText(event.projectName,220)}`}});
   if (event.projectId) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**MR**\n!${Number(event.mrIid) || '-'}` } });
   fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Verdict':'结论'}**\n${verdictLabel(event)}` } });
   if (event.author) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Author':'作者'}**\n${cardText(event.author, 80)}` } });
@@ -332,7 +335,7 @@ function wecomPayload(event) {
       { keyname: en?'Findings':'问题', value: `C${Number(findingCounts.critical || 0)} H${Number(findingCounts.high || 0)} M${Number(findingCounts.medium || 0)} L${Number(findingCounts.low || 0)}` },
       { keyname: en?'Duration':'耗时', value: event.durationMs ? `${(Number(event.durationMs) / 1000).toFixed(1)}s` : '-' }
     ];
-  const card = { card_type: 'text_notice', source: { desc: 'Codex Review' }, main_title: { title: cardText(titleFor(event), 26), desc: cardText(event.title || event.sourceBranch || '', 30) }, horizontal_content_list, card_action: { type: 1, url: event.url || 'https://work.weixin.qq.com/' } };
+  const subject=event.projectName?`${cardText(event.projectName,80)} · ${cardText(event.title||event.sourceBranch||'',80)}`:cardText(event.title||event.sourceBranch||'',30);const card = { card_type: 'text_notice', source: { desc: 'Codex Review' }, main_title: { title: cardText(titleFor(event), 26), desc: cardText(subject, 112) }, horizontal_content_list, card_action: { type: 1, url: event.url || 'https://work.weixin.qq.com/' } };
   if(event._activity?.length)card.sub_title_text=cardText(event._activity.slice(-4).map(item=>`${item.type}: ${item.status||'-'}`).join(' · '),112);
   else if (event.commits?.length) card.sub_title_text = cardText(event.commits.slice(0,3).map((commit, index) => `${index + 1}. ${cardText(commit.shortSha || commit.sha, 12)}${commit.message ? ` ${cardText(commit.message, 80)}` : ''}`).concat(Number(event.commitCount||0)>3 ? [`+${Number(event.commitCount)-3} more`] : []).join(' · '), 112);
   else if (event.jobs?.length) card.sub_title_text = cardText(event.jobs.map((job, index) => `${index + 1}. ${job.stage || '-'}/${job.name}: ${job.failureReason || job.status}`).join(' · '), 112);
@@ -465,7 +468,7 @@ class Notifier {
       if(item.payload?._statusCardOperation==='create')this.store.finishReviewStatusCard(item.payload._statusCardJobId,item.route_name,result.remoteId,'delivered');
       else if(item.payload?._statusCardOperation==='update')this.store.finishReviewStatusCard(item.payload._statusCardJobId,item.route_name,result.remoteId,result.statusCardFallback?'fallback_delivered':'updated');
       this.store.finishNotification(item.id,result.remoteId);this.telemetry?.metrics?.inc('codex_review_notification_delivered_total');
-      this.logger.info?.({event:'notification_delivered',outboxId:item.id,route:item.route_name,provider:item.provider,eventType:item.event_type,attempt:item.attempt});
+      this.logger.info?.({event:'notification_delivered',outboxId:item.id,route:item.route_name,provider:item.provider,eventType:item.event_type,attempt:item.attempt,recipientType:item.payload?._recipient?.type||'chat_id',directMessage:Boolean(item.payload?._directMessage),deliveryState:'provider_accepted'});
     } catch(error) {
       if(error.code==='ESTATUSCARDPENDING'&&!this.stopping){this.store.deferNotification(item.id,error.code,this.config.notificationPollIntervalMs);return;}
       const retry=item.attempt<this.config.maxNotificationAttempts&&retryableNotification(error)&&!this.stopping;

@@ -22,9 +22,13 @@ Concurrent token acquisition for one App is single-flight. Send and PATCH operat
 
 Commit pushes use a 30-second pending aggregation window per project, branch and route. Schema 8 generated columns and composite indexes expose aggregation key/deadline, operation type and status-card Job ID without full-table JSON parsing. The final card expands at most three commits while retaining the total count. Pipeline state tracking suppresses duplicate states and publishes only configured terminal states. MR correlation requires project, source branch, a 24-hour freshness window and an available matching head SHA; otherwise events remain independent.
 
+Review, Push, Pipeline, MR, Tag, and branch cards display a repository path. Review events prefer GitLab `references.full` with the `!IID` suffix removed; Flow events use the webhook `project.path_with_namespace`. A missing trusted path suppresses the field rather than substituting an unstable project ID.
+
 ## Responsible-owner delivery
 
 `notifications.identities` maps a GitLab numeric user ID (preferred) or username to a Feishu `open_id`; display-name matching is intentionally unsupported. A `feishu_app` route may configure `responsibility` with an ordered Reviewer → Assignee → Author fallback, attention events/severities, a bounded mention count, and optional `directMessage` delivery. On a matching blocked or failed Review, the final group card renders trusted mapped mentions only. Direct messages use `receive_id_type=open_id`, have per-recipient outbox dedupe keys, and cannot change the group-card result or the Review Verdict when they fail. Direct messages are terminal one-shot cards, so they never compete with the durable group status-card `message_id`.
+
+`provider_accepted` means that Feishu accepted the API request and created the message conversation; it is not a user-read or operating-system-notification receipt. Client visibility, do-not-disturb state, and application notification settings remain user/admin controlled.
 
 The smoke command is dry-run unless `--send` is explicit:
 
