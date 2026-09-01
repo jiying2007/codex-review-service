@@ -240,12 +240,20 @@
         "name": "feishu-app-review",
         "provider": "feishu_app",
         "secretRef": "feishu_app_review",
+        "statusCard": true,
+        "language": "zh-CN",
+        "diagnosticsUrl": "https://codex-review.example.internal/health/dependencies",
+        "branches": ["main", "release/*", "feature/*"],
+        "severities": [],
+        "authors": [],
+        "reviewers": [],
         "projects": [
           101,
           102
         ],
         "groups": [],
         "events": [
+          "review.completed",
           "review.blocked",
           "review.failed"
         ]

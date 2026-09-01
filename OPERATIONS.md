@@ -2,9 +2,9 @@
 
 ## Product baseline
 
-Codex Review Service **7.0.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.1.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 7
+- Database Schema 8
 - Config Schema 5
 - Policy Schema 4
 - Review Receipt 5
@@ -15,7 +15,7 @@ Codex Review Service **7.0.0** is the current production-operations baseline. Ma
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 7, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 8, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
@@ -184,7 +184,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5 hard cut** while retaining Database Schema 7; runtime does not translate Config Schema 4. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.1.0 uses Config Schema 5 and Database Schema 8; startup migrates Schema 7 only after a verified backup. Service 7.0.0 introduced the Config Schema 4 -> 5 hard cut, and runtime never translates Config Schema 4. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

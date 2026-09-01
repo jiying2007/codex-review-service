@@ -1,3 +1,12 @@
+## 7.1.0 - 2026-09-01
+
+- Add durable Feishu application-bot Review status cards with Schema 8 message mapping, PATCH completion, restart reconciliation and one-shot fallback.
+- Add 30-second Push aggregation and bounded MR-related Push/Pipeline/Review change activity.
+- Add branch, severity, author and Reviewer route subscriptions, per-route Chinese/English cards and read-only diagnostics/navigation actions.
+- Improve Review/Flow card hierarchy, Top Finding impact display, three-Commit expansion, deterministic truncation and notification delivery metrics.
+- Add indexed aggregation metadata, SHA/freshness-bound MR correlation, Feishu token single-flight, 20 RPS throttling, Retry-After handling and a 28,000-byte card safety gate.
+- Add dry-run-by-default `smoke-feishu-card`, explicit `--send` create/PATCH acceptance and notification Route diagnostics in Doctor.
+
 ## 7.0.0
 
 - Hard-cut persistent model-Finding carry-forward and incremental Judgment reuse; every accepted review event now produces a fresh judgment from current evidence.

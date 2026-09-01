@@ -11,7 +11,7 @@ const{resolveReviewProfile}=require('./codex-safe-core/quality-platform');
 const{fingerprint,REVIEW_PROMPT_CONTRACT_VERSION}=require('./codex-safe-core/safe-contract');
 const{computeReviewSubjectFingerprint,shouldPersistJudgmentReceipt}=require('./codex-safe-core/judgment-lifecycle');
 const{classifyFindingLifecycle}=require('./finding-ledger');
-const{eventForReview,eventForFailure,planNotificationActions}=require('./notification');
+const{eventForReview,eventForReviewStarted,eventForFailure,planStatusCardActions,planNotificationActions}=require('./notification');
 const{currentAssignments,assignmentMatch}=require('./assignment');
 const{estimateChunkTokens,adaptiveContextConfig,selectModel,selectChunksWithinByteBudget,TokenBudgetLedger,TokenEstimatorCalibration}=require('./cost-planner');
 
@@ -65,6 +65,8 @@ class ReviewService{
     const sourceBranch=String(mr.source_branch||''),pipelineId=await this.gitlab.resolveStatusPipeline(statusProjectId,job.project_id,job.mr_iid,headSha,sourceBranch,mr);
     const bound=this.store.bindJobSnapshot(job.id,{baseSha,startSha,headSha,sourceBranch,statusProjectId,pipelineId});
     if(bound.status==='duplicate'&&job.trigger==='reconcile')return{mr,terminal:'duplicate'};
+    const statusJob={...job,head_sha:headSha,source_branch:sourceBranch},statusEvent=eventForReviewStarted(statusJob,mr),statusActions=planStatusCardActions(this.config,statusEvent,job.id);
+    if(statusActions.length)this.store.enqueueReviewStatusCards(job.id,statusActions);
     const active=this.active.get(this.key(job.project_id,job.mr_iid));
     if(active){active.headSha=headSha;active.startSha=startSha;active.statusProjectId=statusProjectId;active.pipelineId=pipelineId;active.sourceBranch=sourceBranch;}
     return{mr,terminal:null,statusProjectId,pipelineId};

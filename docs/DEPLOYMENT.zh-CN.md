@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.0.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 7、**Config Schema 5**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.1.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 5**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `8375907712db37492aff1ac0d0013e2753b1f6ab`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
@@ -93,7 +93,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor 校验产品/配置身份、SQLite Schema 7/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
+Doctor 校验产品/配置身份、SQLite Schema 8/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
 
 ## 启动与健康检查
 
@@ -164,7 +164,7 @@ npm run admin -- drain 120
 
 从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.0.0 引入 **Config Schema 4 -> 5** 硬切：Runtime 不翻译旧配置，`review.incrementalReviewEnabled` 已退役，因为持久化模型 Judgment 复用已从产品中删除。此前 Service 6.5.0 的 **Database Schema 6 -> 7** 迁移和 Config Schema **3 -> 4** 硬切继续作为历史升级边界保留。
 
-历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。回滚到 6.4.0 之前的 Release 必须恢复匹配的迁移前 Database Schema 6 verified backup 和对应 Config Schema 3 配置；禁止直接对 Schema 7 做原地降级。
+历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。Schema 7 -> 8 会在增加状态卡持久化前创建并验证 Schema 7 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 8 做原地降级。
 
 升级顺序：
 

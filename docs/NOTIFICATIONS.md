@@ -16,6 +16,21 @@ When Feishu/Lark custom-bot signature verification is enabled, use `CODEX_REVIEW
 
 `feishu_app` is the directed application-bot provider. It reads `CODEX_REVIEW_NOTIFY_<REF>_APP_ID`, `CODEX_REVIEW_NOTIFY_<REF>_APP_SECRET`, and `CODEX_REVIEW_NOTIFY_<REF>_CHAT_ID` (or their mutually-exclusive `_FILE` forms). `CHAT_ID` must be an `oc_…` group ID. The service acquires and caches `tenant_access_token`, then calls `POST /im/v1/messages?receive_id_type=chat_id` with the same deterministic interactive card. No credential, tenant token, or chat ID is persisted in `notification_outbox`.
 
+Set `statusCard: true` only on a `feishu_app` route to send one durable running card and PATCH it to the final review result. `review_status_cards` persists the job/route/message association; restart recovery preserves the outbox, and a terminal create failure degrades the final result to a normal one-shot card. Routes also accept `branches`, `severities`, `authors`, `reviewers`, `language`, and an optional read-only `diagnosticsUrl`. Without a card callback endpoint no state-changing card actions are exposed.
+
+Concurrent token acquisition for one App is single-flight. Send and PATCH operations are throttled to 20 RPS, and provider/HTTP `Retry-After` overrides exponential delay within the configured maximum. Serialized Feishu cards have a 28,000-byte safety gate and deterministically degrade to a compact result plus the primary link when necessary.
+
+Commit pushes use a 30-second pending aggregation window per project, branch and route. Schema 8 generated columns and composite indexes expose aggregation key/deadline, operation type and status-card Job ID without full-table JSON parsing. The final card expands at most three commits while retaining the total count. Pipeline state tracking suppresses duplicate states and publishes only configured terminal states. MR correlation requires project, source branch, a 24-hour freshness window and an available matching head SHA; otherwise events remain independent.
+
+The smoke command is dry-run unless `--send` is explicit:
+
+```bash
+npm run admin -- smoke-feishu-card <feishu_app-route>
+npm run admin -- smoke-feishu-card <feishu_app-route> --send
+```
+
+Doctor reports potentially overlapping routes, suppressed unsafe diagnostics URLs, and severity-filtered status-card routes that can only produce a final one-shot card.
+
 Default events are intentionally quiet: `review.blocked`, `review.failed`, and `service.degraded`. Add `review.completed` explicitly for audit channels.
 
 ## Cards

@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.0.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 7 and **Config Schema 5**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.1.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 5**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `8375907712db37492aff1ac0d0013e2753b1f6ab`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -93,7 +93,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 7/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 8/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
 
 ## Start and health
 
@@ -164,7 +164,7 @@ npm run admin -- drain 120
 
 From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.0.0 introduces a **Config Schema 4 -> 5** hard cut: runtime does not translate the old configuration and `review.incrementalReviewEnabled` is retired because persisted model Judgment reuse no longer exists. The earlier Service 6.5.0 **Database Schema 6 -> 7** migration and Config Schema **3 -> 4** hard cut remain historical upgrade boundaries.
 
-The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Rollback to a pre-6.4.0 release requires restoring the matching pre-migration Database Schema 6 backup and that release's Config Schema 3 configuration; do not attempt an in-place Schema 7 downgrade.
+The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Schema 7 -> 8 creates and verifies a Schema 7 backup before adding status-card state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 8 downgrade.
 
 Upgrade sequence:
 

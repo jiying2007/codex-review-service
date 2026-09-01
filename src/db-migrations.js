@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA_VERSION = 7;
+const CURRENT_SCHEMA_VERSION = 8;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
 
 function sqlString(value) { return `'${String(value).replace(/'/g, "''")}'`; }
@@ -129,7 +129,21 @@ function migrate6To7(db, dbPath, hooks = {}) {
   return Object.freeze({ from: 6, to: 7, backupPath });
 }
 
-const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7]]));
+function migrate7To8(db, dbPath, hooks = {}) {
+  integrityCheck(db, 'pre-migration');
+  const backupPath = createBackup(db, dbPath, 7);
+  hooks.afterBackup?.({ backupPath, from: 7, to: 8 });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(`ALTER TABLE notification_outbox ADD COLUMN aggregate_key TEXT GENERATED ALWAYS AS (json_extract(payload_json,'$._aggregateKey')) VIRTUAL;ALTER TABLE notification_outbox ADD COLUMN aggregate_until TEXT GENERATED ALWAYS AS (json_extract(payload_json,'$._aggregateUntil')) VIRTUAL;ALTER TABLE notification_outbox ADD COLUMN operation_type TEXT GENERATED ALWAYS AS (json_extract(payload_json,'$._operationType')) VIRTUAL;ALTER TABLE notification_outbox ADD COLUMN status_card_job_id INTEGER GENERATED ALWAYS AS (json_extract(payload_json,'$._statusCardJobId')) VIRTUAL;CREATE INDEX idx_notification_aggregate ON notification_outbox(status,aggregate_key,aggregate_until,id);CREATE INDEX idx_notification_operation ON notification_outbox(status,operation_type,status_card_job_id,route_name,id);CREATE INDEX idx_review_jobs_branch_head ON review_jobs(project_id,source_branch,head_sha,created_at);CREATE TABLE review_status_cards(job_id INTEGER NOT NULL REFERENCES review_jobs(id) ON DELETE CASCADE,route_name TEXT NOT NULL,provider TEXT NOT NULL,message_id TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'pending',error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(job_id,route_name));CREATE INDEX idx_review_status_cards_status ON review_status_cards(status,updated_at);`);
+    hooks.afterDdl?.({ backupPath, from: 7, to: 8 });
+    db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)').run(8, new Date().toISOString(), backupPath);
+    db.exec('PRAGMA user_version=8'); hooks.beforeCommit?.({ backupPath, from: 7, to: 8 }); db.exec('COMMIT');
+  } catch (cause) { try { db.exec('ROLLBACK'); } catch {} const error = new Error(`SQLite schema migration 7 -> 8 failed; original database remains authoritative and backup is ${backupPath}`); error.code='EDBMIGRATION'; error.backupPath=backupPath; error.cause=cause; throw error; }
+  integrityCheck(db, 'post-migration'); return Object.freeze({ from: 7, to: 8, backupPath });
+}
+
+const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8]]));
 function migrationPlan(fromVersion, toVersion = CURRENT_SCHEMA_VERSION) {
   const plan = [];
   let current = Number(fromVersion);
@@ -168,5 +182,6 @@ module.exports = Object.freeze({
   migrationPlan,
   migrateDatabase,
   migrate5To6,
-  migrate6To7
+  migrate6To7,
+  migrate7To8
 });

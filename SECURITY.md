@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.0.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.1.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 7, Config Schema 5, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 5, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -62,9 +62,9 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 ## Storage, backup, migration and rollback
 
-The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 7.
+The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 8.
 
-The historical **Schema 5 -> 6 migration** remains an explicit supported migration path with source integrity verification, a mode-0600 verified backup, transactional migration and post-migration verification. The later **Schema 6 -> 7 migration** is likewise explicit and tested. From v5.0.0 onward, any DB/Config schema change requires explicit migration/upgrade fixtures and a documented rollback boundary.
+The historical **Schema 5 -> 6** and **Schema 6 -> 7** migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
 Service 7.0.0 introduces a Config Schema 4 -> 5 configuration hard cut. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 

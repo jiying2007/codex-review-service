@@ -30,8 +30,8 @@ function identityReview(review={}) {
   };
 }
 
-test('schema 7 contains canonical Review Receipt v5 projection columns', () => withStore(store => {
-  assert.equal(SCHEMA_VERSION, 7);
+test('schema 8 contains canonical Review Receipt v5 projection columns', () => withStore(store => {
+  assert.equal(SCHEMA_VERSION, 8);
   assert.equal(store.schemaVersion(), SCHEMA_VERSION);
   const columns = new Set(store.db.prepare('PRAGMA table_info(review_runs)').all().map(row => row.name));
   assert.ok(columns.has('receipt_json'));
