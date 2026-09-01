@@ -1,0 +1,48 @@
+name: Family hard-cut cleanup
+on:
+  push:
+    branches: [family/judgment-lifecycle-v1]
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: family/judgment-lifecycle-v1
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with: { node-version: '22.22.2' }
+      - name: Remove legacy incremental-review proof surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          let service=fs.readFileSync('test/service.test.js','utf8');
+          service=service.replace('adaptiveContextEnabled:true,incrementalReviewEnabled:false,maxContextBytes:0','adaptiveContextEnabled:true,maxContextBytes:0');
+          service=service.replace("assert.equal(enqueued[0].dedupeKey,'snapshot:s:h')","assert.equal(enqueued[0].dedupeKey,'event:wid')");
+          const marker="test('incremental push reviews only changed paths and carries untouched findings'";
+          const pos=service.indexOf(marker);
+          if(pos<0) throw new Error('legacy service test marker missing');
+          const replacement=`test('fresh review never carries historical model findings into a new run',async()=>{const db=tempStore();const previousHead='e'.repeat(40),currentHead='f'.repeat(40),currentMr=mr({diff_refs:{base_sha:BASE_SHA,start_sha:START_SHA,head_sha:currentHead}}),p=policy();const oldJob=db.store.enqueue({projectId:7,mrIid:9,baseSha:BASE_SHA,startSha:START_SHA,headSha:previousHead,sourceBranch:'feat',trigger:'open',dedupeKey:'event:old',maxQueueDepth:10}),oldReview={verdict:'needs_attention',summary:'old',coverageComplete:true,codexVersion:'test',codexModel:'model',chunkCount:1,rejectedFindingCount:0,truncatedFindingCount:0,usage:{inputTokens:100,outputTokens:10},findings:[{fingerprint:'carry-fp',severity:'medium',category:'correctness',file:'b.js',side:'new',line:1,endLine:1,title:'Historical issue',description:'Historical judgment only.',suggestion:'Fix it.',confidence:.95,anchorHash:'anchor-b'}]};db.store.saveRunWithOutbox(oldJob,oldReview,1,p,[]);db.store.finishJob(oldJob,'needs_attention');const fullItems=[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\\n-old-a\\n+new-a'},{old_path:'b.js',new_path:'b.js',diff:'@@ -1 +1 @@\\n-old-b\\n+new-b'}],gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:fullItems}),validateMergeRequestDiffCoverage:async()=>({complete:true})};let calls=0,promptText='';const reviewService=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>p,contextFn:async()=>({blocks:[],bytes:0,complete:true}),runCodexFn:async prompt=>{calls++;promptText+=prompt;return{version:'test',model:'model',usage:{inputTokens:20,outputTokens:2},parsed:{findings:[]}};}});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:BASE_SHA,startSha:START_SHA,headSha:currentHead,sourceBranch:'feat',trigger:'update',dedupeKey:'event:new',maxQueueDepth:10});await reviewService.processJob(db.store.claimNext());assert.ok(calls>=1);assert.match(promptText,/a\\.js/);assert.match(promptText,/b\\.js/);const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.finding_count,0);assert.equal(db.store.db.prepare('SELECT COUNT(*) n FROM review_findings WHERE run_id=? AND fingerprint=?').get(run.id,'carry-fp').n,0);}finally{db.close();}});\n`;
+          service=service.slice(0,pos)+replacement;
+          fs.writeFileSync('test/service.test.js',service);
+
+          const en=`# Token efficiency and fresh-evidence review\n\nCodex Review Service treats model tokens as a bounded production resource. Version 7 never persists or carries model judgments into a later review.\n\n## Review planner\n\n1. **Webhook delivery idempotency and supersession** deduplicate only the same delivered event and cancel stale in-flight snapshots. A later review event at the same Git SHA is still eligible for a fresh review.\n2. **Fresh current-evidence review** rebuilds the current MR review from the complete bounded diff, current policy, current context and current analyzer evidence. Historical model findings are lifecycle/lineage evidence only and never enter the new prompt or verdict.\n3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Adaptive sizing can shrink but never exceed configured caps.\n4. **Optional fast-model routing** uses codex.fastModel only for low-risk chunks.\n5. **MR total diff budget** limits model-reviewed diff bytes; omissions make coverage incomplete.\n6. **Token preflight** checks the next bounded request before execution.\n7. **Project reservation ledger** prevents concurrent workers from oversubscribing the daily token budget.\n8. **Deterministic summaries** keep final summaries outside model judgment.\n9. **Cache-friendly prompt layout** improves provider prefix reuse without persisting model judgment.\n\n## Defaults\n\nConfig Schema 5 defaults include review.maxTotalDiffBytes equal to review.maxDiffBytes, review.adaptiveContextEnabled=true, review.mrMaxTokenBudget=250000, review.projectDailyTokenBudget=5000000, and an empty codex.fastModel. The retired review.incrementalReviewEnabled field is unsupported.\n\n## Fail-closed behavior\n\nBudget-induced omissions become explicit coverage gaps. Project daily budget exhaustion is a non-retryable ETOKENBUDGET until the UTC window has capacity.\n\n## Metrics\n\nPrometheus reports actual/cached/cache-write/output/reasoning token usage, risk scores, request estimates, diff-budget omissions and preflight blocks. Compare fresh-review cost over time; do not infer token savings from historical Judgment reuse because that path does not exist.\n\n## Online token calibration\n\nCore 4.11.0 keeps bounded ephemeral provider+model bytes/token calibration. It stores numeric calibration only, never prompts, source text, findings or judgments.\n\n## Flow Tracking\n\nFlow Tracking is deterministic webhook/state/notification processing and invokes no model.\n`;
+          const zh=`# Token 效率与 Fresh Evidence 审核\n\nCodex Review Service 将模型 Token 视为受预算约束的生产资源。7.0 起禁止把历史模型 Judgment 持久化继承到后续审核。\n\n## Review Planner\n\n1. **Webhook delivery 幂等与 supersede**：只对同一次投递去重，并取消已过期的在途快照；同一 Git SHA 后续出现新的审核事件时仍可 fresh 审核。\n2. **Fresh 当前证据审核**：每轮都从当前完整有界 diff、当前 Policy、当前 Context 和当前 Analyzer Evidence 重建结论。历史模型 Finding 只用于审核完成后的 lifecycle/lineage 对账，绝不进入新 prompt 或 verdict。\n3. **风险评分**：安全、并发、资源生命周期、数据库/Schema、Native 代码获得更多上下文；自适应预算只能缩小，不能突破上限。\n4. **可选 Fast Model 路由**：仅低风险 chunk 可使用 codex.fastModel。\n5. **MR 总 Diff 预算**：预算导致遗漏时 coverage 必须 incomplete。\n6. **Token 事前预检**：模型执行前检查下一有界请求。\n7. **项目 Token Reservation**：避免并发 Worker 共同穿透日预算。\n8. **确定性 Summary**：最终摘要不作为模型 Judgment 保存。\n9. **Cache-friendly Prompt**：只改善 Provider 前缀复用，不保存模型 Judgment。\n\n## 默认值\n\nConfig Schema 5 默认 review.maxTotalDiffBytes 等于 review.maxDiffBytes、review.adaptiveContextEnabled=true、review.mrMaxTokenBudget=250000、review.projectDailyTokenBudget=5000000，codex.fastModel 为空。已退役的 review.incrementalReviewEnabled 字段不再支持。\n\n## Fail-closed\n\n预算造成的证据遗漏必须形成显式 coverage gap；项目日预算耗尽返回非重试 ETOKENBUDGET。\n\n## 指标\n\nPrometheus 记录实际/缓存读取/缓存写入/输出/推理 Token、风险分数、请求估算、Diff 预算遗漏与 preflight 阻断。成本比较以 fresh review 为基准，不再存在“复用历史 Judgment 节省 Token”的产品语义。\n\n## 在线 Token 校准\n\nCore 4.11.0 仅维护有界、临时的 provider+model 数值校准，不保存 prompt、源码、Finding 或 Judgment。\n\n## Flow Tracking\n\nFlow Tracking 只处理确定性的 Webhook、状态与通知，模型调用为 0。\n`;
+          fs.writeFileSync('docs/TOKEN_EFFICIENCY.md',en);fs.writeFileSync('docs/TOKEN_EFFICIENCY.zh-CN.md',zh);
+
+          let vf=fs.readFileSync('scripts/verify-family.js','utf8');
+          vf=vf.replace("'src/codex-safe-core/index.js','src/codex-safe-core/safe-contract.js','src/codex-safe-core/codex-runtime.js'","'src/codex-safe-core/index.js','src/codex-safe-core/safe-contract.js','src/codex-safe-core/judgment-lifecycle.js','src/codex-safe-core/codex-runtime.js'");
+          fs.writeFileSync('scripts/verify-family.js',vf);
+          NODE
+          rm .github/workflows/family-hardcut-cleanup.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test(service): close fresh-only judgment invariants'
+          git push origin HEAD:family/judgment-lifecycle-v1
