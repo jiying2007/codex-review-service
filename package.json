@@ -49,6 +49,7 @@
     "src/*.js",
     "src/codex-safe-core/index.js",
     "src/codex-safe-core/safe-contract.js",
+    "src/codex-safe-core/judgment-lifecycle.js",
     "src/codex-safe-core/codex-runtime.js",
     "src/codex-safe-core/codex-cli.js",
     "src/codex-safe-core/process-runner.js",
