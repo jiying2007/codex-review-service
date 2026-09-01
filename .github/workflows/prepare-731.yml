@@ -1,0 +1,47 @@
+name: Prepare 7.3.1
+
+on:
+  push:
+    branches: [fix/windows-provider-auth-path]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: '24.19.0'
+      - name: Prepare patch release metadata
+        run: |
+          set -euo pipefail
+          npm run release:prepare -- 7.3.1
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const file='product-contract.json';
+          const contract=JSON.parse(fs.readFileSync(file,'utf8'));
+          contract.productVersion='7.3.1';
+          fs.writeFileSync(file,JSON.stringify(contract,null,2)+'\n');
+          const changelog='CHANGELOG.md';
+          let text=fs.readFileSync(changelog,'utf8');
+          text=text.replace('- Release prepared. Replace this line with final release notes before merge.','- Fix Provider Contract v2 auth.json path portability on Windows by asserting the runtime path with platform-native path semantics, and permanently exercise the provider contract in the three-OS portability matrix.');
+          fs.writeFileSync(changelog,text);
+          NODE
+          npm run docs:generate
+          rm .github/workflows/prepare-731.yml
+      - name: Commit generated release state
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json product-contract.json CHANGELOG.md README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md .github/workflows/prepare-731.yml
+          git diff --cached --check
+          git commit -m "chore(release): prepare 7.3.1"
+          git push origin HEAD:fix/windows-provider-auth-path
