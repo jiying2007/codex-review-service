@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **6.2.2** owns production operations while shared safety, review-profile, Test Impact and diagnosis primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.0.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, and Judgment Lifecycle primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 6, Config Schema 4, Policy Schema 3, Review Receipt 4, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e75d27d5f157cacc5e8f6b711355dd5cf4ddfe34`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 7, Config Schema 5, Policy Schema 4, Review Receipt 5, Safe Contract 2, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `8375907712db37492aff1ac0d0013e2753b1f6ab`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -14,11 +14,15 @@ One Service instance is one administrative/security **trust domain**. Projects c
 
 ## Configuration boundary
 
-There is one non-secret **Config Schema 4** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
+There is one non-secret **Config Schema 5** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
 
-Config Schema 4 removes the retired `review.sarifFiles` surface. Analyzer evidence is configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 2 is not translated at runtime.
+Config Schema 5 removes `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only. Config Schema 4 is not translated at runtime.
 
 Secrets are never stored in JSON or SQLite. Production should use protected `_FILE` inputs such as `GITLAB_API_TOKEN_FILE`, `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` and `OPENAI_API_KEY_FILE`. Direct and file forms are mutually exclusive.
+
+## Judgment lifecycle security boundary
+
+Every new review event builds current evidence and performs a fresh Judgment for that event. Durable historical findings, resolutions, or prior verdicts may support lineage and reporting only after fresh review; they cannot be merged into a new Judgment or verdict. Webhook delivery idempotency is delivery-scoped and does not define review identity. Review Receipt v5 binds the exact ReviewSubject and Evidence Manifest identity.
 
 ## Analyzer artifact security boundary
 
@@ -50,7 +54,7 @@ Doctor reports `webhookAuth`, `webhookReplayWindow` and provider profile so depl
 
 Only explicit `gitlab.projects` and `gitlab.groups` are supported. Group discovery must exhaust pagination before replacing active scope. Failed refresh preserves the last complete scope and degrades dependency health.
 
-SQLite uses a local filesystem with WAL + `synchronous=FULL`. Review execution, GitLab publication and IM notification are independent durable failure domains. Retries never implicitly rerun a persisted Codex Review.
+SQLite uses a local filesystem with WAL + `synchronous=FULL`. Review execution, GitLab publication and IM notification are independent durable failure domains. Publication or notification retries operate on persisted outputs and do not create a new Review Run.
 
 ## Codex Safe Contract
 
@@ -58,11 +62,11 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 ## Storage, backup, migration and rollback
 
-The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 6.
+The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 7.
 
-The historical **Schema 5 -> 6 migration** remains an explicit supported migration path with source integrity verification, a mode-0600 verified backup, transactional migration and post-migration verification. From v5.0.0 onward, any DB/Config schema change requires explicit migration/upgrade fixtures and a documented rollback boundary.
+The historical **Schema 5 -> 6 migration** remains an explicit supported migration path with source integrity verification, a mode-0600 verified backup, transactional migration and post-migration verification. The later **Schema 6 -> 7 migration** is likewise explicit and tested. From v5.0.0 onward, any DB/Config schema change requires explicit migration/upgrade fixtures and a documented rollback boundary.
 
-Service 6.2.2 also introduces a Config Schema 2 -> 3 configuration hard cut. Rollback to a Config Schema 2 release requires restoring that release's matching configuration file. Never assume an older binary can translate a newer configuration or irreversible database schema.
+Service 7.0.0 introduces a Config Schema 4 -> 5 configuration hard cut. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 
 ## Fatal integrity behavior
 
