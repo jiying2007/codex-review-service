@@ -2,7 +2,7 @@
 
 ## Product baseline
 
-Codex Review Service **7.3.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.3.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 8
 - Config Schema 7

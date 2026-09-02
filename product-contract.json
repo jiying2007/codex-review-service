@@ -1,5 +1,5 @@
 {
-  "serviceVersion": "7.3.1",
+  "serviceVersion": "7.3.2",
   "databaseSchemaVersion": 8,
   "configSchemaVersion": 7,
   "policySchemaVersion": 4,
@@ -27,7 +27,7 @@
   "analyzerAdapterVersion": 1,
   "productContractVersion": 1,
   "productId": "codex-review-service",
-  "productVersion": "7.3.1",
+  "productVersion": "7.3.2",
   "safeCoreVersion": "4.12.4",
   "judgmentLifecycleVersion": 1,
   "codexRuntimeVersion": 2,
