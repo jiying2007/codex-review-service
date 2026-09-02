@@ -163,9 +163,11 @@ async function prepareNotificationRoutes(gitlab, config) {
 function notificationUser(value) { const id=Number(value?.id||0),username=cardText(value?.username||'',120),name=cardText(value?.name||username,120); return Object.freeze({id:Number.isInteger(id)&&id>0?id:0,username,name}); }
 function notificationUsers(values) { return Object.freeze((values||[]).map(notificationUser).filter(item=>item.id||item.username)); }
 function projectNameForMr(mr) { return cardText(mr?.references?.full||mr?.path_with_namespace||mr?.project?.path_with_namespace||mr?.project?.name||'',240).replace(/!\d+$/,''); }
+function cardPath(value,max=220) { return String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().replace(/([\\`*~\[\](){}|<>])/g,'\\$1').slice(0,max); }
+function coverageGapDetails(snapshot) { return Object.freeze((snapshot?.files||[]).filter(file=>file.coverageState==='coverage_gap').map(file=>Object.freeze({path:cardPath(file.path||'<unknown>',220),reasonCode:String(file.skippedReason||'unknown'),reason:cardText(file.skippedReason||'unknown',80),tooLarge:file.too_large===true,collapsed:file.collapsed===true,diffAvailable:typeof file.diff==='string'&&file.diff.length>0}))); }
 function eventForReview({ job, mr, snapshot, review, durationMs, topFindings = 3, occurredAt }) {
   const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed',authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees),projectName=projectNameForMr(mr);
-  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
+  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, reviewedFileCount:(snapshot?.files||[]).filter(file=>!file.skipped).length, coverageGaps:coverageGapDetails(snapshot), findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
 }
 
 function eventForFailure(job, code) {
@@ -214,6 +216,7 @@ function planNotificationActions(config, event, runKey, statusCardJobId = null) 
 
 function titleFor(event) {
   const zh=event._language!=='en',titles=zh?{'review.started':'🟡 Codex 审查中','review.blocked':'🔴 Codex 审查需处理','review.failed':'⚠️ Codex 审查失败','service.degraded':'⚠️ Codex Review 服务降级','service.recovered':'🟢 Codex Review 服务恢复','gitlab.pipeline.failed':'🔴 GitLab 流水线失败','gitlab.pipeline.succeeded':'🟢 GitLab 流水线成功','gitlab.pipeline.canceled':'⚪ GitLab 流水线取消','gitlab.pipeline.skipped':'⚪ GitLab 流水线跳过','gitlab.mr.merged':'🟢 GitLab 合并请求已合并','gitlab.mr.opened':'🔵 GitLab 合并请求已打开','gitlab.mr.closed':'⚪ GitLab 合并请求已关闭','gitlab.tag.created':'🟢 GitLab Tag 已创建','gitlab.tag.deleted':'⚪ GitLab Tag 已删除','gitlab.branch.created':'🔵 GitLab 分支已创建','gitlab.branch.deleted':'⚪ GitLab 分支已删除','gitlab.push.committed':'🔵 GitLab 代码推送','review.completed':'🟢 Codex 审查通过'}:{'review.started':'🟡 Codex Review Running','review.blocked':'🔴 Codex Review Blocked','review.failed':'⚠️ Codex Review Failed','service.degraded':'⚠️ Codex Review Service Degraded','service.recovered':'🟢 Codex Review Service Recovered','gitlab.pipeline.failed':'🔴 GitLab Pipeline Failed','gitlab.pipeline.succeeded':'🟢 GitLab Pipeline Succeeded','gitlab.pipeline.canceled':'⚪ GitLab Pipeline Canceled','gitlab.pipeline.skipped':'⚪ GitLab Pipeline Skipped','gitlab.mr.merged':'🟢 GitLab MR Merged','gitlab.mr.opened':'🔵 GitLab MR Opened','gitlab.mr.closed':'⚪ GitLab MR Closed','gitlab.tag.created':'🟢 GitLab Tag Created','gitlab.tag.deleted':'⚪ GitLab Tag Deleted','gitlab.branch.created':'🔵 GitLab Branch Created','gitlab.branch.deleted':'⚪ GitLab Branch Deleted','gitlab.push.committed':'🔵 GitLab Code Push','review.completed':'🟢 Codex Review Completed'};
+  if(event.verdict==='incomplete')return zh?'⛔ Codex 审查覆盖不完整':'⛔ Codex Review Coverage Incomplete';
   return titles[event.type]||titles['review.completed'];
 }
 
@@ -229,13 +232,16 @@ function headerTemplateFor(event) {
 function verdictLabel(event) {
   const verdict = String(event.verdict || '').toLowerCase(),en=event._language==='en';
   if (event.type === 'review.started' || verdict === 'running') return en?'Running':'审查中';
-  if (event.type === 'review.blocked' || verdict === 'block' || verdict === 'incomplete') return en?'Needs attention':'需处理';
+  if (verdict === 'incomplete') return en?'Coverage incomplete':'审查覆盖不完整';
+  if (event.type === 'review.blocked' || verdict === 'block') return en?'Needs attention':'需处理';
   if (event.type === 'review.failed' || verdict === 'failed') return en?'Failed':'执行失败';
   if (event.type === 'service.degraded' || verdict === 'degraded') return en?'Degraded':'服务降级';
   if (event.type === 'service.recovered' || verdict === 'recovered') return en?'Recovered':'服务已恢复';
   if (verdict === 'pass') return en?'Pass':'通过';
   return cardText(event.status || event.verdict || '已完成', 40) || '已完成';
 }
+
+function coverageLabel(event) { const en=event._language==='en',reviewed=Number(event.reviewedFileCount||0),gaps=event.coverageGaps||[];if(event.coverageComplete!==false)return en?`Complete${reviewed?` · ${reviewed} text files`:''}`:`完整${reviewed?` · ${reviewed} 个文本文件`:''}`;const first=gaps[0],reason=first?.reasonCode==='unavailable_unknown'?(en?'GitLab did not provide a reviewable diff':'GitLab 未返回可审核 diff'):first?.reason||'';return `${en?'Incomplete':'不完整'} · ${gaps.length||1} ${en?'gap':'个缺口'}${first?` · ${first.path}${reason?`: ${reason}`:''}`:''}`.slice(0,220); }
 
 function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filter(item=>/^ou_[A-Za-z0-9]+$/.test(String(item?.openId||''))).slice(0,10).map(item=>`<at id=${item.openId}>${cardText(item.name||'责任人',80)}</at>`).join(' '); }
 function feishuFields(event) {
@@ -266,6 +272,7 @@ function feishuFields(event) {
   const mentions=feishuMentionList(event._mentions); if(mentions)fields.push({is_short:true,text:{tag:'lark_md',content:`**${en?'Owner':'责任人'}**\n${mentions}`}});
   if (event.headSha) fields.push({ is_short: true, text: { tag: 'lark_md', content: `**${en?'Version':'版本'}**\n${cardText(event.headSha, 12)}` } });
   if (event.sourceBranch || event.targetBranch) fields.push({ is_short: false, text: { tag: 'lark_md', content: `**${en?'Branch':'分支'}**\n${cardText(event.sourceBranch || '-', 100)} → ${cardText(event.targetBranch || '-', 100)}` } });
+  if (event.projectId) fields.push({ is_short: false, text: { tag: 'lark_md', content: `**${en?'Coverage':'覆盖'}**\n${coverageLabel(event)}` } });
   if (event.projectId) fields.push({ is_short: false, text: { tag: 'lark_md', content: `**${en?'Findings':'问题'}**\nCritical ${Number(findingCounts.critical || 0)} · High ${Number(findingCounts.high || 0)} · Medium ${Number(findingCounts.medium || 0)} · Low ${Number(findingCounts.low || 0)}` } });
   return fields;
 }
@@ -332,6 +339,7 @@ function wecomPayload(event) {
     : [
       { keyname: 'MR', value: event.projectId ? `!${Number(event.mrIid) || '-'}` : '-' },
       { keyname: en?'Verdict':'结论', value: cardText(verdictLabel(event), 26) },
+      { keyname: en?'Coverage':'覆盖', value: coverageLabel(event).slice(0,56) },
       { keyname: en?'Findings':'问题', value: `C${Number(findingCounts.critical || 0)} H${Number(findingCounts.high || 0)} M${Number(findingCounts.medium || 0)} L${Number(findingCounts.low || 0)}` },
       { keyname: en?'Duration':'耗时', value: event.durationMs ? `${(Number(event.durationMs) / 1000).toFixed(1)}s` : '-' }
     ];
