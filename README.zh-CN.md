@@ -10,7 +10,7 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**7.3.1**
+- Service：**7.3.2**
 - Database Schema：**8**
 - Config Schema：**7**
 - Policy Schema：**4**
@@ -50,7 +50,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-7.3.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-7.3.2.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review

@@ -59,6 +59,10 @@
 
 # Changelog
 
+## 7.3.2 - 2026-09-02
+
+- Release-only patch carrying the exact Codex Safe Core 4.12.4 family pin, refreshed production documentation, and the already validated GitLab 14.6.1 / 17.11.7 / 19.3.0 provider contracts; no service runtime or database/config schema semantics change.
+
 ## 7.3.1
 
 - Fix Provider Contract v2 auth.json path portability on Windows by asserting the runtime path with platform-native path semantics, and permanently exercise the provider contract in the three-OS portability matrix.
