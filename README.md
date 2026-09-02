@@ -16,7 +16,7 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 - Policy Schema: **4**
 - Review Receipt: **5**
 - Safe Contract: **2**
-- Safe Core: exact commit `7878dae982088746c06e4fe747b2468e6af274a2`
+- Safe Core: exact commit `4c746614a1a4a5b6ea166ab6ded32f1319cf44c3`
 - Quality Platform: **3**
 - Review Profile: **1**
 - Profile Pack: **1**
