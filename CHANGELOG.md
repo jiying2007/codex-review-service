@@ -59,6 +59,10 @@
 
 # Changelog
 
+## 7.3.1
+
+- Fix Provider Contract v2 auth.json path portability on Windows by asserting the runtime path with platform-native path semantics, and permanently exercise the provider contract in the three-OS portability matrix.
+
 ## 6.3.1 - 2026-08-30
 
 - Bind GitLab MR summaries and review notifications to the exact Review Receipt v4 creation time.

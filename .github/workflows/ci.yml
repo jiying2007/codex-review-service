@@ -55,8 +55,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Verify SQLite migration portability
-        run: node --test test/db-migrations.test.js
+      - name: Verify migration and Provider Contract portability
+        run: node --test test/db-migrations.test.js test/codex.test.js
 
   docker-smoke:
     timeout-minutes: 15
