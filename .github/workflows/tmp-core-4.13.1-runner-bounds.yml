@@ -26,6 +26,7 @@ jobs:
           core_sha=479e4b33356457a90617aea7bbba5ee25b65b2c8
           curl -fsSL "https://raw.githubusercontent.com/jiying2007/codex-safe-core/${core_sha}/scripts/repin-consumer.js" -o /tmp/repin-consumer.js
           node /tmp/repin-consumer.js "$PWD" "$core_sha"
+          git checkout HEAD -- .github/workflows/family-release-guard.yml
           node <<'NODE'
           const fs = require('node:fs');
           const version = '7.4.1';
@@ -44,7 +45,6 @@ jobs:
             value.serviceVersion = version;
             value.productVersion = version;
           });
-
           const codexFile = 'src/codex.js';
           let codex = fs.readFileSync(codexFile, 'utf8');
           const cacheMarker = 'const capabilityCache = new Map();';
@@ -59,13 +59,11 @@ jobs:
           codex = codex.slice(0, unixStart) + unixRequest + codex.slice(unixEnd);
           codex = codex.replace('runtimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,', 'runtimeFromConfig,inspectRuntimeFromConfig,');
           fs.writeFileSync(codexFile, codex);
-
           const runnerTestFile = 'test/runner.test.js';
           let runnerTest = fs.readFileSync(runnerTestFile, 'utf8');
           const regression = `\n\nposixTest('runner response limit counts UTF-8 bytes rather than JavaScript characters',async()=>withUnixServer((_req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({message:'界'.repeat(3*1024*1024)}));},async socket=>{await assert.rejects(()=>unixRequest(socket,'GET','/health',undefined,30000),error=>error.code==='ERUNNEROUTPUT');}));\n`;
           if (!runnerTest.includes('runner response limit counts UTF-8 bytes')) runnerTest += regression;
           fs.writeFileSync(runnerTestFile, runnerTest);
-
           const changelogFile = 'CHANGELOG.md';
           let changelog = fs.readFileSync(changelogFile, 'utf8');
           if (!changelog.startsWith('## 7.4.1')) {
