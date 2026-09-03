@@ -1,0 +1,81 @@
+name: Temporary bounded external responses
+on:
+  push:
+    branches: [fix/core-4.13.1-runner-bounds]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22.22.2'
+      - name: Bound GitLab and notification responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          {
+            const file='src/gitlab.js';
+            let text=fs.readFileSync(file,'utf8');
+            const marker="const{selectGitLabCapabilities}=require('./gitlab-capabilities');";
+            if(!text.includes('GITLAB_RESPONSE_MAX_BYTES')){
+              text=text.replace(marker, marker+"\nconst GITLAB_RESPONSE_MAX_BYTES=8*1024*1024;\nasync function readBoundedResponseText(response,maxBytes=GITLAB_RESPONSE_MAX_BYTES){const limit=Number(maxBytes);if(!Number.isSafeInteger(limit)||limit<1)throw Object.assign(new Error('GitLab response byte limit is invalid'),{code:'EGITLABOUTPUT'});const declared=Number(response.headers?.get?.('content-length')||0);if(Number.isFinite(declared)&&declared>limit){try{await response.body?.cancel?.();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:declared});}if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let total=0;try{for(;;){const{done,value}=await reader.read();if(done)break;const chunk=Buffer.from(value);total+=chunk.length;if(total>limit){try{await reader.cancel();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:total});}chunks.push(chunk);}return Buffer.concat(chunks,total).toString('utf8');}finally{try{reader.releaseLock();}catch{}}}const fallback=typeof response.text==='function'?await response.text():'';const bytes=Buffer.byteLength(fallback,'utf8');if(bytes>limit)throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:bytes});return fallback;}\n");
+            }
+            if(!text.includes("const text=await readBoundedResponseText(response")){
+              const old='const text=await response.text();';
+              if(!text.includes(old))throw new Error('GitLab response.text marker missing');
+              text=text.replace(old,"let text;try{text=await readBoundedResponseText(response,this.config.gitlabResponseMaxBytes||GITLAB_RESPONSE_MAX_BYTES);}catch(error){this.circuit.failure(error);throw error;}");
+            }
+            text=text.replace('module.exports={GitLabClient,discussionResolved,encodeProject,nextPageFromHeaders,normalizeDiffVersionSize,parseRetryAfter,RateLimiter,CircuitBreaker};','module.exports={GitLabClient,discussionResolved,encodeProject,nextPageFromHeaders,normalizeDiffVersionSize,parseRetryAfter,RateLimiter,CircuitBreaker,readBoundedResponseText,GITLAB_RESPONSE_MAX_BYTES};');
+            fs.writeFileSync(file,text);
+          }
+          {
+            const file='src/notification.js';
+            let text=fs.readFileSync(file,'utf8');
+            const marker='const FEISHU_CARD_MAX_BYTES = 28_000;';
+            if(!text.includes('NOTIFICATION_RESPONSE_MAX_BYTES')){
+              text=text.replace(marker, marker+"\nconst NOTIFICATION_RESPONSE_MAX_BYTES = 64 * 1024;\nasync function readBoundedJsonResponse(response,maxBytes=NOTIFICATION_RESPONSE_MAX_BYTES){const limit=Number(maxBytes);if(!Number.isSafeInteger(limit)||limit<1)throw notifyError('Notification response byte limit is invalid','ENOTIFYPROTOCOL',{retryable:false});const declared=Number(response.headers?.get?.('content-length')||0);if(Number.isFinite(declared)&&declared>limit){try{await response.body?.cancel?.();}catch{}throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:declared,retryable:false});}let text='';if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let total=0;try{for(;;){const{done,value}=await reader.read();if(done)break;const chunk=Buffer.from(value);total+=chunk.length;if(total>limit){try{await reader.cancel();}catch{}throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:total,retryable:false});}chunks.push(chunk);}text=Buffer.concat(chunks,total).toString('utf8');}finally{try{reader.releaseLock();}catch{}}}else if(typeof response.text==='function'){text=await response.text();const bytes=Buffer.byteLength(text,'utf8');if(bytes>limit)throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:bytes,retryable:false});}else if(typeof response.json==='function'){const value=await response.json();text=JSON.stringify(value);const bytes=Buffer.byteLength(text,'utf8');if(bytes>limit)throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:bytes,retryable:false});return value;}if(!text)return{};try{return JSON.parse(text);}catch(cause){throw notifyError('Notification response returned invalid JSON','ENOTIFYPROTOCOL',{status:response.status,cause,retryable:false});}}\n");
+            }
+            const old='let body = {};\n  try { body = await response.json(); } catch {}';
+            if(text.includes(old))text=text.replace(old,"let body = {};\n  try { body = await readBoundedJsonResponse(response); } catch (error) { if (error?.code === 'ENOTIFYPROTOCOL') throw error; }");
+            else if(!text.includes('readBoundedJsonResponse(response)'))throw new Error('notification response.json marker missing');
+            text=text.replace('module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES,','module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES, NOTIFICATION_RESPONSE_MAX_BYTES, readBoundedJsonResponse,');
+            fs.writeFileSync(file,text);
+          }
+          {
+            const file='test/gitlab.test.js';
+            let text=fs.readFileSync(file,'utf8');
+            if(!text.includes('GitLab response byte ceiling rejects oversized streamed bodies'))text += "\n\ntest('GitLab response byte ceiling rejects oversized streamed bodies',async()=>{const old=global.fetch,chunk=new Uint8Array(5*1024*1024);global.fetch=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(chunk);controller.enqueue(chunk);controller.close();}}),{status:200,headers:{'content-type':'application/json'}});try{await assert.rejects(()=>new GitLabClient(config()).request('GET','/oversized'),error=>error.code==='EGITLABOUTPUT'&&error.maxBytes===8*1024*1024);}finally{global.fetch=old;}});\n";
+            fs.writeFileSync(file,text);
+          }
+          {
+            const file='test/notification.test.js';
+            let text=fs.readFileSync(file,'utf8');
+            if(!text.includes('notification response byte ceiling rejects oversized streamed JSON')){
+              text += "\n\ntest('notification response byte ceiling rejects oversized streamed JSON',async()=>{const {postJson}=require('../src/notification'),chunk=new Uint8Array(40*1024);const fetchImpl=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(chunk);controller.enqueue(chunk);controller.close();}}),{status:200,headers:{'content-type':'application/json'}});await assert.rejects(()=>postJson('https://open.feishu.cn/test',{},1000,{fetchImpl}),error=>error.code==='ENOTIFYPROTOCOL'&&error.maxBytes===64*1024);});\n";
+            }
+            fs.writeFileSync(file,text);
+          }
+          {
+            const file='CHANGELOG.md';
+            let text=fs.readFileSync(file,'utf8');
+            const needle='- Remove duplicate `inspectRuntimeFromConfig` exports; no Review judgment, GitLab, database, notification or receipt semantics change.';
+            const replacement='- Stream and byte-bound GitLab API responses at 8 MiB and Feishu/WeCom response bodies at 64 KiB so chunked or malformed peers cannot force unbounded buffering.\n- Strictly validate isolated-runner request fields before model execution and remove duplicate `inspectRuntimeFromConfig` exports; no Review judgment, database, notification payload or receipt semantics change.';
+            if(text.includes(needle))text=text.replace(needle,replacement);
+            fs.writeFileSync(file,text);
+          }
+          NODE
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/gitlab.js src/notification.js test/gitlab.test.js test/notification.test.js CHANGELOG.md
+          git diff --cached --check
+          git commit -m 'fix(io): bound Service external response bodies'
+          git push origin HEAD:fix/core-4.13.1-runner-bounds
