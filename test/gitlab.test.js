@@ -31,3 +31,6 @@ test('project pipeline lookup binds fork source SHA when head_pipeline is absent
 test('circuit breaker opens only after transient failures and resets after window',()=>{const breaker=new CircuitBreaker(2,10);breaker.failure({code:'EGITLABHTTP',status:403});assert.equal(breaker.state(),'closed');breaker.failure({code:'EGITLABHTTP',status:503});assert.equal(breaker.state(),'closed');breaker.failure({code:'EGITLABNETWORK'});assert.equal(breaker.state(),'open');assert.throws(()=>breaker.before(),error=>error.code==='EGITLABCIRCUIT');});
 
 test('discussion resolved state reads resolvable note',()=>{assert.equal(discussionResolved({notes:[{resolvable:false},{resolvable:true,resolved:true}]}),true);assert.equal(discussionResolved({notes:[{resolvable:true,resolved:false}]}),false);assert.equal(discussionResolved(null),null);});
+
+
+test('GitLab response byte ceiling rejects oversized streamed bodies',async()=>{const old=global.fetch,chunk=new Uint8Array(5*1024*1024);global.fetch=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(chunk);controller.enqueue(chunk);controller.close();}}),{status:200,headers:{'content-type':'application/json'}});try{await assert.rejects(()=>new GitLabClient(config()).request('GET','/oversized'),error=>error.code==='EGITLABOUTPUT'&&error.maxBytes===8*1024*1024);}finally{global.fetch=old;}});
