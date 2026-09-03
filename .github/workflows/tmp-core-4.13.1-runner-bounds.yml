@@ -1,0 +1,82 @@
+name: Temporary Core 4.13.1 runner bounds
+
+on:
+  push:
+    branches: [fix/core-4.13.1-runner-bounds]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '22.22.2'
+      - name: Repin Core and harden runner transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_sha=479e4b33356457a90617aea7bbba5ee25b65b2c8
+          curl -fsSL "https://raw.githubusercontent.com/jiying2007/codex-safe-core/${core_sha}/scripts/repin-consumer.js" -o /tmp/repin-consumer.js
+          node /tmp/repin-consumer.js "$PWD" "$core_sha"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const version = '7.4.1';
+          const writeJson = (file, mutate) => {
+            if (!fs.existsSync(file)) return;
+            const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+            mutate(value);
+            fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+          };
+          writeJson('package.json', value => { value.version = version; });
+          writeJson('package-lock.json', value => {
+            value.version = version;
+            if (value.packages?.['']) value.packages[''].version = version;
+          });
+          writeJson('product-contract.json', value => {
+            value.serviceVersion = version;
+            value.productVersion = version;
+          });
+
+          const codexFile = 'src/codex.js';
+          let codex = fs.readFileSync(codexFile, 'utf8');
+          const cacheMarker = 'const capabilityCache = new Map();';
+          if (!codex.includes(cacheMarker)) throw new Error('capability cache marker missing');
+          codex = codex.replace(cacheMarker, `${cacheMarker}\nconst MAX_RUNNER_RESPONSE_BYTES = 8 * 1024 * 1024;`);
+          if (!codex.includes('maxStdoutBytes:6*1024*1024,')) throw new Error('legacy 6 MiB structured stdout override missing');
+          codex = codex.replace('maxStdoutBytes:6*1024*1024,', '');
+          const unixStart = codex.indexOf('function unixRequest(socket,method,requestPath,body,timeoutMs,signal)');
+          const unixEnd = codex.indexOf('\n\nfunction assertRunnerCapability', unixStart);
+          if (unixStart < 0 || unixEnd < 0) throw new Error('unixRequest boundary missing');
+          const unixRequest = `function unixRequest(socket,method,requestPath,body,timeoutMs,signal){return new Promise((resolve,reject)=>{const data=body===undefined?null:Buffer.from(JSON.stringify(body)),req=http.request({socketPath:socket,path:requestPath,method,headers:data?{'Content-Type':'application/json','Content-Length':data.length}:{},timeout:timeoutMs},res=>{const chunks=[];let responseBytes=0;res.on('data',chunk=>{const buffer=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);responseBytes+=buffer.length;if(responseBytes>MAX_RUNNER_RESPONSE_BYTES){req.destroy(Object.assign(new Error('Runner response too large'),{code:'ERUNNEROUTPUT'}));return;}chunks.push(buffer);});res.on('end',()=>{const text=Buffer.concat(chunks,responseBytes).toString('utf8');let payload;try{payload=text?JSON.parse(text):{};}catch{return reject(Object.assign(new Error('Runner returned invalid JSON'),{code:'ERUNNEROUTPUT'}));}if(res.statusCode<200||res.statusCode>=300){const error=new Error(payload.message||payload.error||\`Runner returned \${res.statusCode}\`);error.code=payload.error||'ERUNNER';error.status=res.statusCode;return reject(error);}resolve(payload);});res.on('error',reject);});req.on('timeout',()=>req.destroy(Object.assign(new Error('Runner request timed out'),{code:'ERUNNERTIMEOUT'})));req.on('error',reject);const onAbort=()=>req.destroy(abortReason(signal));signal?.addEventListener('abort',onAbort,{once:true});req.on('close',()=>signal?.removeEventListener('abort',onAbort));req.end(data||undefined);});}`;
+          codex = codex.slice(0, unixStart) + unixRequest + codex.slice(unixEnd);
+          codex = codex.replace('runtimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,inspectRuntimeFromConfig,', 'runtimeFromConfig,inspectRuntimeFromConfig,');
+          fs.writeFileSync(codexFile, codex);
+
+          const runnerTestFile = 'test/runner.test.js';
+          let runnerTest = fs.readFileSync(runnerTestFile, 'utf8');
+          const regression = `\n\nposixTest('runner response limit counts UTF-8 bytes rather than JavaScript characters',async()=>withUnixServer((_req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({message:'界'.repeat(3*1024*1024)}));},async socket=>{await assert.rejects(()=>unixRequest(socket,'GET','/health',undefined,30000),error=>error.code==='ERUNNEROUTPUT');}));\n`;
+          if (!runnerTest.includes('runner response limit counts UTF-8 bytes')) runnerTest += regression;
+          fs.writeFileSync(runnerTestFile, runnerTest);
+
+          const changelogFile = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(changelogFile, 'utf8');
+          if (!changelog.startsWith('## 7.4.1')) {
+            changelog = `## 7.4.1 - 2026-09-03\n\n- Repin to immutable Codex Safe Core 4.13.1 so local structured Review JSONL keeps a bounded capture tail while retaining an independent fail-closed total transcript ceiling.\n- Remove the obsolete Service-specific 6 MiB structured stdout workaround; Core now owns transcript/capture separation consistently.\n- Enforce the isolated-runner controller response ceiling in UTF-8 bytes rather than JavaScript character count, with a multibyte regression test.\n- Remove duplicate \`inspectRuntimeFromConfig\` exports; no Review judgment, GitLab, database, notification or receipt semantics change.\n\n` + changelog;
+          }
+          fs.writeFileSync(changelogFile, changelog);
+          NODE
+          git rm .github/workflows/tmp-core-4.13.1-runner-bounds.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(runtime): bound Service Codex and runner output'
+          git push origin HEAD:fix/core-4.13.1-runner-bounds
