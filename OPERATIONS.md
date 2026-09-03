@@ -2,7 +2,7 @@
 
 ## Product baseline
 
-Codex Review Service **7.4.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.4.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 8
 - Config Schema 7
@@ -48,7 +48,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 7 remains the current boundary. Service 7.4.0 consumes Runtime/Provider Contract v3 and defaults provider selection to `auto` without a schema bump; explicit credential/HTTP fields remain advanced overrides. Unknown fields and unsupported versions still fail closed.
+Config Schema 7 remains the current boundary. Service 7.4.1 consumes Runtime/Provider Contract v3 and defaults provider selection to `auto` without a schema bump; explicit credential/HTTP fields remain advanced overrides. Unknown fields and unsupported versions still fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -184,7 +184,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.4.0 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.0. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.4.1 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.1. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

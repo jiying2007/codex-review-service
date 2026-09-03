@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.4.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 7**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.4.1** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 7**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `479e4b33356457a90617aea7bbba5ee25b65b2c8`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real pro
 
 ## Config Schema 7 Provider Contract boundary
 
-Service 7.4.0 keeps Config Schema 7 and adopts Core Runtime/Provider Contract v3. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account Family or Codex runtime; explicit provider fields remain advanced overrides. Runtime does not translate older Config Schema versions. The Service 7.2.0 Config Schema 5 -> 6 responsibility-notification boundary and the prior `review.incrementalReviewEnabled` retirement remain historical upgrade boundaries.
+Service 7.4.1 keeps Config Schema 7 and Runtime/Provider Contract v3 while adding bounded structured/external response handling. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account Family or Codex runtime; explicit provider fields remain advanced overrides. Runtime does not translate older Config Schema versions. The Service 7.2.0 Config Schema 5 -> 6 responsibility-notification boundary and the prior `review.incrementalReviewEnabled` retirement remain historical upgrade boundaries.
 
 The quality surface is now:
 
@@ -165,7 +165,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.4.0 keeps the current Config Schema 7 and adopts Runtime/Provider Contract v3 with Auto runtime inheritance; the historical 7.3.0 Config Schema 6 -> 7 hard cut remains an upgrade boundary. Service 7.2.0 introduced the historical **Config Schema 5 -> 6** hard cut for strict responsibility identity mappings, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** hard cut and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.4.1 keeps the current Config Schema 7 and Runtime/Provider Contract v3 with Auto runtime inheritance; the historical 7.3.0 Config Schema 6 -> 7 hard cut remains an upgrade boundary. Service 7.2.0 introduced the historical **Config Schema 5 -> 6** hard cut for strict responsibility identity mappings, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** hard cut and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
 
 The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Schema 7 -> 8 creates and verifies a Schema 7 backup before adding status-card state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 8 downgrade.
 
