@@ -1,3 +1,11 @@
+## 7.4.1 - 2026-09-03
+
+- Repin to immutable Codex Safe Core 4.13.1 so local structured Review JSONL keeps a bounded capture tail while retaining an independent fail-closed total transcript ceiling.
+- Remove the obsolete Service-specific 6 MiB structured stdout workaround; Core now owns transcript/capture separation consistently.
+- Enforce the isolated-runner controller response ceiling in UTF-8 bytes rather than JavaScript character count, with a multibyte regression test.
+- Stream and byte-bound GitLab API responses at 8 MiB and Feishu/WeCom response bodies at 64 KiB so chunked or malformed peers cannot force unbounded buffering.
+- Strictly validate isolated-runner request fields before model execution and remove duplicate `inspectRuntimeFromConfig` exports; no Review judgment, database, notification payload or receipt semantics change.
+
 ## 7.4.0 - 2026-09-03
 
 - Adopt immutable Codex Safe Core 4.13.0 and Runtime/Provider Contract v3 with `codex.providerMode=auto` as the normal path.

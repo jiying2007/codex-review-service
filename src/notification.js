@@ -16,6 +16,9 @@ const FEISHU_API_BASE = 'https://open.feishu.cn/open-apis';
 const FEISHU_TOKEN_SKEW_MS = 60_000;
 const FEISHU_MIN_REQUEST_INTERVAL_MS = 50;
 const FEISHU_CARD_MAX_BYTES = 28_000;
+const NOTIFICATION_RESPONSE_MAX_BYTES = 64 * 1024;
+async function readBoundedJsonResponse(response,maxBytes=NOTIFICATION_RESPONSE_MAX_BYTES){const limit=Number(maxBytes);if(!Number.isSafeInteger(limit)||limit<1)throw notifyError('Notification response byte limit is invalid','ENOTIFYPROTOCOL',{retryable:false});const declared=Number(response.headers?.get?.('content-length')||0);if(Number.isFinite(declared)&&declared>limit){try{await response.body?.cancel?.();}catch{}throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:declared,retryable:false});}let text='';if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let total=0;try{for(;;){const{done,value}=await reader.read();if(done)break;const chunk=Buffer.from(value);total+=chunk.length;if(total>limit){try{await reader.cancel();}catch{}throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:total,retryable:false});}chunks.push(chunk);}text=Buffer.concat(chunks,total).toString('utf8');}finally{try{reader.releaseLock();}catch{}}}else if(typeof response.text==='function'){text=await response.text();const bytes=Buffer.byteLength(text,'utf8');if(bytes>limit)throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:bytes,retryable:false});}else if(typeof response.json==='function'){const value=await response.json();text=JSON.stringify(value);const bytes=Buffer.byteLength(text,'utf8');if(bytes>limit)throw notifyError(`Notification response exceeds ${limit} bytes`,'ENOTIFYPROTOCOL',{status:response.status,maxBytes:limit,responseBytes:bytes,retryable:false});return value;}if(!text)return{};try{return JSON.parse(text);}catch(cause){throw notifyError('Notification response returned invalid JSON','ENOTIFYPROTOCOL',{status:response.status,cause,retryable:false});}}
+
 const FEISHU_TOKEN_ERROR_CODES = new Set([99991661, 99991663, 99991668]);
 const FEISHU_RETRYABLE_CODES = new Set([90002, 90013, 90014, 99991400]);
 
@@ -355,7 +358,7 @@ async function postJson(url, payload, timeoutMs, { headers = {}, fetchImpl = fet
   try { response = await fetchImpl(url, { method, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs) }); }
   catch (cause) { throw notifyError(`${provider} network request failed`, 'ENOTIFYNETWORK', { cause, retryable: true }); }
   let body = {};
-  try { body = await response.json(); } catch {}
+  try { body = await readBoundedJsonResponse(response); } catch (error) { if (error?.code === 'ENOTIFYPROTOCOL') throw error; }
   if (!response.ok) {const retryAfter=Number(response.headers?.get?.('retry-after')||0),retryAfterMs=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(86400000,Math.round(retryAfter*1000)):undefined;throw notifyError(`${provider} HTTP ${response.status}`, 'ENOTIFYHTTP', { status: response.status, body, retryAfterMs, retryable: [408, 409, 425, 429].includes(response.status) || response.status >= 500 });}
   return body;
 }
@@ -482,4 +485,4 @@ class Notifier {
   async stop() { this.stopping = true; await Promise.allSettled(this.workers); }
 }
 
-module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES, Notifier, WebhookProvider, FeishuAppProvider, createNotificationProviders, prepareNotificationRoutes, eventForReview, eventForReviewStarted, eventForFailure, systemEvent, planStatusCardActions, planNotificationActions, responsibleUsers, responsibilityApplies, identityFor, payloadFor, feishuPayload, wecomPayload, cardText, cardUrl, notificationSecretEnvName, secretEnvName, signingEnvName, appIdEnvName, appSecretEnvName, chatIdEnvName, signingSecretFor, feishuSignature, webhookFor, feishuAppCredentials, feishuRecipient, retryableNotification, notificationDelay, postJson, postWebhook, feishuApiError, isFeishuTokenError };
+module.exports = { EVENTS, FEISHU_API_BASE, FEISHU_CARD_MAX_BYTES, NOTIFICATION_RESPONSE_MAX_BYTES, readBoundedJsonResponse, Notifier, WebhookProvider, FeishuAppProvider, createNotificationProviders, prepareNotificationRoutes, eventForReview, eventForReviewStarted, eventForFailure, systemEvent, planStatusCardActions, planNotificationActions, responsibleUsers, responsibilityApplies, identityFor, payloadFor, feishuPayload, wecomPayload, cardText, cardUrl, notificationSecretEnvName, secretEnvName, signingEnvName, appIdEnvName, appSecretEnvName, chatIdEnvName, signingSecretFor, feishuSignature, webhookFor, feishuAppCredentials, feishuRecipient, retryableNotification, notificationDelay, postJson, postWebhook, feishuApiError, isFeishuTokenError };
