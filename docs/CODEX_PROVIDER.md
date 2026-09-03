@@ -2,6 +2,8 @@
 
 Codex Review Service 7.4.0 consumes Codex Safe Core 4.13.0 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
 
+## Runtime Contract v3 — zero-config
+
 ## Zero-config resolution
 
 `codex.providerMode` defaults to `auto`. Resolution is machine-local and deterministic: Family Runtime (`~/.codex-safe/runtime.json`) and Codex configuration (`${CODEX_HOME}/config.toml` or `~/.codex/config.toml`) are consumed through Core Runtime v3. No LAN scanning or implicit DNS discovery is performed.

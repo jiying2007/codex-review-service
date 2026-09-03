@@ -2,6 +2,8 @@
 
 Codex Review Service 7.4.0 使用 Codex Safe Core 4.13.0 Runtime/Provider Contract v3。正常路径是 **Auto**：只要 Service 操作系统用户、隔离 Runner 用户或容器里的 `codex` 已经可用，Review Service 就直接复用这台机器的 Runtime，不再要求重复填写中转站 URL。
 
+## Runtime Contract v3 — 零配置
+
 ## 零配置解析
 
 `codex.providerMode` 默认是 `auto`。Core Runtime v3 按机器级契约解析 Family Runtime（`~/.codex-safe/runtime.json`）以及 Codex 配置（`${CODEX_HOME}/config.toml` 或 `~/.codex/config.toml`）。不会扫描局域网，也不会做隐式 DNS 发现。
