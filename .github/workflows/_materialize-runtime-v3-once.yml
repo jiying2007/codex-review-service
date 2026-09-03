@@ -1,0 +1,74 @@
+name: Materialize Review Service Runtime v3 Once
+on:
+  push:
+    branches: [feat/runtime-auto-7.4.0]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with: { node-version: '24.19.0' }
+      - name: Persist validated runtime implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import json,re
+          p=Path('package.json'); pkg=json.loads(p.read_text()); resolver='src/codex-safe-core/codex-runtime-resolver.js'
+          if resolver not in pkg['files']: pkg['files'].insert(pkg['files'].index('src/codex-safe-core/codex-runtime.js')+1,resolver)
+          p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+          p=Path('src/config.js'); s=p.read_text(); old="codexProviderMode:enumValue(c.providerMode,'openai','codex.providerMode',['openai','openai-compatible'])"; new="codexProviderMode:enumValue(c.providerMode,'auto','codex.providerMode',['auto','openai','openai-compatible'])"
+          if old not in s and new not in s: raise SystemExit('config provider-mode anchor missing')
+          p.write_text(s.replace(old,new))
+          p=Path('src/runner-server.js'); s=p.read_text(); s=s.replace("codexProviderMode:str(codex.providerMode,'openai','codex.providerMode')","codexProviderMode:str(codex.providerMode,'auto','codex.providerMode')")
+          anchor="codexProviderApiKeyEnv:str(codex.apiKeyEnv,codex.providerMode==='openai-compatible'?'CODEX_PROVIDER_API_KEY':'OPENAI_API_KEY','codex.apiKeyEnv'),"; replacement=anchor+"codexProviderCredentialSource:str(codex.credentialSource,'auto','codex.credentialSource'),codexProviderAllowInsecureHttp:Boolean(codex.allowInsecureHttp),"
+          if 'codexProviderCredentialSource:' not in s:
+              if anchor not in s: raise SystemExit('runner credential anchor missing')
+              s=s.replace(anchor,replacement)
+          p.write_text(s)
+          p=Path('src/codex.js'); s=p.read_text(); import_anchor="const { createCodexCli } = require('./codex-safe-core/codex-cli');"; runtime_import="const { runtimeResolutionFromConfig, inspectRuntimeFromConfig, filteredRuntimeEnv, prepareRuntimeFromConfig } = require('./runtime');"
+          if runtime_import not in s: s=s.replace(import_anchor,import_anchor+'\n'+runtime_import)
+          pattern=r"function filteredEnv\(config\) \{[\s\S]*?\n\}\n\nfunction runtimeFromConfig\(config\)\{[^\n]+\}\n"; replacement="function filteredEnv(config, runtime = {}, sourceEnv = process.env) { return filteredRuntimeEnv(config, runtime, sourceEnv); }\n\nfunction runtimeFromConfig(config) { return runtimeResolutionFromConfig(config).runtime; }\n"
+          if re.search(pattern,s): s=re.sub(pattern,replacement,s,count=1)
+          elif 'filteredRuntimeEnv(config' not in s: raise SystemExit('runtime adapter anchor missing')
+          pattern=r"function createLocalCli\(config\) \{[\s\S]*?\n\}\n\nasync function probeCodexCapabilitiesLocal"; replacement="function createLocalCli(config, runtime = {}, childEnv = null) {\n  const processRunner = createProcessRunner((_zh,en)=>en);\n  const baseEnv = childEnv || filteredEnv(config, runtime);\n  const runPreparedProcess = (command,args,options={},stdinText='',token) => processRunner.runPreparedProcess(command,args,{...options,env:filteredEnv(config,runtime,options.env||baseEnv)},stdinText,token);\n  return createCodexCli({ runPreparedProcess, tempPrefix:'codex-review-service-', capabilityCache });\n}\n\nasync function probeCodexCapabilitiesLocal"
+          if re.search(pattern,s): s=re.sub(pattern,replacement,s,count=1)
+          elif 'childEnv = null' not in s: raise SystemExit('local cli anchor missing')
+          old="async function probeCodexRuntimeLocal(config,force=false){if(force)capabilityCache.clear();const cli=createLocalCli(config),result=await cli.probeCodexRuntime({codexPath:config.codexPath,model:config.codexModel||'',runtime:runtimeFromConfig(config)});return Object.freeze({...result,versionMatched:checkVersionPolicy(result.codexVersion||'unknown',config),mode:'local'});}"
+          new="async function probeCodexRuntimeLocal(config,force=false){if(force)capabilityCache.clear();const prepared=prepareRuntimeFromConfig(config),cli=createLocalCli(config,prepared.runtime,prepared.childEnv),result=await cli.runStructuredCodex({codexPath:config.codexPath,model:config.codexModel||'',runtime:prepared.runtime,phase:'connectivity-probe',schema:{type:'object',additionalProperties:false,properties:{ok:{type:'boolean',const:true}},required:['ok']},input:'Connectivity probe. Return exactly {\\\"ok\\\":true} through the required output schema. Do not use tools or external data.',schemaFileName:'runtime-probe-schema.json',maxEstimatedTokens:2048,estimatedOutputTokens:32,processOptions:{env:prepared.childEnv}});const version=result.resolved?.version||'unknown';return Object.freeze({ok:result.parsed?.ok===true,codexVersion:version,model:config.codexModel||'cli-default',provider:result.provider,durationMs:result.durationMs,versionMatched:checkVersionPolicy(version,config),mode:'local',runtimeSource:prepared.source,runtimeConfigPath:prepared.configPath});}"
+          if old in s: s=s.replace(old,new)
+          elif 'runtimeSource:prepared.source' not in s: raise SystemExit('probe anchor missing')
+          old_start="async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindings) {\n  const cli=createLocalCli(config), token=cancellationToken(signal);"; new_start="async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindings) {\n  const prepared=prepareRuntimeFromConfig(config), cli=createLocalCli(config,prepared.runtime,prepared.childEnv), token=cancellationToken(signal);"
+          if old_start in s: s=s.replace(old_start,new_start)
+          s=s.replace("runtime:runtimeFromConfig(config),schema:outputSchema(maxFindings)","runtime:prepared.runtime,schema:outputSchema(maxFindings)").replace("processOptions:{detached:process.platform!=='win32'}","processOptions:{detached:process.platform!=='win32',env:prepared.childEnv}").replace("model:config.codexModel||'',mode:'local'};","model:config.codexModel||'',mode:'local',runtimeSource:prepared.source,runtimeConfigPath:prepared.configPath};").replace("module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,", "module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,")
+          p.write_text(s)
+          p=Path('src/doctor.js'); s=p.read_text().replace("const { probeCodexRuntime } = require('./codex');","const { probeCodexRuntime, inspectRuntimeFromConfig } = require('./codex');")
+          old="checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || '', liveProbeMs: runtime.durationMs || 0 };"; new="const inspection=inspectRuntimeFromConfig(config); checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || inspection.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || inspection.endpointHost || '', transport: runtime.provider?.transport || inspection.transport || 'managed', runtimeSource: runtime.runtimeSource || inspection.source || 'explicit', runtimeConfigPath: runtime.runtimeConfigPath || inspection.configPath || '', credentialEnv: inspection.credentialEnv || '', credentialPresent: Boolean(inspection.credentialEnvPresent || inspection.authJsonPresent || (runtime.provider?.mode==='openai')), plaintextWarning: inspection.plaintextWarning || '', liveProbeMs: runtime.durationMs || 0 };"
+          if old in s: s=s.replace(old,new)
+          p.write_text(s)
+          p=Path('test/codex.test.js'); s=p.read_text(); s=re.sub(r"// auth\.json[\s\S]*?test\('Provider Contract v2[\s\S]*?\n$","test('explicit compatible override maps into Core Runtime v3',()=>{const runtime=runtimeFromConfig({codexProviderMode:'openai-compatible',codexProviderBaseUrl:'http://192.168.2.109:3000/v1',codexProviderApiKeyEnv:'RELAY_API_KEY',codexProviderCredentialSource:'auth-json',codexProviderAllowInsecureHttp:true,codexHome:'/home/liujing/.codex'});assert.equal(runtime.provider.credentialSource,'auth-json');assert.equal(runtime.provider.allowInsecureHttp,true);assert.equal(runtime.provider.baseUrl,'http://192.168.2.109:3000/v1');});\n",s,count=1); p.write_text(s)
+          Path('test/runtime-v3.test.js').write_text("'use strict';\nconst test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const{prepareRuntimeFromConfig,inspectRuntimeFromConfig}=require('../src/runtime');\ntest('Service Auto runtime inherits machine Codex private-IP relay and only forwards provider credential',()=>{const home=fs.mkdtempSync(path.join(os.tmpdir(),'review-service-runtime-'));try{fs.writeFileSync(path.join(home,'config.toml'),'model_provider = \\\"relay\\\"\\n\\n[model_providers.relay]\\nbase_url = \\\"http://192.168.10.20:8317/v1\\\"\\nenv_key = \\\"RELAY_KEY\\\"\\nwire_api = \\\"responses\\\"\\n');const config={codexHome:home,codexProviderMode:'auto',codexProviderApiKeyEnv:'OPENAI_API_KEY',codexConnectTimeoutSeconds:15,codexRequestTimeoutSeconds:180,codexStreamIdleTimeoutSeconds:60,reviewTimeoutSeconds:180};const prepared=prepareRuntimeFromConfig(config,{HOME:home,PATH:'/usr/bin',GITLAB_API_TOKEN:'gitlab-secret',RELAY_KEY:'relay-secret'});assert.equal(prepared.source,'codex-config');assert.equal(prepared.runtime.provider.mode,'openai-compatible');assert.equal(prepared.runtime.provider.baseUrl,'http://192.168.10.20:8317/v1');assert.equal(prepared.runtime.provider.allowInsecureHttp,true);assert.equal(prepared.childEnv.RELAY_KEY,'relay-secret');assert.equal(prepared.childEnv.GITLAB_API_TOKEN,undefined);const inspected=inspectRuntimeFromConfig(config,{HOME:home,RELAY_KEY:'relay-secret'});assert.equal(inspected.source,'codex-config');assert.equal(inspected.transport,'http');assert.equal(inspected.privateNetwork,true);}finally{fs.rmSync(home,{recursive:true,force:true});}});\n")
+          for name in ['config.example.json','deploy/systemd/config.example.json','deploy/docker/config.example.json']:
+              p=Path(name); cfg=json.loads(p.read_text()); cfg['codex']['providerMode']='auto'; p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2)+'\n')
+          for name in ['README.md','README.zh-CN.md','docs/ARCHITECTURE.md']:
+              p=Path(name); s=p.read_text().replace('schemaVersion: 4','schemaVersion: 7').replace('Config Schema 4','Config Schema 7').replace('配置 Schema 4','配置 Schema 7').replace('Service v7.3 does not change the shared review protocol.','Service v7.4 does not change the shared review protocol.').replace('Service v7.3 不改变共享 Review 协议。','Service v7.4 不改变共享 Review 协议。'); p.write_text(s)
+          p=Path('README.md'); p.write_text(p.read_text().replace('For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).','For an OpenAI-compatible relay, Runtime v3 normally reuses the Service account/container Family/Codex runtime and credential source. Use explicit `codex.provider*` fields only as advanced overrides. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).'))
+          p=Path('README.zh-CN.md'); p.write_text(p.read_text().replace('OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。','OpenAI-compatible 中转站默认由 Runtime v3 复用 Service 用户/容器的 Family/Codex Runtime 与凭据来源；显式 `codex.provider*` 仅作为高级覆盖。完整说明见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。'))
+          p=Path('CHANGELOG.md'); s=p.read_text()
+          if '## 7.4.0 - 2026-09-03' not in s: p.write_text("## 7.4.0 - 2026-09-03\n\n- Adopt immutable Codex Safe Core 4.13.0 and Runtime/Provider Contract v3 with `codex.providerMode=auto` as the normal path.\n- Reuse machine/container Family Runtime or Codex config/auth for zero-configuration OpenAI-compatible relays, including literal private-IP HTTP with Doctor plaintext warnings while public/non-IP HTTP remains fail-closed.\n- Preserve Service secret isolation: only the resolved provider credential may enter the Codex child process; GitLab and notification credentials remain filtered.\n- Extend Doctor with runtime provenance, endpoint/transport and credential-presence diagnostics without exposing secret values.\n- Preserve Database Schema 8, Config Schema 7, Review Receipt 5 and GitLab provider compatibility behavior unchanged.\n\n"+s)
+          PY
+          npm run docs:generate
+          node scripts/check-syntax.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json src/config.js src/runner-server.js src/codex.js src/doctor.js src/runtime.js test/codex.test.js test/runtime-v3.test.js config.example.json deploy/systemd/config.example.json deploy/docker/config.example.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md CHANGELOG.md
+          git commit -m 'feat(runtime): materialize Review Service 7.4.0 Runtime v3'
+          git push origin HEAD:feat/runtime-auto-7.4.0
