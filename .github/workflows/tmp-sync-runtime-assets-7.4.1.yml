@@ -1,0 +1,55 @@
+name: Temporary Service runtime assets 7.4.1
+on:
+  push:
+    branches: [fix/core-4.13.1-runner-bounds]
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: true, fetch-depth: 0, submodules: recursive}
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with: {node-version: '22.22.2'}
+      - name: Synchronize current deployment identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const replacements={
+            'deploy/docker/compose.yaml':[
+              ['ghcr.io/jiying2007/codex-review-service:7.4.0','ghcr.io/jiying2007/codex-review-service:7.4.1']
+            ],
+            'docs/DEPLOYMENT.md':[
+              ['Codex Review Service 7.4.0','Codex Review Service 7.4.1'],
+              ['Service 7.4.0 keeps Config Schema 7 and adopts Core Runtime/Provider Contract v3.','Service 7.4.1 keeps Config Schema 7 and Runtime/Provider Contract v3 while adding bounded structured/external response handling.'],
+              ['Service 7.4.0 keeps the current Config Schema 7 and adopts Runtime/Provider Contract v3 with Auto runtime inheritance;','Service 7.4.1 keeps the current Config Schema 7 and Runtime/Provider Contract v3 with Auto runtime inheritance;']
+            ],
+            'docs/DEPLOYMENT.zh-CN.md':[
+              ['Codex Review Service 7.4.0','Codex Review Service 7.4.1'],
+              ['Service 7.4.0','Service 7.4.1']
+            ],
+            'OPERATIONS.md':[
+              ['Codex Review Service **7.4.0** is the current production-operations baseline.','Codex Review Service **7.4.1** is the current production-operations baseline.'],
+              ['Service 7.4.0 consumes Runtime/Provider Contract v3','Service 7.4.1 consumes Runtime/Provider Contract v3'],
+              ['Service 7.4.0 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.0.','Service 7.4.1 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.1.']
+            ]
+          };
+          for(const [file,pairs] of Object.entries(replacements)){
+            let text=fs.readFileSync(file,'utf8');
+            for(const [from,to] of pairs){if(text.includes(from))text=text.split(from).join(to);}
+            fs.writeFileSync(file,text);
+          }
+          NODE
+          grep -nE 'Codex Review Service \*\*7\.4\.0\*\* is the current|Codex Review Service 7\.4\.0|image: .*codex-review-service:7\.4\.0' OPERATIONS.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md deploy/docker/compose.yaml && exit 2 || true
+          node --test test/docker-governance.test.js test/docs-governance.test.js
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add OPERATIONS.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md deploy/docker/compose.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m 'docs(deploy): align Service 7.4.1 runtime assets'
+          git push origin HEAD:fix/core-4.13.1-runner-bounds
