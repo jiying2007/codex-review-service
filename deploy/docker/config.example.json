@@ -151,7 +151,7 @@
     "home": "",
     "versionPolicy": "warn",
     "allowedVersionPattern": "",
-    "providerMode": "openai",
+    "providerMode": "auto",
     "providerBaseUrl": "",
     "apiKeyEnv": "OPENAI_API_KEY",
     "connectTimeoutSeconds": 15,

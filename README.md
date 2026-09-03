@@ -10,13 +10,13 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **7.3.2**
+- Service: **7.4.0**
 - Database Schema: **8**
 - Config Schema: **7**
 - Policy Schema: **4**
 - Review Receipt: **5**
 - Safe Contract: **2**
-- Safe Core: exact commit `4c746614a1a4a5b6ea166ab6ded32f1319cf44c3`
+- Safe Core: exact commit `d95f67cc61ce66c16e2aa440829655919e906a75`
 - Quality Platform: **3**
 - Review Profile: **1**
 - Profile Pack: **1**
@@ -36,7 +36,7 @@ GitLab compatibility is capability-driven rather than a pile of scattered versio
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
 - **Modern profile** (`>=15.7`): uses paginated `/diffs` plus `/versions` and `real_size` to prove complete diff coverage.
 
-If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v7.3 does not change the shared review protocol.
+If completeness cannot be proven in either profile, review is blocked before Codex is asked for a trusted verdict. Current real-provider CI covers GitLab CE **14.6.1**, **17.11.7**, and **19.3.0**. Safe Core remains Family v4; Service v7.4 does not change the shared review protocol.
 
 ## Start here
 
@@ -50,7 +50,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-7.3.2.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-7.4.0.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -67,9 +67,9 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 ```
 
-For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
+For an OpenAI-compatible relay, Runtime v3 normally reuses the Service account/container Family/Codex runtime and credential source. Use explicit `codex.provider*` fields only as advanced overrides. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 4`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 7`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -193,7 +193,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 4
+/etc/codex-review/config.json      non-secret Config Schema 7
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```
@@ -225,4 +225,4 @@ MIT
 
 ## GitLab Flow Tracking
 
-Optional Config Schema 4 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.
+Optional Config Schema 7 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.

@@ -4,16 +4,16 @@
 
 <!-- BEGIN GENERATED PRODUCT CONTRACT -->
 
-Codex Review Service **7.3.2** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
+Codex Review Service **7.4.0** owns production operations and GitLab compatibility profiles while consuming the exact-pinned Safe Core quality/review platform. `product-contract.json` is the machine-checked product identity:
 
 ```text
-Service 7.3.2
+Service 7.4.0
 DB Schema 8
 Config Schema 7
 Policy Schema 4
 Review Receipt 5
 Safe Contract 2
-Safe Core 4c746614a1a4a5b6ea166ab6ded32f1319cf44c3
+Safe Core d95f67cc61ce66c16e2aa440829655919e906a75
 Quality Platform 3
 Review Profile 1
 Profile Pack 1
@@ -42,7 +42,7 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └──────── Config Schema 4 ────────────┘
+              └──────── Config Schema 7 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver
@@ -68,7 +68,7 @@ Runtime does not infer root, sudo, or systemd. Docker consumes the same Config S
 
 ## Quality evidence boundary
 
-The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 4 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
+The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 7 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
 
 Finding-like analyzer results are normalized through the Core Analyzer Finding contract and can become changed-line evidence only after exact path/line anchoring. Coverage, SBOM and test metadata remain evidence metadata rather than fabricated source findings.
 
