@@ -67,9 +67,9 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
+OpenAI-compatible 中转站默认由 Runtime v3 复用 Service 用户/容器的 Family/Codex Runtime 与凭据来源；显式 `codex.provider*` 仅作为高级覆盖。完整说明见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
 
-直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 4`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
+直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 7`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
 
 ```bash
 cd /opt/codex-review-service
@@ -184,4 +184,4 @@ MIT
 
 ## GitLab 流程跟踪
 
-Config Schema 4 提供默认关闭的 GitLab Flow Tracking，可跟踪 Pipeline 终态、MR 生命周期、Tag 与 Branch 创建/删除，并复用现有 durable notification outbox。整个路径确定性执行且绝不调用 Codex。详见 `docs/FLOW_TRACKING.zh-CN.md`。
+Config Schema 7 提供默认关闭的 GitLab Flow Tracking，可跟踪 Pipeline 终态、MR 生命周期、Tag 与 Branch 创建/删除，并复用现有 durable notification outbox。整个路径确定性执行且绝不调用 Codex。详见 `docs/FLOW_TRACKING.zh-CN.md`。

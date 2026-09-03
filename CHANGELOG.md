@@ -1,3 +1,11 @@
+## 7.4.0 - 2026-09-03
+
+- Adopt immutable Codex Safe Core 4.13.0 and Runtime/Provider Contract v3 with `codex.providerMode=auto` as the normal path.
+- Reuse machine/container Family Runtime or Codex config/auth for zero-configuration OpenAI-compatible relays, including literal private-IP HTTP with Doctor plaintext warnings while public/non-IP HTTP remains fail-closed.
+- Preserve Service secret isolation: only the resolved provider credential may enter the Codex child process; GitLab and notification credentials remain filtered.
+- Extend Doctor with runtime provenance, endpoint/transport and credential-presence diagnostics without exposing secret values.
+- Preserve Database Schema 8, Config Schema 7, Review Receipt 5 and GitLab provider compatibility behavior unchanged.
+
 ## 7.3.0 - 2026-09-01
 
 - Pin Codex Safe Core 4.12.0 and consume Codex Runtime / Provider Contract v2.

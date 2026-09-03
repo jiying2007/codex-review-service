@@ -42,7 +42,7 @@ Direct user mode                         System-level systemd
 ${XDG_CONFIG_HOME:-$HOME/.config}        /etc/codex-review/config.json
   /codex-review/config.json                         │
               │                                     │
-              └──────── Config Schema 4 ────────────┘
+              └──────── Config Schema 7 ────────────┘
                                    │
                                    ▼
                          Project Scope Resolver
@@ -68,7 +68,7 @@ Runtime does not infer root, sudo, or systemd. Docker consumes the same Config S
 
 ## Quality evidence boundary
 
-The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 4 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
+The Service may acquire already-produced CI artifacts from the exact MR head pipeline according to operator Config Schema 7 `analyzerReports`. Adapters accept bounded SARIF, GitLab Code Quality, JUnit, Cobertura, LCOV, compiler diagnostics, Cppcheck, CycloneDX, Trivy and Gitleaks evidence. Artifact text is untrusted data and repository policy cannot define executable analyzer commands.
 
 Finding-like analyzer results are normalized through the Core Analyzer Finding contract and can become changed-line evidence only after exact path/line anchoring. Coverage, SBOM and test metadata remain evidence metadata rather than fabricated source findings.
 

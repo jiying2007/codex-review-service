@@ -4,7 +4,7 @@ const { loadConfig, notificationRouteWarnings } = require('./config');
 const { Store, SCHEMA_VERSION } = require('./db');
 const { GitLabClient } = require('./gitlab');
 const { ProjectScopeManager } = require('./project-scope');
-const { probeCodexRuntime } = require('./codex');
+const { probeCodexRuntime, inspectRuntimeFromConfig } = require('./codex');
 const { contract } = require('./product-contract');
 
 async function runDoctor({ loadConfigFn = loadConfig } = {}) {
@@ -19,7 +19,7 @@ async function runDoctor({ loadConfigFn = loadConfig } = {}) {
     checks.database = { ok: store.ping() && store.schemaVersion() === SCHEMA_VERSION && SCHEMA_VERSION === contract.databaseSchemaVersion && store.synchronousMode() === 2 && quick === 'ok' && !foreign.length, schemaVersion: store.schemaVersion(), expectedSchemaVersion: contract.databaseSchemaVersion, synchronous: store.synchronousMode(), quickCheck: quick, foreignKeyViolations: foreign.length, publicationDepth: store.publicationDepth(), notificationDepth: store.notificationDepth() };
     try {
       const runtime = await probeCodexRuntime(config, true);
-      checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || '', liveProbeMs: runtime.durationMs || 0 };
+      const inspection=inspectRuntimeFromConfig(config); checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || inspection.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || inspection.endpointHost || '', transport: runtime.provider?.transport || inspection.transport || 'managed', runtimeSource: runtime.runtimeSource || inspection.source || 'explicit', runtimeConfigPath: runtime.runtimeConfigPath || inspection.configPath || '', credentialEnv: inspection.credentialEnv || '', credentialPresent: Boolean(inspection.credentialEnvPresent || inspection.authJsonPresent || (runtime.provider?.mode==='openai')), plaintextWarning: inspection.plaintextWarning || '', liveProbeMs: runtime.durationMs || 0 };
       if (config.codexVersionPolicy === 'warn' && runtime.versionMatched === false) checks.codex.warning = 'Codex version does not match codex.allowedVersionPattern';
     } catch (error) { checks.codex = { ok: false, code: error.code || 'ECODEX' }; }
     try {

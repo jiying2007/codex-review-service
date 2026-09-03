@@ -67,9 +67,9 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 ```
 
-For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
+For an OpenAI-compatible relay, Runtime v3 normally reuses the Service account/container Family/Codex runtime and credential source. Use explicit `codex.provider*` fields only as advanced overrides. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 4`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 7`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -193,7 +193,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 4
+/etc/codex-review/config.json      non-secret Config Schema 7
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```
@@ -225,4 +225,4 @@ MIT
 
 ## GitLab Flow Tracking
 
-Optional Config Schema 4 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.
+Optional Config Schema 7 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.
