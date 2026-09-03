@@ -1,0 +1,242 @@
+name: Materialize Review Service Runtime v3 Once
+on:
+  push:
+    branches: [feat/runtime-auto-7.4.0]
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with: { node-version: '24.19.0' }
+      - name: Materialize validated Runtime v3 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import json,re
+
+          # Release package must carry the Core Runtime resolver used at runtime.
+          p=Path('package.json'); pkg=json.loads(p.read_text())
+          resolver='src/codex-safe-core/codex-runtime-resolver.js'
+          if resolver not in pkg['files']:
+              pkg['files'].insert(pkg['files'].index('src/codex-safe-core/codex-runtime.js')+1,resolver)
+          p.write_text(json.dumps(pkg,ensure_ascii=False,indent=2)+'\n')
+
+          # Auto runtime is the normal Service path.
+          p=Path('src/config.js'); s=p.read_text()
+          old="codexProviderMode:enumValue(c.providerMode,'openai','codex.providerMode',['openai','openai-compatible'])"
+          new="codexProviderMode:enumValue(c.providerMode,'auto','codex.providerMode',['auto','openai','openai-compatible'])"
+          if old not in s and new not in s: raise SystemExit('config provider-mode anchor missing')
+          p.write_text(s.replace(old,new))
+
+          # Isolated runner uses the same Runtime v3 selection and advanced overrides.
+          p=Path('src/runner-server.js'); s=p.read_text()
+          s=s.replace("codexProviderMode:str(codex.providerMode,'openai','codex.providerMode')","codexProviderMode:str(codex.providerMode,'auto','codex.providerMode')")
+          anchor="codexProviderApiKeyEnv:str(codex.apiKeyEnv,codex.providerMode==='openai-compatible'?'CODEX_PROVIDER_API_KEY':'OPENAI_API_KEY','codex.apiKeyEnv'),"
+          replacement=anchor+"codexProviderCredentialSource:str(codex.credentialSource,'auto','codex.credentialSource'),codexProviderAllowInsecureHttp:Boolean(codex.allowInsecureHttp),"
+          if 'codexProviderCredentialSource:' not in s:
+              if anchor not in s: raise SystemExit('runner provider credential anchor missing')
+              s=s.replace(anchor,replacement)
+          p.write_text(s)
+
+          # Local Codex path delegates Runtime resolution and child-env filtering to src/runtime.js.
+          p=Path('src/codex.js'); s=p.read_text()
+          import_anchor="const { createCodexCli } = require('./codex-safe-core/codex-cli');"
+          runtime_import="const { runtimeResolutionFromConfig, inspectRuntimeFromConfig, filteredRuntimeEnv, prepareRuntimeFromConfig } = require('./runtime');"
+          if runtime_import not in s: s=s.replace(import_anchor,import_anchor+'\n'+runtime_import)
+          pattern=r"function filteredEnv\(config\) \{[\s\S]*?\n\}\n\nfunction runtimeFromConfig\(config\)\{[^\n]+\}\n"
+          replacement="""function filteredEnv(config, runtime = {}, sourceEnv = process.env) { return filteredRuntimeEnv(config, runtime, sourceEnv); }\n\nfunction runtimeFromConfig(config) { return runtimeResolutionFromConfig(config).runtime; }\n"""
+          if re.search(pattern,s): s=re.sub(pattern,replacement,s,count=1)
+          elif 'filteredRuntimeEnv(config' not in s: raise SystemExit('codex runtime adapter anchor missing')
+          pattern=r"function createLocalCli\(config\) \{[\s\S]*?\n\}\n\nasync function probeCodexCapabilitiesLocal"
+          replacement="""function createLocalCli(config, runtime = {}, childEnv = null) {\n  const processRunner = createProcessRunner((_zh,en)=>en);\n  const baseEnv = childEnv || filteredEnv(config, runtime);\n  const runPreparedProcess = (command,args,options={},stdinText='',token) => processRunner.runPreparedProcess(command,args,{...options,env:filteredEnv(config,runtime,options.env||baseEnv)},stdinText,token);\n  return createCodexCli({ runPreparedProcess, tempPrefix:'codex-review-service-', capabilityCache });\n}\n\nasync function probeCodexCapabilitiesLocal"""
+          if re.search(pattern,s): s=re.sub(pattern,replacement,s,count=1)
+          elif 'childEnv = null' not in s: raise SystemExit('createLocalCli anchor missing')
+          old="async function probeCodexRuntimeLocal(config,force=false){if(force)capabilityCache.clear();const cli=createLocalCli(config),result=await cli.probeCodexRuntime({codexPath:config.codexPath,model:config.codexModel||'',runtime:runtimeFromConfig(config)});return Object.freeze({...result,versionMatched:checkVersionPolicy(result.codexVersion||'unknown',config),mode:'local'});}"
+          new="""async function probeCodexRuntimeLocal(config,force=false){if(force)capabilityCache.clear();const prepared=prepareRuntimeFromConfig(config),cli=createLocalCli(config,prepared.runtime,prepared.childEnv),result=await cli.runStructuredCodex({codexPath:config.codexPath,model:config.codexModel||'',runtime:prepared.runtime,phase:'connectivity-probe',schema:{type:'object',additionalProperties:false,properties:{ok:{type:'boolean',const:true}},required:['ok']},input:'Connectivity probe. Return exactly {\\\"ok\\\":true} through the required output schema. Do not use tools or external data.',schemaFileName:'runtime-probe-schema.json',maxEstimatedTokens:2048,estimatedOutputTokens:32,processOptions:{env:prepared.childEnv}});const version=result.resolved?.version||'unknown';return Object.freeze({ok:result.parsed?.ok===true,codexVersion:version,model:config.codexModel||'cli-default',provider:result.provider,durationMs:result.durationMs,versionMatched:checkVersionPolicy(version,config),mode:'local',runtimeSource:prepared.source,runtimeConfigPath:prepared.configPath});}"""
+          if old in s: s=s.replace(old,new)
+          elif 'runtimeSource:prepared.source' not in s: raise SystemExit('probe runtime anchor missing')
+          old_start="async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindings) {\n  const cli=createLocalCli(config), token=cancellationToken(signal);"
+          new_start="async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindings) {\n  const prepared=prepareRuntimeFromConfig(config), cli=createLocalCli(config,prepared.runtime,prepared.childEnv), token=cancellationToken(signal);"
+          if old_start in s: s=s.replace(old_start,new_start)
+          elif 'prepared=prepareRuntimeFromConfig(config)' not in s: raise SystemExit('runCodexLocal start anchor missing')
+          s=s.replace("runtime:runtimeFromConfig(config),schema:outputSchema(maxFindings)","runtime:prepared.runtime,schema:outputSchema(maxFindings)")
+          s=s.replace("processOptions:{detached:process.platform!=='win32'}","processOptions:{detached:process.platform!=='win32',env:prepared.childEnv}")
+          s=s.replace("model:config.codexModel||'',mode:'local'};","model:config.codexModel||'',mode:'local',runtimeSource:prepared.source,runtimeConfigPath:prepared.configPath};")
+          s=s.replace("module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,", "module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,")
+          p.write_text(s)
+
+          # Doctor exposes provenance/presence, never secret values.
+          p=Path('src/doctor.js'); s=p.read_text()
+          s=s.replace("const { probeCodexRuntime } = require('./codex');","const { probeCodexRuntime, inspectRuntimeFromConfig } = require('./codex');")
+          old="checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || '', liveProbeMs: runtime.durationMs || 0 };"
+          new="const inspection=inspectRuntimeFromConfig(config); checks.codex = { ok: true, mode: config.runnerMode, version: runtime.codexVersion || runtime.version || 'unknown', versionMatched: runtime.versionMatched !== false, versionPolicy: config.codexVersionPolicy, provider: runtime.provider?.mode || inspection.mode || config.codexProviderMode, endpointHost: runtime.provider?.endpointHost || inspection.endpointHost || '', transport: runtime.provider?.transport || inspection.transport || 'managed', runtimeSource: runtime.runtimeSource || inspection.source || 'explicit', runtimeConfigPath: runtime.runtimeConfigPath || inspection.configPath || '', credentialEnv: inspection.credentialEnv || '', credentialPresent: Boolean(inspection.credentialEnvPresent || inspection.authJsonPresent || (runtime.provider?.mode==='openai')), plaintextWarning: inspection.plaintextWarning || '', liveProbeMs: runtime.durationMs || 0 };"
+          if old in s: s=s.replace(old,new)
+          elif 'runtimeSource:' not in s: raise SystemExit('doctor runtime anchor missing')
+          p.write_text(s)
+
+          # Runtime v3 tests replace the old v2-only mapping test.
+          p=Path('test/codex.test.js'); s=p.read_text()
+          s=re.sub(r"// auth\.json[\s\S]*?test\('Provider Contract v2[\s\S]*?\n$", """test('explicit compatible override maps into Core Runtime v3',()=>{const runtime=runtimeFromConfig({codexProviderMode:'openai-compatible',codexProviderBaseUrl:'http://192.168.2.109:3000/v1',codexProviderApiKeyEnv:'RELAY_API_KEY',codexProviderCredentialSource:'auth-json',codexProviderAllowInsecureHttp:true,codexHome:'/home/liujing/.codex'});assert.equal(runtime.provider.credentialSource,'auth-json');assert.equal(runtime.provider.allowInsecureHttp,true);assert.equal(runtime.provider.baseUrl,'http://192.168.2.109:3000/v1');});\n""",s,count=1)
+          p.write_text(s)
+          Path('test/runtime-v3.test.js').write_text("""'use strict';\nconst test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const{prepareRuntimeFromConfig,inspectRuntimeFromConfig}=require('../src/runtime');\ntest('Service Auto runtime inherits machine Codex private-IP relay and only forwards provider credential',()=>{const home=fs.mkdtempSync(path.join(os.tmpdir(),'review-service-runtime-'));try{fs.writeFileSync(path.join(home,'config.toml'),'model_provider = \\\"relay\\\"\\n\\n[model_providers.relay]\\nbase_url = \\\"http://192.168.10.20:8317/v1\\\"\\nenv_key = \\\"RELAY_KEY\\\"\\nwire_api = \\\"responses\\\"\\n');const config={codexHome:home,codexProviderMode:'auto',codexProviderApiKeyEnv:'OPENAI_API_KEY',codexConnectTimeoutSeconds:15,codexRequestTimeoutSeconds:180,codexStreamIdleTimeoutSeconds:60,reviewTimeoutSeconds:180};const prepared=prepareRuntimeFromConfig(config,{HOME:home,PATH:'/usr/bin',GITLAB_API_TOKEN:'gitlab-secret',RELAY_KEY:'relay-secret'});assert.equal(prepared.source,'codex-config');assert.equal(prepared.runtime.provider.mode,'openai-compatible');assert.equal(prepared.runtime.provider.baseUrl,'http://192.168.10.20:8317/v1');assert.equal(prepared.runtime.provider.allowInsecureHttp,true);assert.equal(prepared.childEnv.RELAY_KEY,'relay-secret');assert.equal(prepared.childEnv.GITLAB_API_TOKEN,undefined);const inspected=inspectRuntimeFromConfig(config,{HOME:home,RELAY_KEY:'relay-secret'});assert.equal(inspected.source,'codex-config');assert.equal(inspected.transport,'http');assert.equal(inspected.privateNetwork,true);}finally{fs.rmSync(home,{recursive:true,force:true});}});\n""")
+
+          # Canonical examples use auto; no duplicate relay setup by default.
+          for name in ['config.example.json','deploy/systemd/config.example.json','deploy/docker/config.example.json']:
+              p=Path(name); cfg=json.loads(p.read_text()); cfg.setdefault('codex',{})['providerMode']='auto'; p.write_text(json.dumps(cfg,ensure_ascii=False,indent=2)+'\n')
+
+          # Remove current-product stale prose from README/architecture.
+          for name in ['README.md','README.zh-CN.md','docs/ARCHITECTURE.md']:
+              p=Path(name); s=p.read_text()
+              s=s.replace('schemaVersion: 4','schemaVersion: 7').replace('Config Schema 4','Config Schema 7').replace('配置 Schema 4','配置 Schema 7')
+              s=s.replace('Service v7.3 does not change the shared review protocol.','Service v7.4 does not change the shared review protocol.')
+              s=s.replace('Service v7.3 不改变共享 Review 协议。','Service v7.4 不改变共享 Review 协议。')
+              p.write_text(s)
+          p=Path('README.md'); s=p.read_text(); s=s.replace('For an OpenAI-compatible relay, do not rely on `~/.codex/config.toml`. Configure `codex.providerMode/providerBaseUrl/apiKeyEnv` explicitly and use the dedicated `CODEX_PROVIDER_API_KEY[_FILE]` secret. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).','For an OpenAI-compatible relay, the normal path is zero-config Runtime v3: if `codex` works for the Service account/container, the Service reuses its Family/Codex runtime and credential source. Use explicit `codex.provider*` fields only as advanced overrides. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).'); p.write_text(s)
+          p=Path('README.zh-CN.md'); s=p.read_text(); s=s.replace('OpenAI-compatible 中转站不要复用 `~/.codex/config.toml`；请显式配置 `codex.providerMode/providerBaseUrl/apiKeyEnv` 并使用专用 `CODEX_PROVIDER_API_KEY[_FILE]`。完整步骤见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。','OpenAI-compatible 中转站默认走 Runtime v3 零配置：只要 Service 用户/容器中的 `codex` 已可用，Service 就复用其 Family/Codex Runtime 与凭据来源；显式 `codex.provider*` 仅作为高级覆盖。完整说明见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。'); p.write_text(s)
+
+          # Rewrite Provider docs to the current contract; no v2-first instructions remain.
+          Path('docs/CODEX_PROVIDER.md').write_text(r'''# Codex Provider and Relay Configuration
+
+Codex Review Service 7.4.0 consumes Codex Safe Core 4.13.0 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
+
+## Zero-config resolution
+
+`codex.providerMode` defaults to `auto`. Resolution is machine-local and deterministic: Family Runtime (`~/.codex-safe/runtime.json`) and Codex configuration (`${CODEX_HOME}/config.toml` or `~/.codex/config.toml`) are consumed through Core Runtime v3. No LAN scanning or DNS discovery is performed.
+
+For Remote/container deployments, “machine” means the actual process account/container filesystem. Mount or provision the intended Codex home there.
+
+## Credentials and secret isolation
+
+Provider credentials stay in the configured provider environment variable or Codex `auth.json`. Secret values never enter JSON config, argv, receipts, Doctor output, or logs. Review Service additionally filters the Codex child environment: only the resolved provider credential and bounded runtime variables are forwarded; GitLab and notification secrets are not.
+
+When using `${CODEX_HOME}/auth.json`, Core accepts API-key authentication according to the shared Runtime contract. File-backed Service secrets such as `OPENAI_API_KEY_FILE` / `CODEX_PROVIDER_API_KEY_FILE` remain available for explicitly configured provider overrides.
+
+## Private-network HTTP
+
+HTTPS remains preferred. A literal private-IP HTTP relay already present in machine-owned Codex configuration may be inherited by Runtime v3 and is reported by Doctor with a plaintext warning. Public/non-IP HTTP remains fail-closed unless the machine-level Family Runtime explicitly establishes trust. Repository policy cannot enable plaintext provider transport.
+
+## Advanced explicit override
+
+Use an explicit override only when this Service instance intentionally differs from the machine Codex runtime:
+
+```json
+{
+  "codex": {
+    "providerMode": "openai-compatible",
+    "providerBaseUrl": "https://relay.example.internal/v1",
+    "apiKeyEnv": "CODEX_PROVIDER_API_KEY",
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
+  }
+}
+```
+
+The relay must implement the OpenAI Responses API, SSE, and Structured Output. A Chat-Completions-only relay is insufficient. Never embed credentials, query parameters, or fragments in `providerBaseUrl`.
+
+To force built-in OpenAI behavior independently of machine provider configuration, set `providerMode` to `openai` explicitly.
+
+## systemd and isolated Runner
+
+The Service and isolated Runner resolve Runtime v3 in the account that actually launches Codex. Set `CODEX_HOME` when the intended Codex home is not the account default. In isolated mode, provision the provider credential only for the Runner account; the Controller keeps GitLab credentials and state and communicates over the Unix socket.
+
+## Docker / Compose
+
+The official image uses the same Runtime v3 contract. Persist/mount the intended Codex home into the container and make only the provider credential available to the Codex execution process. Production should consume the digest-pinned `compose.release.yaml` published by the Release rather than rebuilding source on the target host.
+
+## Doctor
+
+Run `npm run doctor` (or `node src/doctor.js`) before enabling GitLab webhooks. Doctor performs a live structured Codex probe and reports runtime source/config path, provider, endpoint host, transport, credential presence, version policy, and plaintext warnings without exposing credential values.
+
+If terminal `codex` works but Doctor does not, first verify that the terminal and Service/Runner are the same OS account/container and use the same `CODEX_HOME`. Do not duplicate provider settings until that identity mismatch is ruled out.
+
+## Failure guidance
+
+- `401/403`: verify the provider credential and model/account permissions.
+- `429`: reduce review concurrency/request volume to the relay quota.
+- DNS/connect/TLS failures: test from the Service/Runner network namespace and install the private CA through `NODE_EXTRA_CA_CERTS` when required; do not disable TLS verification.
+- Chat-Completions-only relay: add a Responses API + SSE/Structured Output compatibility layer first.
+''')
+          Path('docs/CODEX_PROVIDER.zh-CN.md').write_text(r'''# Codex Provider 与中转站配置
+
+Codex Review Service 7.4.0 使用 Codex Safe Core 4.13.0 Runtime/Provider Contract v3。正常路径是 **Auto**：只要 Service 操作系统用户、隔离 Runner 用户或容器里的 `codex` 已经可用，Review Service 就直接复用这台机器的 Runtime，不再要求重复填写中转站 URL。
+
+## 零配置解析
+
+`codex.providerMode` 默认是 `auto`。Core Runtime v3 会按机器级契约解析 Family Runtime（`~/.codex-safe/runtime.json`）以及 Codex 配置（`${CODEX_HOME}/config.toml` 或 `~/.codex/config.toml`）。不会扫描局域网，也不会做隐式 DNS 发现。
+
+远端/容器部署中的“机器”指真正运行 Service/Runner 的用户与容器文件系统；需要把目标 Codex Home 正确挂载或配置进去。
+
+## 凭据与 Secret 隔离
+
+Provider 凭据仍来自 Provider 指定的环境变量或 Codex `auth.json`。Secret 值不会进入 JSON 配置、argv、Receipt、Doctor 输出或日志。Review Service 还会过滤 Codex 子进程环境：只转发解析后的 Provider 凭据和受限 Runtime 环境变量，GitLab Token 与通知 Secret 不会被带入 Codex 子进程。
+
+显式 Provider override 仍可使用 `OPENAI_API_KEY_FILE` / `CODEX_PROVIDER_API_KEY_FILE` 等 Service 文件型 Secret；默认 Auto 模式优先复用机器 Codex Runtime/凭据来源。
+
+## 私网 HTTP
+
+优先使用 HTTPS。机器级 Codex 配置中已经存在的“字面量私网 IP HTTP”中转站可以由 Runtime v3 继承，Doctor 会明确提示明文传输风险。公网/非 IP HTTP 继续 fail-closed，除非机器级 Family Runtime 明确建立信任。仓库策略不能开启明文 Provider 传输。
+
+## 高级显式覆盖
+
+只有当本 Service 实例确实需要和机器 Codex Runtime 不同时才使用显式覆盖：
+
+```json
+{
+  "codex": {
+    "providerMode": "openai-compatible",
+    "providerBaseUrl": "https://relay.example.internal/v1",
+    "apiKeyEnv": "CODEX_PROVIDER_API_KEY",
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
+  }
+}
+```
+
+中转站必须实现 OpenAI Responses API、SSE 和 Structured Output；只有 Chat Completions API 不足以满足契约。`providerBaseUrl` 不允许包含凭据、查询参数或 fragment。
+
+如需强制使用官方 OpenAI、完全忽略机器上的 compatible provider，可显式设置 `providerMode: "openai"`。
+
+## systemd 与隔离 Runner
+
+Service 与隔离 Runner 都在真正启动 Codex 的操作系统账号下解析 Runtime v3。目标 Codex Home 不是账号默认目录时设置 `CODEX_HOME`。isolated 模式只给 Runner 用户 Provider 凭据；Controller 保留 GitLab 凭据和状态，通过 Unix Socket 调用 Runner。
+
+## Docker / Compose
+
+官方镜像使用同一 Runtime v3 契约。把目标 Codex Home 持久化/挂载到容器，并只向 Codex 执行进程提供 Provider 凭据。生产环境应直接使用 Release 发布的 digest 固定 `compose.release.yaml`，不要在目标机器重新构建源码。
+
+## Doctor
+
+启用 GitLab Webhook 前执行 `npm run doctor`（或 `node src/doctor.js`）。Doctor 会进行真实结构化 Codex 探测，并报告 Runtime 来源/配置路径、Provider、Endpoint Host、Transport、凭据是否存在、版本策略和明文 HTTP 风险，但不会输出凭据值。
+
+如果终端里的 `codex` 能用而 Doctor 不能，首先确认终端和 Service/Runner 是否是同一个用户/容器、是否使用同一个 `CODEX_HOME`；不要第一时间重新复制一套 Provider 配置。
+
+## 故障指引
+
+- `401/403`：检查 Provider 凭据、模型与账号权限。
+- `429`：降低 Review 并发/请求量以匹配中转站配额。
+- DNS/连接/TLS：必须从 Service/Runner 的真实网络命名空间测试；私有 CA 使用 `NODE_EXTRA_CA_CERTS`，不要关闭 TLS 校验。
+- 仅支持 Chat Completions：先增加 Responses API + SSE + Structured Output 兼容层。
+''')
+
+          # Add release history once.
+          p=Path('CHANGELOG.md'); s=p.read_text()
+          if '## 7.4.0 - 2026-09-03' not in s:
+              block='''## 7.4.0 - 2026-09-03\n\n- Adopt immutable Codex Safe Core 4.13.0 and Runtime/Provider Contract v3 with `codex.providerMode=auto` as the normal path.\n- Reuse machine/container Family Runtime or Codex config/auth for zero-configuration OpenAI-compatible relays, including literal private-IP HTTP with explicit Doctor plaintext warnings while public/non-IP HTTP remains fail-closed.\n- Preserve Service secret isolation: only the resolved provider credential may enter the Codex child process; GitLab and notification credentials remain filtered.\n- Extend Doctor with runtime provenance, endpoint/transport and credential-presence diagnostics without exposing secret values.\n- Preserve Database Schema 8, Config Schema 7, Review Receipt 5 and GitLab provider compatibility behavior unchanged.\n\n'''
+              p.write_text(block+s)
+          PY
+          npm run docs:generate
+          node scripts/check-syntax.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json src/config.js src/runner-server.js src/codex.js src/doctor.js src/runtime.js scripts/verify-family.js test/codex.test.js test/runtime-v3.test.js config.example.json deploy/systemd/config.example.json deploy/docker/config.example.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/CODEX_PROVIDER.md docs/CODEX_PROVIDER.zh-CN.md CHANGELOG.md
+          git commit -m 'feat(runtime): materialize Review Service 7.4.0 Runtime v3'
+          git push origin HEAD:feat/runtime-auto-7.4.0
