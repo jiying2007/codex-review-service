@@ -65,7 +65,7 @@ async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCo
     try{
       const result=await runCodexFn(input,{...config,codexModel:route.model},signal,maxFindings),durationMs=Number(result.durationMs||Date.now()-started),validated=validateResult(result.parsed),usage=usageShape(result.usage),evidence=router.evidence(route,usage);
       usageAdd(totalUsage,usage);if(shadow)shadowLatencyMs+=durationMs;else{productionLatencyMs+=durationMs;productionModels.add(result.model||route.model||'cli-default');}
-      const call=freeze({role,shadow,managed:route.managed,model:result.model||route.model||'cli-default',usage,durationMs,modelEvidence:evidence,budgetMeta});calls.push(call);
+      const call=freeze({role,shadow,managed:route.managed,model:result.model||route.model||'cli-default',version:String(result.version||''),usage,durationMs,modelEvidence:evidence,budgetMeta});calls.push(call);
       if(afterCall)await afterCall({role,route,input,result,validated,call,optional,shadow,budgetMeta});
       return{result,validated,call};
     }catch(error){if(optional)return{error};throw error;}
@@ -77,14 +77,15 @@ async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCo
   if(config.codexAdjudicatorEnabled&&shouldAdjudicate(reviewerValidated,config.codexAdjudicatorMinSeverity||'high')){
     const adjudicator=await execute('adjudicator',router.adjudicator(),appendAdjudication(prompt,reviewerValidated));finalValidated=adjudicator.validated;
   }
+  const productionUsage=usageShape(totalUsage);
   const shadowRoute=router.shadow();
   if(shadowRoute){
     const shadow=await execute('reviewer',shadowRoute,prompt,{optional:true,shadow:true});
-    if(shadow?.validated)shadowComparison=compareShadowReview({production:{findings:finalValidated.findings||[],usage:totalUsage,latencyMs:productionLatencyMs},candidate:{findings:shadow.validated.findings||[],usage:shadow.call.usage,latencyMs:shadowLatencyMs}});
+    if(shadow?.validated)shadowComparison=compareShadowReview({production:{findings:finalValidated.findings||[],usage:productionUsage,latencyMs:productionLatencyMs},candidate:{findings:shadow.validated.findings||[],usage:shadow.call.usage,latencyMs:shadowLatencyMs}});
     else if(shadow?.error)shadowError=String(shadow.error.code||shadow.error.message||'ESHADOW');
   }
   const productionCalls=calls.filter(item=>!item.shadow),economics=buildModelEconomicsScorecard([{usage:totalUsage,verifiedFindings:(finalValidated?.findings||[]).length,verifierCalls:productionCalls.filter(item=>item.role==='reviewer').length,scoutCalls:productionCalls.filter(item=>item.role==='scout').length,adjudicatorCalls:productionCalls.filter(item=>item.role==='adjudicator').length,latencyMs:productionLatencyMs+shadowLatencyMs}]);
-  return freeze({finalValidated,reviewerValidated,scoutValidated,calls,usage:totalUsage,productionModels:[...productionModels],modelEvidence:productionCalls.map(item=>item.modelEvidence).filter(Boolean),shadowComparison,shadowError,economics,productionLatencyMs,shadowLatencyMs,registrySource:router.registrySource,registryRevision:router.registryRevision});
+  return freeze({finalValidated,reviewerValidated,scoutValidated,calls,usage:totalUsage,productionUsage,productionModels:[...productionModels],modelEvidence:productionCalls.map(item=>item.modelEvidence).filter(Boolean),shadowComparison,shadowError,economics,productionLatencyMs,shadowLatencyMs,registrySource:router.registrySource,registryRevision:router.registryRevision});
 }
 
 module.exports={SEVERITY_RANK,parseCandidate,createServiceModelRouter,appendScout,appendAdjudication,shouldAdjudicate,executeRoleAwareReview};
