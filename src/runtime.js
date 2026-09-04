@@ -26,10 +26,12 @@ function runtimeSelectionFromConfig(config={}){
     credentialSource:config.codexProviderCredentialSource||'auto',
     allowInsecureHttp:Boolean(config.codexProviderAllowInsecureHttp)
   }:{mode};
+  const operationMs=(config.reviewTimeoutSeconds||180)*1000;
+  const configuredRequestMs=(config.codexRequestTimeoutSeconds||config.reviewTimeoutSeconds||180)*1000;
   return Object.freeze({provider,timeouts:Object.freeze({
     connectMs:(config.codexConnectTimeoutSeconds||15)*1000,
-    requestMs:(config.codexRequestTimeoutSeconds||180)*1000,
-    operationMs:(config.reviewTimeoutSeconds||180)*1000,
+    requestMs:Math.min(configuredRequestMs,operationMs),
+    operationMs,
     idleMs:(config.codexStreamIdleTimeoutSeconds||60)*1000
   })});
 }
