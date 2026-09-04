@@ -1,0 +1,43 @@
+name: Temporary Service 7.5 Role Routing Finalizer Retry
+
+on:
+  push:
+    branches: ["feat/model-routing-v1-runtime"]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/model-routing-v1-runtime
+          fetch-depth: 0
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+      - name: Execute deterministic 7.5 migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          workflow=Path('.github/workflows/_tmp-service-750.yml').read_text()
+          start=workflow.index("          python3 - <<'PY'\n")+len("          python3 - <<'PY'\n")
+          end=workflow.index("\n          PY\n",start)
+          script=textwrap.dedent(workflow[start:end])
+          exec(compile(script,'service-7.5-migration','exec'))
+          PY
+          node scripts/generate-contract-docs.js
+          git config user.name codex-safe-family-bot
+          git config user.email codex-safe-family-bot@users.noreply.github.com
+          git add -A -- ':!.github/workflows/**'
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(service): adopt role-aware Model Routing v1'
+            git push origin HEAD:feat/model-routing-v1-runtime
+          fi
