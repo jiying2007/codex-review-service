@@ -1,12 +1,12 @@
 {
-  "serviceVersion": "7.4.2",
+  "serviceVersion": "7.4.3",
   "databaseSchemaVersion": 8,
   "configSchemaVersion": 7,
   "policySchemaVersion": 4,
   "reviewReceiptVersion": 5,
   "safeContractVersion": 2,
   "safeCoreMajorVersion": 4,
-  "safeCoreCommit": "25467922eeebffa93b7c820f2ffa7590c1625381",
+  "safeCoreCommit": "e962826ee6556fd8ffa74ab1994bf43d62826f10",
   "minimumNodeVersion": "22.22.2",
   "canonicalNodeVersion": "24.19.0",
   "supportedNodeMajors": [
@@ -27,8 +27,8 @@
   "analyzerAdapterVersion": 1,
   "productContractVersion": 1,
   "productId": "codex-review-service",
-  "productVersion": "7.4.2",
-  "safeCoreVersion": "4.14.4",
+  "productVersion": "7.4.3",
+  "safeCoreVersion": "4.15.0",
   "judgmentLifecycleVersion": 1,
   "codexRuntimeVersion": 3,
   "providerContractVersion": 3
