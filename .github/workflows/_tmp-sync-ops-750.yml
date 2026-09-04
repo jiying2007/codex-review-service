@@ -1,0 +1,35 @@
+name: Temporary Service 7.5 Operational Docs Sync
+
+on:
+  push:
+    branches: ["feat/model-routing-v1-runtime"]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/model-routing-v1-runtime
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@e51e5fe84fc33b4c73ebe40526b2694712b5b858
+        with:
+          node-version: '24.19.0'
+      - name: Generate managed operational current-state docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run docs:generate
+          git config user.name codex-safe-family-bot
+          git config user.email codex-safe-family-bot@users.noreply.github.com
+          git add README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md OPERATIONS.md deploy/docker/compose.yaml
+          if ! git diff --cached --quiet; then
+            git commit -m 'docs(service): align 7.5 operational contracts'
+            git push origin HEAD:feat/model-routing-v1-runtime
+          fi
