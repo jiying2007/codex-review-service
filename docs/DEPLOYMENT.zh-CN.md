@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.4.3** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 7**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.5.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `e962826ee6556fd8ffa74ab1994bf43d62826f10`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
@@ -16,7 +16,7 @@ Service 7.3.0 将 Config Schema 6 -> 7 硬切到 Core Provider Contract v2。Run
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -35,6 +35,14 @@ Service 7.3.0 将 Config Schema 6 -> 7 硬切到 Core Provider Contract v2。Run
     "triggerAssignment": {"mode":"reviewer","userIds":[]}
   },
   "codex": {
+    "selectionStrategy": "auto",
+    "fixedModel": "",
+    "candidates": [],
+    "compatibilityPolicy": "strict",
+    "scoutEnabled": false,
+    "adjudicatorEnabled": false,
+    "adjudicatorMinSeverity": "high",
+    "shadowCandidate": "",
     "providerMode": "auto"
   }
 }
@@ -174,7 +182,7 @@ npm run admin -- drain 120
 1. 阅读 Release Notes 和 rollback boundary。
 2. 创建并验证 backup。
 3. drain durable work。
-4. 重写 Config Schema 7，并显式复核 `codex.credentialSource` / `codex.allowInsecureHttp`。
+4. 重写 Config Schema 8，并显式复核 `codex.credentialSource` / `codex.allowInsecureHttp`。
 5. 验证新 tgz/OCI digest/provenance。
 6. 安装精确 Release Artifact。
 7. 流量前运行 Doctor。

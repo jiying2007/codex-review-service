@@ -2,10 +2,11 @@
 
 ## Product baseline
 
-Codex Review Service **7.4.3** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.5.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 8
-- Config Schema 7
+- Config Schema 8
+- Model Routing Contract 1
 - Policy Schema 4
 - Review Receipt 5
 - Safe Contract 2 / Safe Core Family v4 exact commit `e962826ee6556fd8ffa74ab1994bf43d62826f10`
@@ -40,7 +41,7 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/codex-review/
 System deployment:
 
 ```text
-/etc/codex-review/config.json        Config Schema 7, non-secret
+/etc/codex-review/config.json        Config Schema 8, non-secret
 /etc/codex-review/secrets/*          protected secret files
 /etc/codex-review-service.env        secret-file references + process selection
 /var/lib/codex-review                SQLite/state
@@ -48,7 +49,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 7 remains the current boundary. Service 7.4.3 consumes Runtime/Provider Contract v3 and defaults provider selection to `auto` without a schema bump; explicit credential/HTTP fields remain advanced overrides. Unknown fields and unsupported versions still fail closed.
+Config Schema 8 is the current boundary. Service 7.5.0 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -75,7 +76,7 @@ Direct and `_FILE` values are mutually exclusive. Rotate credentials atomically,
 ## Preflight
 
 1. Install/verify the exact release artifact.
-2. Create Config Schema 7 and verify Runtime/Provider Contract v3 auto resolution or the explicitly selected advanced override.
+2. Create Config Schema 8 and verify Runtime/Provider Contract v3 auto resolution or the explicitly selected advanced override.
 3. Provision protected secret files.
 4. Run `npm run doctor`; record GitLab version/profile and Codex runtime readiness.
 5. Require `/health/ready` = 200 before enabling webhook traffic.
@@ -184,11 +185,11 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.4.3 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.3. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.5.0 uses Config Schema 8 and Database Schema 8 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`.4.3. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
-3. rewrite Config Schema 7, retain the removal of `incrementalReviewEnabled`, preserve verified identity mappings, and explicitly choose Provider credential/HTTP policy;
+3. rewrite Config Schema 8, retain the removal of `incrementalReviewEnabled`, preserve verified identity mappings, and explicitly choose Provider credential/HTTP policy;
 4. verify release tgz/OCI digest/provenance;
 5. install exact release;
 6. run Doctor before traffic;
