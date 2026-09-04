@@ -29,3 +29,6 @@ posixTest('controller review request preserves bounded runner contract and usage
 posixTest('runner HTTP errors preserve remote error code for controller policy',async()=>withUnixServer((_req,res)=>{res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:'ECODEXTIMEOUT',message:'Codex review timed out'}));},async socket=>{await assert.rejects(()=>runCodex('x',{codexRunnerSocket:socket,reviewTimeoutSeconds:30,codexModel:''},undefined,1),error=>error.code==='ECODEXTIMEOUT'&&error.status===503);}));
 
 posixTest('aborting controller request tears down Unix runner request',async()=>withUnixServer((_req,_res)=>{},async socket=>{const controller=new AbortController(),pending=unixRequest(socket,'POST','/review',{prompt:'x'},30000,controller.signal);setTimeout(()=>controller.abort(Object.assign(new Error('superseded'),{code:'ESUPERSEDED'})),10);await assert.rejects(()=>pending,error=>error.code==='ESUPERSEDED');}));
+
+
+posixTest('runner response limit counts UTF-8 bytes rather than JavaScript characters',async()=>withUnixServer((_req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({message:'界'.repeat(3*1024*1024)}));},async socket=>{await assert.rejects(()=>unixRequest(socket,'GET','/health',undefined,30000),error=>error.code==='ERUNNEROUTPUT');}));

@@ -1,3 +1,24 @@
+## 7.4.2
+
+- Repin to Codex Safe Core 4.14.4 as a new immutable product release; no compatibility shim or stale artifact reuse is permitted.
+- Refresh generated/current-state Family identity and release evidence for the exact Core pin.
+
+## 7.4.1 - 2026-09-03
+
+- Repin to immutable Codex Safe Core 4.13.1 so local structured Review JSONL keeps a bounded capture tail while retaining an independent fail-closed total transcript ceiling.
+- Remove the obsolete Service-specific 6 MiB structured stdout workaround; Core now owns transcript/capture separation consistently.
+- Enforce the isolated-runner controller response ceiling in UTF-8 bytes rather than JavaScript character count, with a multibyte regression test.
+- Stream and byte-bound GitLab API responses at 8 MiB and Feishu/WeCom response bodies at 64 KiB so chunked or malformed peers cannot force unbounded buffering.
+- Strictly validate isolated-runner request fields before model execution and remove duplicate `inspectRuntimeFromConfig` exports; no Review judgment, database, notification payload or receipt semantics change.
+
+## 7.4.0 - 2026-09-03
+
+- Adopt immutable Codex Safe Core 4.13.0 and Runtime/Provider Contract v3 with `codex.providerMode=auto` as the normal path.
+- Reuse machine/container Family Runtime or Codex config/auth for zero-configuration OpenAI-compatible relays, including literal private-IP HTTP with Doctor plaintext warnings while public/non-IP HTTP remains fail-closed.
+- Preserve Service secret isolation: only the resolved provider credential may enter the Codex child process; GitLab and notification credentials remain filtered.
+- Extend Doctor with runtime provenance, endpoint/transport and credential-presence diagnostics without exposing secret values.
+- Preserve Database Schema 8, Config Schema 7, Review Receipt 5 and GitLab provider compatibility behavior unchanged.
+
 ## 7.3.0 - 2026-09-01
 
 - Pin Codex Safe Core 4.12.0 and consume Codex Runtime / Provider Contract v2.
@@ -58,6 +79,10 @@
 - Preserve GitLab 14.6.1 Classic, >=15.7 Modern and >=19.1 Standard HMAC capability boundaries.
 
 # Changelog
+
+## 7.3.2 - 2026-09-02
+
+- Release-only patch carrying the exact Codex Safe Core 4.12.4 family pin, refreshed production documentation, and the already validated GitLab 14.6.1 / 17.11.7 / 19.3.0 provider contracts; no service runtime or database/config schema semantics change.
 
 ## 7.3.1
 

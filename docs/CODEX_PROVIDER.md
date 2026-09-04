@@ -1,177 +1,62 @@
 # Codex Provider and Relay Configuration
 
-Codex Review Service 6.1.1 consumes the shared Codex Runtime/Provider Contract from `codex-safe-core`. The Service intentionally isolates user Codex configuration to preserve the Safe Contract, so do not rely on `~/.codex/config.toml` to inject a relay into the Service.
+Codex Review Service 7.4.0 consumes Codex Safe Core 4.13.0 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
 
-## Provider modes
+## Runtime Contract v3 — zero-config
 
-### Built-in OpenAI
+## Zero-config resolution
 
-Keep the default configuration:
+`codex.providerMode` defaults to `auto`. Resolution is machine-local and deterministic: Family Runtime (`~/.codex-safe/runtime.json`) and Codex configuration (`${CODEX_HOME}/config.toml` or `~/.codex/config.toml`) are consumed through Core Runtime v3. No LAN scanning or implicit DNS discovery is performed.
 
-```json
-{
-  "codex": {
-    "path": "codex",
-    "model": "",
-    "providerMode": "openai",
-    "providerBaseUrl": "",
-    "apiKeyEnv": "OPENAI_API_KEY",
-    "connectTimeoutSeconds": 15,
-    "requestTimeoutSeconds": 180,
-    "streamIdleTimeoutSeconds": 60
-  }
-}
-```
+For remote or container deployments, “machine” means the actual process account/container filesystem. Mount or provision the intended Codex home there.
 
-Authenticate the execution user with `codex login`, or provide `OPENAI_API_KEY` / `OPENAI_API_KEY_FILE`.
+## Credentials and secret isolation
 
-### OpenAI-compatible relay
+Provider credentials stay in the configured provider environment variable or Codex `auth.json`. Secret values never enter JSON config, argv, receipts, Doctor output, or logs. Review Service additionally filters the Codex child environment: only the resolved provider credential and bounded runtime variables are forwarded; GitLab and notification secrets are not.
 
-Configure the provider explicitly:
+File-backed Service secrets such as `OPENAI_API_KEY_FILE` / `CODEX_PROVIDER_API_KEY_FILE` remain available for explicit provider overrides. In Auto mode, prefer the machine Codex credential source rather than duplicating secrets into Service configuration.
+
+## Private-network HTTP
+
+HTTPS remains preferred. A literal private-IP HTTP relay already present in machine-owned Codex configuration may be inherited by Runtime v3 and is reported by Doctor with a plaintext warning. Public/non-IP HTTP remains fail-closed unless the machine-level Family Runtime explicitly establishes trust. Repository policy cannot enable plaintext provider transport.
+
+## Advanced explicit override
+
+Use an explicit override only when this Service instance intentionally differs from the machine Codex runtime:
 
 ```json
 {
   "codex": {
-    "path": "codex",
-    "model": "gpt-5.2",
     "providerMode": "openai-compatible",
-    "providerBaseUrl": "https://relay.example.com/v1",
+    "providerBaseUrl": "https://relay.example.internal/v1",
     "apiKeyEnv": "CODEX_PROVIDER_API_KEY",
-    "connectTimeoutSeconds": 15,
-    "requestTimeoutSeconds": 180,
-    "streamIdleTimeoutSeconds": 60
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
   }
 }
 ```
 
-Requirements:
+The relay must implement the OpenAI Responses API, SSE, and Structured Output. A Chat-Completions-only relay is insufficient. Never embed credentials, query parameters, or fragments in `providerBaseUrl`.
 
-- `providerBaseUrl` must be an HTTPS base URL;
-- do not embed usernames, passwords, query parameters or fragments in the URL;
-- `apiKeyEnv` is the environment-variable name, never the API key value;
-- the relay must implement the OpenAI Responses API (`/v1/responses`), SSE and Structured Output;
-- a relay that only implements `/v1/chat/completions` is not sufficient;
-- compatible providers use Responses HTTP/SSE and do not use WebSocket transport;
-- set `codex.model` explicitly when the relay exposes a custom model alias.
+To force built-in OpenAI behavior independently of machine provider configuration, set `providerMode` to `openai` explicitly.
 
-## systemd / inline Runner
+## systemd and isolated Runner
 
-Use a dedicated protected secret file in production:
-
-```bash
-sudo install -d -o root -g codex-review -m 0750 /etc/codex-review/secrets
-printf '%s' 'sk-xxxx' | sudo tee /etc/codex-review/secrets/codex-provider-api-key >/dev/null
-sudo chown root:codex-review /etc/codex-review/secrets/codex-provider-api-key
-sudo chmod 0640 /etc/codex-review/secrets/codex-provider-api-key
-```
-
-Set in `/etc/codex-review-service.env`:
-
-```text
-CODEX_PROVIDER_API_KEY_FILE=/etc/codex-review/secrets/codex-provider-api-key
-```
-
-Keep the structured config set to:
-
-```json
-"apiKeyEnv": "CODEX_PROVIDER_API_KEY"
-```
-
-The `*_FILE` input is resolved into the matching runtime environment variable. Never store the key in JSON configuration, Git or command-line arguments.
-
-## Isolated Runner
-
-In isolated mode, only the Runner user/process should receive the provider key:
-
-```text
-Controller: GitLab credentials + state
-Runner:     CODEX_PROVIDER_API_KEY + Codex executable
-```
-
-Grant the secret file only to the Runner user/group and configure `CODEX_PROVIDER_API_KEY_FILE` in the Runner environment. The Controller invokes the Safe Contract over the Unix socket and does not need the provider secret.
+The Service and isolated Runner resolve Runtime v3 in the account that actually launches Codex. Set `CODEX_HOME` when the intended Codex home is not the account default. In isolated mode, provision the provider credential only for the Runner account; the Controller keeps GitLab credentials and state and communicates over the Unix socket.
 
 ## Docker / Compose
 
-Use the digest-pinned `compose.release.yaml` from the Release. Create a dedicated relay secret:
+The official image uses the same Runtime v3 contract. Persist or mount the intended Codex home into the container and make only the provider credential available to the Codex execution process. Production should consume the digest-pinned `compose.release.yaml` published by the Release rather than rebuilding source on the target host.
 
-```bash
-mkdir -p secrets
-chmod 0700 secrets
-printf '%s' 'sk-xxxx' > secrets/codex_provider_api_key
-chmod 0600 secrets/codex_provider_api_key
-```
+## Doctor
 
-Mount it as a Docker Secret/read-only file and set:
+Run `npm run doctor` (or `node src/doctor.js`) before enabling GitLab webhooks. Doctor performs a live structured Codex probe and reports runtime source/config path, provider, endpoint host, transport, credential presence, version policy, and plaintext warnings without exposing credential values.
 
-```text
-CODEX_PROVIDER_API_KEY_FILE=/run/secrets/codex_provider_api_key
-```
+If terminal `codex` works but Doctor does not, first verify that the terminal and Service/Runner are the same OS account/container and use the same `CODEX_HOME`. Do not duplicate provider settings until that identity mismatch is ruled out.
 
-The structured config still uses `codex.apiKeyEnv=CODEX_PROVIDER_API_KEY`. Do not put the key directly in Compose YAML or `config.json`.
+## Failure guidance
 
-## Doctor verification
-
-Before enabling the GitLab webhook, run:
-
-```bash
-cd /opt/codex-review-service
-sudo -u codex-review /usr/bin/node \
-  --env-file=/etc/codex-review-service.env \
-  src/doctor.js
-```
-
-Doctor performs a real structured provider probe through the Service Runtime. Treat the deployment as ready only when provider configuration, credentials, Responses API, model and Structured Output round-trip all succeed.
-
-For isolated mode, Doctor validates the actual Runner `/probe` execution path as well.
-
-## Troubleshooting
-
-### Terminal `codex` works but the Service does not
-
-This can be expected. Terminal Codex may use `~/.codex/config.toml`; the Service Safe Runtime does not. Set `providerMode=openai-compatible` and `providerBaseUrl` explicitly in `config.json`, then provide credentials through `CODEX_PROVIDER_API_KEY[_FILE]`.
-
-### Logs show `api.openai.com`
-
-Relay mode should not fall back to the built-in OpenAI endpoint. Verify:
-
-1. `codex.providerMode` is `openai-compatible`;
-2. `codex.providerBaseUrl` is the intended HTTPS `/v1` base URL;
-3. `codex.apiKeyEnv` is `CODEX_PROVIDER_API_KEY`;
-4. `CODEX_PROVIDER_API_KEY` or `_FILE` is visible to the actual Codex execution process;
-5. rerun Doctor.
-
-Do not fix this by only increasing `review.timeoutSeconds` or `jobTimeoutSeconds`.
-
-### 401 / 403
-
-Verify the key, relay account/permissions and any relay-specific model alias requirements.
-
-### 429
-
-This is provider rate limiting. Reduce Review concurrency/request volume to match the relay quota instead of treating it as a network timeout.
-
-### DNS / connect / TLS
-
-Check DNS, egress, proxy and CA trust from the Service/Runner network namespace. In isolated mode, test from the Runner environment rather than only from the Controller host shell.
-
-### Relay supports Chat Completions only
-
-The compatible provider requires the Responses API. Add a `/v1/responses` + SSE/Structured Output compatibility layer to the relay first.
-
-## Shared relay on developer workstations
-
-Teams using Codex Commit Safe, Review Safe and PR Safe together may point all three VS Code extensions at one workstation variable such as:
-
-```text
-CODEX_RELAY_API_KEY
-```
-
-For Review Service production deployments, keep the separate server-side secret lifecycle with:
-
-```text
-CODEX_PROVIDER_API_KEY[_FILE]
-```
-
-## Provider Contract v2: auth.json and private HTTP
-
-Review Service 7.3.0 / Config Schema 7 adds `codex.credentialSource` (`auto|env|auth-json`) and `codex.allowInsecureHttp` (default `false`). `auto` prefers `codex.apiKeyEnv`, then Core reads `<codex.home>/auth.json` when `codex.home` is set, otherwise `${CODEX_HOME}/auth.json` or `~/.codex/auth.json`. The file must use `auth_mode=apikey` and `OPENAI_API_KEY`. Non-loopback HTTP is accepted only with explicit `allowInsecureHttp: true`; repository `.codex-safe.json` cannot enable it.
+- `401/403`: verify the provider credential and model/account permissions.
+- `429`: reduce review concurrency/request volume to the relay quota.
+- DNS/connect/TLS failures: test from the Service/Runner network namespace and install the private CA through `NODE_EXTRA_CA_CERTS` when required; do not disable TLS verification.
+- Chat-Completions-only relay: add a Responses API + SSE/Structured Output compatibility layer first.
