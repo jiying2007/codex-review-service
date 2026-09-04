@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "server": {
     "host": "127.0.0.1",
     "port": 8787
@@ -174,8 +174,14 @@
   },
   "codex": {
     "path": "codex",
-    "model": "",
-    "fastModel": "",
+    "selectionStrategy": "auto",
+    "fixedModel": "",
+    "candidates": [],
+    "compatibilityPolicy": "strict",
+    "scoutEnabled": false,
+    "adjudicatorEnabled": false,
+    "adjudicatorMinSeverity": "high",
+    "shadowCandidate": "",
     "home": "",
     "versionPolicy": "warn",
     "allowedVersionPattern": "",

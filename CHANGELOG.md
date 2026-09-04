@@ -85,6 +85,13 @@
 
 # Changelog
 
+## 7.5.0 - 2026-09-04
+
+- Consume Core Model Routing Contract v1 in the production GitLab review loop with authoritative Reviewer routing, optional Scout, conditional fail-closed Adjudicator, and shadow evaluation that never affects production verdicts.
+- Hard-cut Config Schema 8: retire codex.model/fastModel in favor of Auto/Preference/Fixed routing, role controls, and an explicit same-provider shadow candidate.
+- Record Model Evidence, Shadow comparison, and Token Economics in review audit metadata; persist only privacy-safe numeric token calibration in a protected sidecar while Database Schema 8 and Review Receipt v5 remain unchanged.
+
+
 ## 7.3.2 - 2026-09-02
 
 - Release-only patch carrying the exact Codex Safe Core 4.12.4 family pin, refreshed production documentation, and the already validated GitLab 14.6.1 / 17.11.7 / 19.3.0 provider contracts; no service runtime or database/config schema semantics change.

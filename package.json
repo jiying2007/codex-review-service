@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "7.4.3",
+  "version": "7.5.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -56,6 +56,10 @@
     "src/codex-safe-core/process-runner.js",
     "src/codex-safe-core/context-builder.js",
     "src/codex-safe-core/efficiency-planner.js",
+    "src/codex-safe-core/model-registry-resolver.js",
+    "src/codex-safe-core/model-routing.js",
+    "src/codex-safe-core/model-economics.js",
+    "src/codex-safe-core/token-calibration-store.js",
     "src/codex-safe-core/policy.js",
     "src/codex-safe-core/review-rules.js",
     "src/codex-safe-core/git-repository.js",
