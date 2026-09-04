@@ -41,7 +41,8 @@ function syncOperations(text){
   out=out.replace(/\/etc\/codex-review\/config\.json\s+Config Schema \d+, non-secret/,`/etc/codex-review/config.json        Config Schema ${contract.configSchemaVersion}, non-secret`);
   out=out.replace(/Config Schema \d+ remains the current boundary\. Service \d+\.\d+\.\d+[^.]*\./,`Config Schema ${contract.configSchemaVersion} is the current boundary. Service ${contract.serviceVersion} consumes Runtime/Provider Contract v3 and Model Routing Contract v${contract.modelRoutingContractVersion}; legacy \`codex.model\`/\`codex.fastModel\` are rejected rather than translated.`);
   out=out.replace(/Create Config Schema \d+/g,`Create Config Schema ${contract.configSchemaVersion}`);
-  out=out.replace(/Service \d+\.\d+\.\d+ keeps Config Schema \d+ and Database Schema 8 while consuming Runtime\/Provider Contract v3;[^.]*\./,`Service ${contract.serviceVersion} uses Config Schema ${contract.configSchemaVersion} and Database Schema ${contract.databaseSchemaVersion} while consuming Runtime/Provider Contract v3 and Model Routing Contract v${contract.modelRoutingContractVersion}; the hard cut retires \`codex.model\`/\`codex.fastModel\`.`);
+  const upgradeIdentity=`Service ${contract.serviceVersion} uses Config Schema ${contract.configSchemaVersion} and Database Schema ${contract.databaseSchemaVersion} while consuming Runtime/Provider Contract v3 and Model Routing Contract v${contract.modelRoutingContractVersion}; the hard cut retires \`codex.model\`/\`codex.fastModel\`.`;
+  out=out.replace(/Service \d+\.\d+\.\d+ (?:keeps|uses) Config Schema .*?(?= Service 7\.2\.x used Config Schema 6)/,upgradeIdentity);
   out=out.replace(/rewrite Config Schema \d+/g,`rewrite Config Schema ${contract.configSchemaVersion}`);
   if(!out.includes(`- Model Routing Contract ${contract.modelRoutingContractVersion}`))out=out.replace(/(- Config Schema \d+\n)/,`$1- Model Routing Contract ${contract.modelRoutingContractVersion}\n`);
   return out;
