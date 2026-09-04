@@ -2,13 +2,13 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.4.3** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 7**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.5.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `e962826ee6556fd8ffa74ab1994bf43d62826f10`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
-## Config Schema 7 Provider Contract boundary
+## Config Schema 8 + Model Routing Contract v1 boundary
 
 Service 7.4.3 keeps Config Schema 7 and Runtime/Provider Contract v3 while adding bounded structured/external response handling. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account Family or Codex runtime; explicit provider fields remain advanced overrides. Runtime does not translate older Config Schema versions. The Service 7.2.0 Config Schema 5 -> 6 responsibility-notification boundary and the prior `review.incrementalReviewEnabled` retirement remain historical upgrade boundaries.
 
@@ -16,7 +16,7 @@ The quality surface is now:
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "gitlab": {
     "baseUrl": "https://gitlab.example.internal",
     "projects": [101, 102],
@@ -35,6 +35,14 @@ The quality surface is now:
     "triggerAssignment": {"mode":"reviewer","userIds":[]}
   },
   "codex": {
+    "selectionStrategy": "auto",
+    "fixedModel": "",
+    "candidates": [],
+    "compatibilityPolicy": "strict",
+    "scoutEnabled": false,
+    "adjudicatorEnabled": false,
+    "adjudicatorMinSeverity": "high",
+    "shadowCandidate": "",
     "providerMode": "auto"
   }
 }
@@ -87,7 +95,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 7 JSON. With `credentialSource: "auth-json"`, the provider key may instead remain in the configured Codex home `auth.json`; the key value still never belongs in service JSON.
+Direct and `_FILE` forms are mutually exclusive. Secrets do not belong in Config Schema 8 JSON. With `credentialSource: "auth-json"`, the provider key may instead remain in the configured Codex home `auth.json`; the key value still never belongs in service JSON.
 
 ## Doctor preflight
 
@@ -165,7 +173,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.4.3 keeps the current Config Schema 7 and Runtime/Provider Contract v3 with Auto runtime inheritance; the historical 7.3.0 Config Schema 6 -> 7 hard cut remains an upgrade boundary. Service 7.2.0 introduced the historical **Config Schema 5 -> 6** hard cut for strict responsibility identity mappings, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** hard cut and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.5.0 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated.3.0 Config Schema 6 -> 7 hard cut remains an upgrade boundary. Service 7.2.0 introduced the historical **Config Schema 5 -> 6** hard cut for strict responsibility identity mappings, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** hard cut and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
 
 The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Schema 7 -> 8 creates and verifies a Schema 7 backup before adding status-card state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 8 downgrade.
 
@@ -174,7 +182,7 @@ Upgrade sequence:
 1. Read release notes and rollback boundary.
 2. Create and verify backup.
 3. Drain durable work.
-4. Rewrite Config Schema 7 and explicitly review `codex.credentialSource` / `codex.allowInsecureHttp`.
+4. Rewrite Config Schema 8 and explicitly review `codex.credentialSource` / `codex.allowInsecureHttp`.
 5. Verify new tgz/OCI digest and provenance.
 6. Install the exact release artifact.
 7. Run Doctor before traffic.
