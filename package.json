@@ -100,7 +100,7 @@
     "release:check": "node scripts/release.js check",
     "release:push": "node scripts/release.js push",
     "docs:generate": "node scripts/generate-contract-docs.js && node scripts/sync-operational-docs.js",
-    "docs:verify": "npm run docs:generate && git diff --exit-code -- README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md OPERATIONS.md deploy/docker/compose.yaml"
+    "docs:verify": "npm run docs:generate && git diff --exit-code -- README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md OPERATIONS.md SECURITY.md deploy/docker/compose.yaml"
   },
   "repository": {
     "type": "git",
