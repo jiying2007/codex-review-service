@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.4.3** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.5.0** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 7, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e962826ee6556fd8ffa74ab1994bf43d62826f10`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `e962826ee6556fd8ffa74ab1994bf43d62826f10`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -14,9 +14,9 @@ One Service instance is one administrative/security **trust domain**. Projects c
 
 ## Configuration boundary
 
-There is one non-secret **Config Schema 7** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
+There is one non-secret **Config Schema 8** model. Direct-user mode uses `${XDG_CONFIG_HOME:-$HOME/.config}/codex-review/config.json`; system deployment uses `/etc/codex-review/config.json`. Unknown fields or unsupported schema versions fail closed.
 
-Config Schema 7 consumes Provider Contract v3 controls: `codex.credentialSource=auto|env|auth-json` and explicit `codex.allowInsecureHttp`. Non-loopback HTTP remains denied unless an operator explicitly opts in for a trusted relay; repository policy cannot provide credentials or weaken transport. Config Schema 6 remains the historical responsibility-notification boundary, while Config Schema 5 removed `review.incrementalReviewEnabled`; persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only.
+Config Schema 8 consumes Provider Contract v3 and Model Routing Contract v1. Provider credentials and transport remain operator-owned; repository policy cannot provide credentials, select a provider/model, or weaken transport. Model routing uses the Schema 8 Auto/Preference/Fixed policy and same-provider role controls; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Non-loopback HTTP remains denied unless an operator explicitly opts in for a trusted relay. Persistent model Judgment reuse is not configurable. Analyzer evidence remains configured only through bounded `review.analyzerReports`; profile selection uses the versioned Profile Pack; Test Impact produces recommendations only.
 
 Secrets are never stored in service JSON or SQLite. Production should use protected `_FILE` inputs such as `GITLAB_API_TOKEN_FILE`, `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` and `OPENAI_API_KEY_FILE`; compatible-provider credentials may instead remain in the configured Codex home `auth.json`, where Core accepts only `auth_mode=apikey` with a non-empty `OPENAI_API_KEY`. Secret values are not copied into argv, receipts, diagnostics or repository policy.
 
@@ -64,9 +64,9 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 8.
 
-The historical **Schema 5 -> 6** and **Schema 6 -> 7** database migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Config Schema 6 -> 7 is a configuration hard cut for Provider Contract v2 and has no runtime translation. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
+The historical **Schema 5 -> 6** and **Schema 6 -> 7** database migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Config Schema 6 -> 7 is the historical Provider Contract hard cut; Config Schema 7 -> 8 is the Model Routing Contract v1 hard cut that retires `codex.model`/`codex.fastModel`. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
-Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduces Config Schema 6 -> 7. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
+Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduced Config Schema 6 -> 7; Service 7.5.0 introduces Config Schema 7 -> 8. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 
 ## Fatal integrity behavior
 
