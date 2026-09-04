@@ -159,6 +159,15 @@ jobs:
       - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
         with: { node-version: '24.19.0', cache: npm }
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Generate Consumer CI Receipt
+        env:
+          CI_SOURCE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          CI_WORKFLOW_NAME: Release
+          CI_RUN_ID: ${{ github.run_id }}
+          CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CI_EVENT: ${{ github.event_name }}
+          CI_SUITES: release-check,node-22.22.2-ci,node-24.19.0-ci,npm-pack,multiarch-oci,trivy-critical,oci-attestation,release-package
+        run: node src/codex-safe-core/scripts/generate-consumer-ci-receipt.js --output CONSUMER_CI_RECEIPT.json
 
       - name: Build and inspect immutable package
         shell: bash
@@ -188,6 +197,7 @@ jobs:
           fi
           npm sbom --sbom-format spdx > SBOM.spdx.json
           test -s SBOM.spdx.json
+          test -s CONSUMER_CI_RECEIPT.json
 
       - name: Ensure immutable release tag
         env:
@@ -285,7 +295,7 @@ jobs:
           printf '%s@%s\n' "$IMAGE_REF" "$IMAGE_DIGEST" > IMAGE_DIGEST.txt
           awk -v image="${IMAGE_REF}@${IMAGE_DIGEST}" '{if($1=="image:"){$0="    image: " image} print}' deploy/docker/compose.yaml > compose.release.yaml
           grep -F "${IMAGE_REF}@${IMAGE_DIGEST}" compose.release.yaml >/dev/null
-          sha256sum "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml > SHA256SUMS
+          sha256sum "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml CONSUMER_CI_RECEIPT.json > SHA256SUMS
 
       - name: Attest immutable release files
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -295,6 +305,7 @@ jobs:
             SBOM.spdx.json
             IMAGE_DIGEST.txt
             compose.release.yaml
+            CONSUMER_CI_RECEIPT.json
             SHA256SUMS
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -305,6 +316,7 @@ jobs:
             SBOM.spdx.json
             IMAGE_DIGEST.txt
             compose.release.yaml
+            CONSUMER_CI_RECEIPT.json
             SHA256SUMS
           if-no-files-found: error
 
@@ -321,4 +333,4 @@ jobs:
             echo "Release ${RELEASE_TAG} already exists; immutable assets will not be overwritten." >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
+          gh release create "$RELEASE_TAG" "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml CONSUMER_CI_RECEIPT.json SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
