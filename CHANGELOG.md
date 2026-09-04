@@ -1,3 +1,8 @@
+## 7.4.3
+
+- Repin to Codex Safe Core 4.15.0 as a new immutable product release; no compatibility shim or stale artifact reuse is permitted.
+- Refresh generated/current-state Family identity and release evidence for the exact Core pin.
+
 ## 7.4.2
 
 - Repin to Codex Safe Core 4.14.4 as a new immutable product release; no compatibility shim or stale artifact reuse is permitted.
