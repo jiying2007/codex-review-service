@@ -1,6 +1,6 @@
 name: Fault Injection
 on:
-  pull_request:
+  workflow_call:
   schedule:
     - cron: '11 5 * * 2'
   workflow_dispatch:
