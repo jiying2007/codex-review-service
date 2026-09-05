@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.5.1** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.5.2** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `786e3a3fc896e0e623af6fe63dbf814ddd09bad8`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 8, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `00403dd14877e978698c63d06f6dbdfe2ba9b8cc`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -66,7 +66,7 @@ The Admin CLI is the supported mutation boundary. Current backup acceptance requ
 
 The historical **Schema 5 -> 6** and **Schema 6 -> 7** database migrations remain explicit and tested. **Schema 7 -> 8** adds durable status-card state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Config Schema 6 -> 7 is the historical Provider Contract hard cut; Config Schema 7 -> 8 is the Model Routing Contract v1 hard cut that retires `codex.model`/`codex.fastModel`. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
-Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduced Config Schema 6 -> 7; Service 7.5.1 introduces Config Schema 7 -> 8. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
+Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduced Config Schema 6 -> 7; Service 7.5.2 introduces Config Schema 7 -> 8. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 
 ## Fatal integrity behavior
 
