@@ -1,3 +1,7 @@
+## 7.5.3
+
+- Consolidate the complete Review Service pull-request validation graph behind the canonical `CI Gate` while retaining Node/migration/Docker/recovery checks, Security, dependency review, Family governance, SQLite fault injection and real GitLab CE 14.6.1 / 17.11.7 / 19.3.0 system E2E; publish this exact workflow-consolidated main snapshot as a new immutable service release.
+
 ## 7.5.2
 
 - Repin to Codex Safe Core 4.17.0 because the shipped Core runtime digest changed to `a41fa0e2c02d1977d6f1f8e0b7efff0a3d220d1149498c3d4d5a4ecbb1b03808`; publish a new immutable product release and distribution receipt.
