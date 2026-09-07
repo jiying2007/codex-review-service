@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 
 const { FLOW_EVENTS } = require('./flow-tracking');
+const { formatDisplayTime } = require('./codex-safe-core/display-time');
 
 const EVENTS = Object.freeze([
   'review.completed',
@@ -170,7 +171,7 @@ function cardPath(value,max=220) { return String(value||'').replace(/[\u0000-\u0
 function coverageGapDetails(snapshot) { return Object.freeze((snapshot?.files||[]).filter(file=>file.coverageState==='coverage_gap').map(file=>Object.freeze({path:cardPath(file.path||'<unknown>',220),reasonCode:String(file.skippedReason||'unknown'),reason:cardText(file.skippedReason||'unknown',80),tooLarge:file.too_large===true,collapsed:file.collapsed===true,diffAvailable:typeof file.diff==='string'&&file.diff.length>0}))); }
 function eventForReview({ job, mr, snapshot, review, durationMs, topFindings = 3, occurredAt }) {
   const type = review.verdict === 'block' || review.verdict === 'incomplete' ? 'review.blocked' : 'review.completed',authorUser=notificationUser(mr?.author),reviewerUsers=notificationUsers(mr?.reviewers),assigneeUsers=notificationUsers(mr?.assignees),projectName=projectNameForMr(mr);
-  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, reviewedFileCount:(snapshot?.files||[]).filter(file=>!file.skipped).length, coverageGaps:coverageGapDetails(snapshot), findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
+  return Object.freeze({ type, occurredAt: canonicalUtc(occurredAt), projectId: Number(job.project_id), projectName, mrIid: Number(job.mr_iid), title: cardText(mr?.title || snapshot?.title || '', 300), url: cardUrl(mr?.web_url || ''), author: authorUser.name, authorUser, reviewers: Object.freeze(reviewerUsers.map(item=>item.username||item.name)), reviewerUsers, assigneeUsers, sourceBranch: cardText(snapshot?.sourceBranch || job.source_branch || '', 200), targetBranch: cardText(snapshot?.targetBranch || mr?.target_branch || '', 200), headSha: cardText(snapshot?.headSha || job.head_sha || '', 64), verdict: cardText(review.verdict || '', 40), coverageComplete: review.coverageComplete !== false, reviewedFileCount:(snapshot?.files||[]).filter(file=>!file.skipped).length, coverageGaps:coverageGapDetails(snapshot), rejectedFindingCount:Math.max(0,Number(review.rejectedFindingCount||0)), findingCounts: counts(review.findings), findingCount: Number(review.findings?.length || 0), topFindings: (review.findings || []).slice(0, topFindings).map(finding => ({ severity: cardText(finding.severity, 20), title: cardText(finding.title, 180), file: cardText(finding.file, 300), line: Number(finding.line || 0), impact: cardText(finding.description || '', 200), url: cardUrl(finding.url || '') })), durationMs: Number(durationMs || 0) });
 }
 
 function eventForFailure(job, code) {
@@ -244,7 +245,9 @@ function verdictLabel(event) {
   return cardText(event.status || event.verdict || '已完成', 40) || '已完成';
 }
 
-function coverageLabel(event) { const en=event._language==='en',reviewed=Number(event.reviewedFileCount||0),gaps=event.coverageGaps||[];if(event.coverageComplete!==false)return en?`Complete${reviewed?` · ${reviewed} text files`:''}`:`完整${reviewed?` · ${reviewed} 个文本文件`:''}`;const first=gaps[0],reason=first?.reasonCode==='unavailable_unknown'?(en?'GitLab did not provide a reviewable diff':'GitLab 未返回可审核 diff'):first?.reason||'';return `${en?'Incomplete':'不完整'} · ${gaps.length||1} ${en?'gap':'个缺口'}${first?` · ${first.path}${reason?`: ${reason}`:''}`:''}`.slice(0,220); }
+function coverageLabel(event) { const en=event._language==='en',reviewed=Number(event.reviewedFileCount||0),gaps=event.coverageGaps||[];if(event.coverageComplete!==false)return en?`Complete${reviewed?` · ${reviewed} text files`:''}`:`完整${reviewed?` · ${reviewed} 个文本文件`:''}`;const first=gaps[0],reason=first?.reasonCode==='unavailable_unknown'?(en?'GitLab did not provide a reviewable diff':'GitLab 未返回可审核 diff'):first?.reason||'';if(first)return `${en?'Incomplete':'不完整'} · ${gaps.length} ${en?'gap':'个缺口'} · ${first.path}${reason?`: ${reason}`:''}`.slice(0,220);if(Number(event.rejectedFindingCount||0)>0)return en?'Incomplete · a model finding could not be mapped exactly to a changed line':'不完整 · 模型 finding 无法精确映射到变更行';return en?'Incomplete · review evidence is insufficient':'不完整 · 审查证据不足'; }
+
+function displayTime(value) { return value ? formatDisplayTime(value) : ''; }
 
 function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filter(item=>/^ou_[A-Za-z0-9]+$/.test(String(item?.openId||''))).slice(0,10).map(item=>`<at id=${item.openId}>${cardText(item.name||'责任人',80)}</at>`).join(' '); }
 function feishuFields(event) {
@@ -284,7 +287,7 @@ function summaryLines(event) {
   const lines = [];
   if (String(event.type || '').startsWith('gitlab.')) {
     if (event.projectId) lines.push(`Project: ${event.projectId}`);
-    if (event.occurredAt) lines.push(`Time (UTC): ${cardText(event.occurredAt, 40)}`);
+    if (event.occurredAt) lines.push(`Time: ${displayTime(event.occurredAt)}`);
     if (event.flowKind === 'pipeline') { lines.push(`Pipeline: #${cardText(event.externalId, 40)}`, `Ref: ${cardText(event.ref || '-', 200)}`, `Status: ${cardText(event.status, 40)}`); if (event.source) lines.push(`Source: ${cardText(event.source, 80)}`); }
     else if (event.flowKind === 'merge_request') { lines.push(`MR: !${event.mrIid} ${cardText(event.title || '', 180)}`.trim(), `Status: ${cardText(event.status, 40)}`); if (event.sourceBranch || event.targetBranch) lines.push(`Branches: ${cardText(event.sourceBranch || '-', 120)} → ${cardText(event.targetBranch || '-', 120)}`); }
     else if (event.flowKind === 'commit_push') { lines.push(`Branch: ${cardText(event.ref || '-', 200)}`, `Commits: ${Number(event.commitCount || 0)}`); if (event.beforeSha && event.afterSha) lines.push(`Range: ${cardText(event.beforeSha, 64).slice(0, 12)} → ${cardText(event.afterSha, 64).slice(0, 12)}`); }
@@ -295,7 +298,7 @@ function summaryLines(event) {
   }
   const findingCounts = event.findingCounts || counts([]);
   if (event.projectId) lines.push(`Project: ${event.projectId}`, `MR: !${event.mrIid}${event.title ? ` ${event.title}` : ''}`);
-  if (event.occurredAt) lines.push(`Time (UTC): ${event.occurredAt}`);
+  if (event.occurredAt) lines.push(`Time: ${displayTime(event.occurredAt)}`);
   lines.push(`Verdict: ${event.verdict}`);
   if (event.errorCode) lines.push(`Error: ${event.errorCode}`);
   if (event.headSha) lines.push(`HEAD: ${event.headSha.slice(0, 12)}`);
@@ -310,7 +313,7 @@ function feishuPayload(event, signature = null) {
   const fields = feishuFields(event);
   if (fields.length) elements.push({ tag: 'div', fields });
   const meta = [];
-  if (event.occurredAt) meta.push(`${en?'Time':'时间'}：${cardText(event.occurredAt, 40)}`);
+  if (event.occurredAt) meta.push(`${en?'Time':'时间'}：${cardText(displayTime(event.occurredAt), 40)}`);
   if (event.durationMs) meta.push(`${en?'Duration':'耗时'}：${(Number(event.durationMs) / 1000).toFixed(1)}s`);
   if (event.errorCode) meta.push(`${en?'Error':'错误'}：${cardText(event.errorCode, 80)}`);
   if (!fields.length) meta.push(...summaryLines(event));
