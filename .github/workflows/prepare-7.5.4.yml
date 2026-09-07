@@ -45,7 +45,9 @@ jobs:
           npm run docs:generate
           git diff --check
           node scripts/release.js verify
+          git add -- CHANGELOG.md package.json package-lock.json product-contract.json README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md OPERATIONS.md SECURITY.md LONG_TERM_ASSET.md deploy/docker/compose.yaml test/sync-operational-docs.test.js
           npm run docs:verify
+          git diff --exit-code
       - name: Commit generated release snapshot and remove one-shot workflow
         env:
           GH_TOKEN: ${{ github.token }}
