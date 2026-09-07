@@ -99,6 +99,10 @@
 
 # Changelog
 
+## 7.5.4
+
+- Publish the merged notification/report local-time display consistency fixes as Service 7.5.4 while preserving canonical UTC receipt/audit values; Database Schema 8, Config Schema 8, Safe Core 4.17.0 and Runtime/Provider/Model Routing contracts remain unchanged.
+
 ## 7.5.0 - 2026-09-04
 
 - Consume Core Model Routing Contract v1 in the production GitLab review loop with authoritative Reviewer routing, optional Scout, conditional fail-closed Adjudicator, and shadow evaluation that never affects production verdicts.
