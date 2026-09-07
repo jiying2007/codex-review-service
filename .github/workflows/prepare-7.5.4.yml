@@ -1,0 +1,63 @@
+name: Prepare Service 7.5.4
+
+on:
+  push:
+    branches:
+      - codex/release-7.5.4
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-service-7.5.4
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - name: Prepare deterministic release metadata and generated docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release.js prepare 7.5.4
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const changelog=fs.readFileSync('CHANGELOG.md','utf8');
+          const placeholder='- Release prepared. Replace this line with final release notes before merge.';
+          const note='- Publish the merged notification/report local-time display consistency fixes as Service 7.5.4 while preserving canonical UTC receipt/audit values; Database Schema 8, Config Schema 8, Safe Core 4.17.0 and Runtime/Provider/Model Routing contracts remain unchanged.';
+          if(!changelog.includes(placeholder)) throw new Error('7.5.4 changelog placeholder missing');
+          fs.writeFileSync('CHANGELOG.md',changelog.replace(placeholder,note));
+          const testPath='test/sync-operational-docs.test.js';
+          const test=fs.readFileSync(testPath,'utf8').replaceAll('7.5.3','7.5.4');
+          fs.writeFileSync(testPath,test);
+          NODE
+          npm run docs:generate
+          git diff --check
+          node scripts/release.js verify
+          npm run docs:verify
+      - name: Commit generated release snapshot and remove one-shot workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/prepare-7.5.4.yml
+          git add -A
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(release): prepare v7.5.4'
+          gh auth setup-git
+          git push origin HEAD:refs/heads/codex/release-7.5.4
