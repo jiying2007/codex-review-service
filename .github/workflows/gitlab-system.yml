@@ -56,6 +56,36 @@ jobs:
             fi
             sleep 5
           done
+
+          critical_pids() {
+            docker exec gitlab gitlab-ctl status | awk '
+              $1 == "run:" && ($2 == "gitaly:" || $2 == "gitlab-workhorse:" || $2 == "puma:" || $2 == "sidekiq:") {
+                service=$2; pid=$4; gsub(/:/,"",service); gsub(/[()]/,"",pid); print service ":" pid
+              }' | sort
+          }
+          omnibus_stable=false
+          for i in $(seq 1 20); do
+            before="$(critical_pids)"
+            if [ "$(printf '%s\n' "$before" | sed '/^$/d' | wc -l)" -ne 4 ]; then
+              sleep 10
+              continue
+            fi
+            sleep 30
+            after="$(critical_pids)"
+            http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
+            if [ "$before" = "$after" ] && { [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; }; then
+              omnibus_stable=true
+              echo 'Critical GitLab services remained PID-stable for 30 seconds after Rails readiness.'
+              break
+            fi
+            echo "GitLab Omnibus services still converging (attempt ${i}/20)."
+          done
+          if [ "$omnibus_stable" != true ]; then
+            echo 'GitLab Omnibus services did not converge to a stable provider-ready state.' >&2
+            docker exec gitlab gitlab-ctl status || true
+            docker logs --tail 500 gitlab
+            exit 1
+          fi
       - name: Create deterministic test token and verify stable authenticated API
         run: |
           set -euo pipefail
