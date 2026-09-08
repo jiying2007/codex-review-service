@@ -2,9 +2,9 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.5.5** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 8、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.6.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 9、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
-Safe Core 精确固定到 `00403dd14877e978698c63d06f6dbdfe2ba9b8cc`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
+Safe Core 精确固定到 `197de61f6c187513a182dbae8e4c077b8ad4677e`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor 校验产品/配置身份、SQLite Schema 8/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
+Doctor 校验产品/配置身份、SQLite Schema 9/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
 
 ## 启动与健康检查
 
@@ -175,7 +175,7 @@ npm run admin -- drain 120
 
 从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.3.0 引入当前 **Config Schema 6 -> 7** 硬切，用于 Provider Contract v2 凭据/传输控制；Service 7.2.0 的 **Config Schema 5 -> 6** 责任人身份映射，以及 Service 7.0.0 的 **Config Schema 4 -> 5** 与 `review.incrementalReviewEnabled` 退役继续作为历史边界。Runtime 不翻译这些配置版本。
 
-历史 Database Schema 5 -> 6 Startup Migration 继续保持显式和受测试。Schema 7 -> 8 会在增加状态卡持久化前创建并验证 Schema 7 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 8 做原地降级。
+历史 Database Schema 9 -> 6、6 -> 7、7 -> 8 Startup Migration 继续保持显式和受测试。Schema 8 -> 9 会在增加 Finding Claim 投影与生命周期状态前创建并验证 Schema 8 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 9 做原地降级。
 
 升级顺序：
 

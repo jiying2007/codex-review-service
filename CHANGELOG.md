@@ -99,6 +99,13 @@
 
 # Changelog
 
+## 7.6.0
+
+- Introduce Safe Core Finding Claim Contract v1 so stable root-cause identity is independent from model wording while uncertain claims remain fail-closed and never authorize note reuse.
+- Add Database Schema 9 claim projection and immutable lifecycle events, including verified transactional migration from Schema 8.
+- Reconcile only unresolved, current-position, bot-owned GitLab notes; preserve human replies and resolutions, and create a new discussion when ownership or semantic identity is uncertain.
+- Hold final review notifications behind the durable GitLab publication outbox, with explicit failed, partial, and bounded-timeout degradation in Feishu and WeCom cards.
+
 ## 7.5.5
 
 - Recover bounded text diffs for GitLab 14.6.1 classic `/changes` entries that expose a changed file path but an empty diff. The fallback reads the exact MR `start_sha` and `head_sha` file versions, generates an in-memory unified diff under existing review budgets, preserves exact changed-line publication, and remains fail-closed for missing, binary, oversized, generated, renamed, added, deleted, or otherwise unverifiable files.

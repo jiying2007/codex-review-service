@@ -2,21 +2,21 @@
 
 ## Product baseline
 
-Codex Review Service **7.5.5** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.6.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 8
+- Database Schema 9
 - Config Schema 8
 - Model Routing Contract 1
 - Policy Schema 4
 - Review Receipt 5
-- Safe Contract 2 / Safe Core Family v4 exact commit `00403dd14877e978698c63d06f6dbdfe2ba9b8cc`
+- Safe Contract 2 / Safe Core Family v4 exact commit `197de61f6c187513a182dbae8e4c077b8ad4677e`
 - Profile Pack 1 / Test Impact 1 / Analyzer Adapter 1
 - Native/systemd Node.js: 22 LTS >=22.22.2 or 24 LTS >=24.19.0; Node 23 unsupported
 - Canonical Docker Node.js: 24.19.0
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 8, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 9, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
@@ -185,7 +185,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.5.5 uses Config Schema 8 and Database Schema 8 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.0 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

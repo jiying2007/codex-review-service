@@ -248,6 +248,7 @@ function verdictLabel(event) {
 function coverageLabel(event) { const en=event._language==='en',reviewed=Number(event.reviewedFileCount||0),gaps=event.coverageGaps||[];if(event.coverageComplete!==false)return en?`Complete${reviewed?` · ${reviewed} text files`:''}`:`完整${reviewed?` · ${reviewed} 个文本文件`:''}`;const first=gaps[0],reason=first?.reasonCode==='unavailable_unknown'?(en?'GitLab did not provide a reviewable diff':'GitLab 未返回可审核 diff'):first?.reason||'';if(first)return `${en?'Incomplete':'不完整'} · ${gaps.length} ${en?'gap':'个缺口'} · ${first.path}${reason?`: ${reason}`:''}`.slice(0,220);if(Number(event.rejectedFindingCount||0)>0)return en?'Incomplete · a model finding could not be mapped exactly to a changed line':'不完整 · 模型 finding 无法精确映射到变更行';return en?'Incomplete · review evidence is insufficient':'不完整 · 审查证据不足'; }
 
 function displayTime(value) { return value ? formatDisplayTime(value) : ''; }
+function publicationLabel(event){const state=String(event._publicationState||'');if(!state||state==='published')return'';const en=event._language==='en';if(state==='timeout')return en?'GitLab publication is still pending':'GitLab 发布仍在等待';if(state==='failed')return en?'Some GitLab findings failed to publish':'部分 GitLab 问题发布失败';return en?'Some GitLab findings were not published':'部分 GitLab 问题未发布';}
 
 function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filter(item=>/^ou_[A-Za-z0-9]+$/.test(String(item?.openId||''))).slice(0,10).map(item=>`<at id=${item.openId}>${cardText(item.name||'责任人',80)}</at>`).join(' '); }
 function feishuFields(event) {
@@ -316,6 +317,7 @@ function feishuPayload(event, signature = null) {
   if (event.occurredAt) meta.push(`${en?'Time':'时间'}：${cardText(displayTime(event.occurredAt), 40)}`);
   if (event.durationMs) meta.push(`${en?'Duration':'耗时'}：${(Number(event.durationMs) / 1000).toFixed(1)}s`);
   if (event.errorCode) meta.push(`${en?'Error':'错误'}：${cardText(event.errorCode, 80)}`);
+  const publication=publicationLabel(event);if(publication)meta.push(`${en?'Publication':'发布'}：${publication}`);
   if (!fields.length) meta.push(...summaryLines(event));
   if (meta.length) elements.push({ tag: 'note', elements: [{ tag: 'plain_text', content: meta.join(' · ') }] });
   if (event.commits?.length) { const visible=event.commits.slice(0,3),details = visible.map((commit, index) => `${index + 1}. ${cardText(commit.shortSha || commit.sha, 12)}${commit.message ? ` · ${cardText(commit.message, 160)}` : ''}${commit.author ? ` · ${cardText(commit.author, 80)}` : ''}`),remaining=Math.max(0,Number(event.commitCount||event.commits.length)-visible.length); if (remaining) details.push(`… +${remaining} ${event._language==='en'?'more':'条未展开'}`); elements.push({ tag: 'div', text: { tag: 'lark_md', content: `${event._language==='en'?'Commits':'提交摘要'}\n${details.join('\n')}` } }); }
@@ -349,6 +351,7 @@ function wecomPayload(event) {
       { keyname: en?'Findings':'问题', value: `C${Number(findingCounts.critical || 0)} H${Number(findingCounts.high || 0)} M${Number(findingCounts.medium || 0)} L${Number(findingCounts.low || 0)}` },
       { keyname: en?'Duration':'耗时', value: event.durationMs ? `${(Number(event.durationMs) / 1000).toFixed(1)}s` : '-' }
     ];
+  const publication=publicationLabel(event);if(publication)horizontal_content_list.push({keyname:en?'Publication':'发布',value:cardText(publication,56)});
   const subject=event.projectName?`${cardText(event.projectName,80)} · ${cardText(event.title||event.sourceBranch||'',80)}`:cardText(event.title||event.sourceBranch||'',30);const card = { card_type: 'text_notice', source: { desc: 'Codex Review' }, main_title: { title: cardText(titleFor(event), 26), desc: cardText(subject, 112) }, horizontal_content_list, card_action: { type: 1, url: event.url || 'https://work.weixin.qq.com/' } };
   if(event._activity?.length)card.sub_title_text=cardText(event._activity.slice(-4).map(item=>`${item.type}: ${item.status||'-'}`).join(' · '),112);
   else if (event.commits?.length) card.sub_title_text = cardText(event.commits.slice(0,3).map((commit, index) => `${index + 1}. ${cardText(commit.shortSha || commit.sha, 12)}${commit.message ? ` ${cardText(commit.message, 80)}` : ''}`).concat(Number(event.commitCount||0)>3 ? [`+${Number(event.commitCount)-3} more`] : []).join(' · '), 112);

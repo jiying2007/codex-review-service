@@ -27,6 +27,7 @@ assert.equal(core.SAFE_CONTRACT_VERSION,contract.safeContractVersion,'Safe Contr
 assert.equal(core.POLICY_SCHEMA_VERSION,contract.policySchemaVersion,'Policy schema must match product contract');
 assert.equal(core.REVIEW_RECEIPT_SCHEMA_VERSION,contract.reviewReceiptVersion,'Review Receipt schema must match product contract');
 for(const [coreKey,productKey] of [['qualityPlatformVersion','qualityPlatformVersion'],['reviewProfileVersion','reviewProfileVersion'],['profilePackVersion','profilePackVersion'],['impactEvidenceVersion','impactEvidenceVersion'],['testImpactVersion','testImpactVersion'],['analyzerFindingVersion','analyzerFindingVersion']])assert.equal(core.CORE_CONTRACT[coreKey],contract[productKey],`${productKey} must match Core`);
+assert.equal(core.FINDING_CLAIM_VERSION,contract.findingClaimVersion,'Finding Claim contract must match Core');
 assert.equal(contract.analyzerAdapterVersion,1,'Analyzer Adapter contract must be explicit');
 for(const format of ['sarif','gitlab-codequality','junit','cobertura','lcov','compiler','cppcheck','cyclonedx-json','trivy-json','gitleaks-json'])assert.ok(FORMATS.includes(format),`missing analyzer adapter ${format}`);
 const staged=execFileSync('git',['ls-files','--stage','src/codex-safe-core'],{cwd:root,encoding:'utf8'}).trim();
