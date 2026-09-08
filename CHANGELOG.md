@@ -99,6 +99,11 @@
 
 # Changelog
 
+## 7.5.5
+
+- Recover bounded text diffs for GitLab 14.6.1 classic `/changes` entries that expose a changed file path but an empty diff. The fallback reads the exact MR `start_sha` and `head_sha` file versions, generates an in-memory unified diff under existing review budgets, preserves exact changed-line publication, and remains fail-closed for missing, binary, oversized, generated, renamed, added, deleted, or otherwise unverifiable files.
+- Bind privacy-safe raw-diff fallback metadata into the review evidence digest and structured logs without storing source content or generated diff text.
+
 ## 7.5.4
 
 - Publish the merged notification/report local-time display consistency fixes as Service 7.5.4 while preserving canonical UTC receipt/audit values; Database Schema 8, Config Schema 8, Safe Core 4.17.0 and Runtime/Provider/Model Routing contracts remain unchanged.
