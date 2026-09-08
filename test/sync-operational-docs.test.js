@@ -4,12 +4,13 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const contract=require('../product-contract.json');
 const{syncOperations,syncSecurity,syncLongTermAsset}=require('../scripts/sync-operational-docs');
 
 test('operations sync replaces the whole prior identity sentence without leaving semver fragments',()=>{
   const input='From v5.0.0 onward. Service 7.4.3 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.3. Service 7.2.x used Config Schema 6 for responsibility delivery.';
   const output=syncOperations(input);
-  assert.match(output,/Service 7\.5\.4 uses Config Schema 8 and Database Schema 8 while consuming Runtime\/Provider Contract v3 and Model Routing Contract v1/);
+  assert.match(output,new RegExp(`Service ${contract.serviceVersion.replaceAll('.','\\.')} uses Config Schema 8 and Database Schema 8 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1`));
   assert.doesNotMatch(output,/\.4\.3\./);
   assert.equal((output.match(/Service 7\.2\.x/g)||[]).length,1);
 });
@@ -24,7 +25,7 @@ test('operations sync repairs the previously generated partial-version artifact 
 test('security sync upgrades stale release/schema routing identity and is idempotent',()=>{
   const current=fs.readFileSync(path.join(__dirname,'..','SECURITY.md'),'utf8');
   const stale=current
-    .replace('Codex Review Service **7.5.4**','Codex Review Service **7.4.3**')
+    .replace(`Codex Review Service **${contract.serviceVersion}**`,'Codex Review Service **7.4.3**')
     .replace('Database Schema 8, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1','Database Schema 8, Config Schema 7, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3')
     .replace('**Config Schema 8**','**Config Schema 7**')
     .replace('Config Schema 8 consumes Provider Contract v3 and Model Routing Contract v1.','Config Schema 7 consumes Provider Contract v3 controls:');
