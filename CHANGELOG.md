@@ -1,3 +1,8 @@
+## 7.5.6
+
+- Repin to Codex Safe Core 4.18.1 because the shipped Core runtime digest changed to `0b9c507ddb74bf40a0b950c3d8548ae747f547f76d3d2d37cebbd761cf28f5a0`; publish a new immutable product release and distribution receipt.
+- Refresh Product Contract v2 and generated/current-state Family identity for the exact Core pin.
+
 ## 7.5.3
 
 - Consolidate the complete Review Service pull-request validation graph behind the canonical `CI Gate` while retaining Node/migration/Docker/recovery checks, Security, dependency review, Family governance, SQLite fault injection and real GitLab CE 14.6.1 / 17.11.7 / 19.3.0 system E2E; publish this exact workflow-consolidated main snapshot as a new immutable service release.
