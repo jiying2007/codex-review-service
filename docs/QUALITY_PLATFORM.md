@@ -34,6 +34,22 @@ When enabled, the Service enumerates test files from the exact source-project he
 
 Semantic impact candidates continue to come from the exact MR head SHA through GitLab repository APIs. Core scores bounded includes/imports/symbol/build/Kconfig/DeviceTree evidence without performing repository I/O itself.
 
+## Cross-review differential gate
+
+`src/differential-quality.js` provides a deterministic, offline comparator for two normalized review judgments over the same exact diff fingerprint. It does not call another reviewer, invoke a model, or create a runtime dependency between Codex Review Safe and Codex Review Service.
+
+The default blocking boundary is High. For two complete judgments over the same 64-hex diff fingerprint, the comparator treats an accepted High/Critical finding as aligned when the other reviewer accepts a High/Critical finding on the same exact `file + side + line` causal anchor. Product-specific category, wording, and claim taxonomy may differ without creating a false disagreement.
+
+A missing High+ anchor is classified as:
+
+- `controller_gate_disagreement` when the other reviewer saw the same anchor but suppressed or rejected it;
+- `severity_disagreement` when the other reviewer accepted the same anchor below the blocking threshold;
+- `recall_disagreement` when the other reviewer has no matching accepted/suppressed/rejected candidate.
+
+Different diff fingerprints or incomplete coverage are `inconclusive`, never a clean pass. `assertCrossReviewDifferential()` therefore fails closed by default on both High+ disagreement and inconclusive evidence. The permanent corpus under `quality/cross-review-corpus.json` pins the removed-authorization old-side false-negative class, controller suppression, severity-boundary disagreement, post-remediation alignment, incomplete coverage, and exact-diff mismatch.
+
+This is a quality/evaluation boundary, not a production quorum requirement: normal MR review remains independently usable when no second judgment envelope is supplied.
+
 ## Human resolution boundary
 
 Human finding resolutions are append-only operational feedback (`fixed`, `false_positive`, `accepted_risk`, `duplicate`, `obsolete`, `not_applicable`, `policy_exception`). They are observable metrics only and never auto-train a model, mutate prompts, or create a self-training loop.
