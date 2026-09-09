@@ -46,6 +46,7 @@
     "docs/QUALITY_PLATFORM.md",
     "docs/QUALITY_PLATFORM.zh-CN.md",
     "docs/STORAGE_AND_MIGRATIONS.md",
+    "quality/*.json",
     "src/*.js",
     "src/codex-safe-core/*.js",
     "src/codex-safe-core/codex-safe.schema.json",

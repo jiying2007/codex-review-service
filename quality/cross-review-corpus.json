@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "description": "Deterministic cross-review differential cases for the same exact diff. Historical disagreements remain fixtures so future changes cannot hide false-negative classes.",
+  "cases": [
+    {
+      "id": "removed-authorization-old-side-recall-gap",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverageVerdict": "complete",
+        "qualityVerdict": "no_findings",
+        "findings": []
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverageComplete": true,
+        "findings": [
+          {
+            "severity": "high",
+            "category": "security",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "endLine": 10,
+            "claimClass": "missing-check",
+            "title": "Deleting the authorization guard exposes the sensitive operation"
+          }
+        ]
+      },
+      "expected": { "gate": "fail", "state": "high_plus_disagreement", "reason": "recall_disagreement" }
+    },
+    {
+      "id": "controller-suppressed-high-gap",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "coverageVerdict": "complete",
+        "qualityVerdict": "no_findings",
+        "modelFindingCount": 1,
+        "findings": [],
+        "suppressedFindings": [
+          {
+            "severity": "high",
+            "category": "security",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "claimClass": "missing-check",
+            "title": "Authorization guard removed"
+          }
+        ]
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "coverageComplete": true,
+        "findings": [
+          {
+            "severity": "high",
+            "category": "security",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "claimClass": "missing-check",
+            "title": "Authorization guard removed"
+          }
+        ]
+      },
+      "expected": { "gate": "fail", "state": "high_plus_disagreement", "reason": "controller_gate_disagreement" }
+    },
+    {
+      "id": "severity-boundary-gap",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "coverageVerdict": "complete",
+        "findings": [
+          {
+            "severity": "medium",
+            "category": "correctness",
+            "file": "state.c",
+            "side": "new",
+            "line": 42,
+            "claimClass": "state-transition",
+            "title": "State transition loses the recovery reason"
+          }
+        ]
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "coverageComplete": true,
+        "findings": [
+          {
+            "severity": "high",
+            "category": "correctness",
+            "file": "state.c",
+            "side": "new",
+            "line": 42,
+            "claimClass": "state-transition",
+            "title": "State transition loses the recovery reason"
+          }
+        ]
+      },
+      "expected": { "gate": "fail", "state": "high_plus_disagreement", "reason": "severity_disagreement" }
+    },
+    {
+      "id": "high-plus-anchor-aligned-after-remediation",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "coverageVerdict": "complete",
+        "findings": [
+          {
+            "severity": "high",
+            "category": "security",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "claimClass": "missing-check",
+            "title": "Authorization check removed"
+          }
+        ]
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "coverageComplete": true,
+        "findings": [
+          {
+            "severity": "critical",
+            "category": "correctness",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "claimClass": "authorization-bypass",
+            "title": "Sensitive operation is now reachable without authorization"
+          }
+        ]
+      },
+      "expected": { "gate": "pass", "state": "aligned", "reason": "high_plus_aligned" }
+    },
+    {
+      "id": "incomplete-coverage-is-never-clean-alignment",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "coverageVerdict": "incomplete",
+        "findings": []
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "coverageComplete": true,
+        "findings": [
+          {
+            "severity": "high",
+            "category": "security",
+            "file": "auth.c",
+            "side": "old",
+            "line": 10,
+            "claimClass": "missing-check"
+          }
+        ]
+      },
+      "expected": { "gate": "inconclusive", "state": "inconclusive", "reason": "coverage_incomplete" }
+    },
+    {
+      "id": "different-diff-is-not-comparable",
+      "left": {
+        "source": "codex-review-safe",
+        "diffFingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "coverageVerdict": "complete",
+        "findings": []
+      },
+      "right": {
+        "source": "codex-review-service",
+        "diffFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+        "coverageComplete": true,
+        "findings": []
+      },
+      "expected": { "gate": "inconclusive", "state": "inconclusive", "reason": "exact_diff_mismatch" }
+    }
+  ]
+}
