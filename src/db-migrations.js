@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 9;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
 
 function sqlString(value) { return `'${String(value).replace(/'/g, "''")}'`; }
@@ -143,7 +143,64 @@ function migrate7To8(db, dbPath, hooks = {}) {
   integrityCheck(db, 'post-migration'); return Object.freeze({ from: 7, to: 8, backupPath });
 }
 
-const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8]]));
+function migrate8To9(db, dbPath, hooks = {}) {
+  integrityCheck(db, 'pre-migration');
+  const backupPath = createBackup(db, dbPath, 8);
+  hooks.afterBackup?.({ backupPath, from: 8, to: 9 });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(`
+      ALTER TABLE review_findings ADD COLUMN root_cause_key TEXT NOT NULL DEFAULT '';
+      ALTER TABLE review_findings ADD COLUMN claim_class TEXT NOT NULL DEFAULT '';
+      ALTER TABLE review_findings ADD COLUMN claim_state TEXT NOT NULL DEFAULT 'legacy' CHECK(claim_state IN ('known','unknown','legacy'));
+      ALTER TABLE review_findings ADD COLUMN anchor_fingerprint TEXT NOT NULL DEFAULT '';
+      ALTER TABLE review_findings ADD COLUMN claim_fingerprint TEXT NOT NULL DEFAULT '';
+      ALTER TABLE review_findings ADD COLUMN content_digest TEXT NOT NULL DEFAULT '';
+      ALTER TABLE review_findings ADD COLUMN service_note_id TEXT NOT NULL DEFAULT '';
+      CREATE TABLE finding_claim_projection(
+        project_id INTEGER NOT NULL,
+        mr_iid INTEGER NOT NULL,
+        claim_fingerprint TEXT NOT NULL,
+        anchor_fingerprint TEXT NOT NULL,
+        root_cause_key TEXT NOT NULL,
+        claim_class TEXT NOT NULL,
+        discussion_id TEXT NOT NULL DEFAULT '',
+        service_note_id TEXT NOT NULL DEFAULT '',
+        position_base_sha TEXT NOT NULL DEFAULT '',
+        position_start_sha TEXT NOT NULL DEFAULT '',
+        position_head_sha TEXT NOT NULL DEFAULT '',
+        canonical_content_digest TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL CHECK(state IN ('created','reused_unchanged','reused_updated','superseded','resolved','publication_failed')),
+        last_review_run_id INTEGER REFERENCES review_runs(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(project_id,mr_iid,claim_fingerprint)
+      );
+      CREATE TABLE finding_claim_events(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        mr_iid INTEGER NOT NULL,
+        claim_fingerprint TEXT NOT NULL,
+        review_run_id INTEGER REFERENCES review_runs(id) ON DELETE SET NULL,
+        dedupe_key TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        content_digest TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        UNIQUE(project_id,mr_iid,claim_fingerprint,dedupe_key)
+      );
+      CREATE INDEX idx_finding_claim_projection_state ON finding_claim_projection(state,updated_at,project_id,mr_iid);
+      CREATE INDEX idx_finding_claim_events_claim ON finding_claim_events(project_id,mr_iid,claim_fingerprint,id);
+      CREATE INDEX idx_review_findings_claim ON review_findings(claim_fingerprint,run_id,id);
+    `);
+    hooks.afterDdl?.({ backupPath, from: 8, to: 9 });
+    db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)').run(9, new Date().toISOString(), backupPath);
+    db.exec('PRAGMA user_version=9'); hooks.beforeCommit?.({ backupPath, from: 8, to: 9 }); db.exec('COMMIT');
+  } catch (cause) { try { db.exec('ROLLBACK'); } catch {} const error = new Error(`SQLite schema migration 8 -> 9 failed; original database remains authoritative and backup is ${backupPath}`); error.code='EDBMIGRATION'; error.backupPath=backupPath; error.cause=cause; throw error; }
+  integrityCheck(db, 'post-migration'); return Object.freeze({ from: 8, to: 9, backupPath });
+}
+
+const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8],[8, migrate8To9]]));
 function migrationPlan(fromVersion, toVersion = CURRENT_SCHEMA_VERSION) {
   const plan = [];
   let current = Number(fromVersion);
@@ -183,5 +240,6 @@ module.exports = Object.freeze({
   migrateDatabase,
   migrate5To6,
   migrate6To7,
-  migrate7To8
+  migrate7To8,
+  migrate8To9
 });

@@ -2,9 +2,9 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.5.5** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 8 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.6.0** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 9 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
 
-Safe Core is exact-pinned to `00403dd14877e978698c63d06f6dbdfe2ba9b8cc`. Do not replace the gitlink or copy another Core runtime into a release package.
+Safe Core is exact-pinned to `190651770a444b0693d82228afc66879dd57b0c0`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 8/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 9/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
 
 ## Start and health
 
@@ -173,9 +173,9 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.5.2 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated.3.0 Config Schema 6 -> 7 hard cut remains an upgrade boundary. Service 7.2.0 introduced the historical **Config Schema 5 -> 6** hard cut for strict responsibility identity mappings, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** hard cut and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.5.5 introduced Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced the historical **Config Schema 5 -> 6** responsibility identity boundary, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** boundary and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
 
-The historic Database Schema 5 -> 6 startup migration remains explicit and tested. Schema 7 -> 8 creates and verifies a Schema 7 backup before adding status-card state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 8 downgrade.
+The historic Database Schema 9 -> 6, 6 -> 7, and 7 -> 8 startup migrations remain explicit and tested. Schema 8 -> 9 creates and verifies a Schema 8 backup before adding Finding Claim projection and lifecycle state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 9 downgrade.
 
 Upgrade sequence:
 

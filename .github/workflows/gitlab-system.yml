@@ -58,7 +58,8 @@ jobs:
           done
 
           critical_pids() {
-            docker exec gitlab gitlab-ctl status | awk '
+            status="$(docker exec gitlab gitlab-ctl status 2>/dev/null || true)"
+            printf '%s\n' "$status" | awk '
               $1 == "run:" && ($2 == "gitaly:" || $2 == "gitlab-workhorse:" || $2 == "puma:" || $2 == "sidekiq:") {
                 service=$2; pid=$4; gsub(/:/,"",service); gsub(/[()]/,"",pid); print service ":" pid
               }' | sort

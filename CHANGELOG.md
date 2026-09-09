@@ -1,3 +1,25 @@
+# Changelog
+
+## 7.6.0
+
+- Introduce Safe Core Finding Claim Contract v1 so stable root-cause identity is independent from model wording while uncertain claims remain fail-closed and never authorize note reuse.
+- Add Database Schema 9 claim projection and immutable lifecycle events, including verified transactional migration from Schema 8.
+- Reconcile only unresolved, current-position, bot-owned GitLab notes; preserve human replies and resolutions, and create a new discussion when ownership or semantic identity is uncertain.
+- Hold final review notifications behind the durable GitLab publication outbox, with explicit failed, partial, and bounded-timeout degradation in Feishu and WeCom cards.
+- Auto-resolve only a known claim after a complete current-snapshot review and a bot-ownership check; legacy/unknown claims remain unclassified and cannot close discussions during Schema 8 -> 9 adoption.
+- Settle finding publication, projection and deduplicated lifecycle events atomically; retain claim state under the configured data-retention boundary and expose claim metrics plus bot-ownership Doctor warnings.
+- Reuse persisted projections and one bounded fallback discussion scan per MR snapshot, eliminating per-finding exhaustive GitLab scans while preserving fail-closed pagination.
+- Verify the real npm package module closure and exercise diff-note update plus human-reply preservation across the GitLab provider matrix.
+
+## 7.5.5
+
+- Recover bounded text diffs for GitLab 14.6.1 classic `/changes` entries that expose a changed file path but an empty diff. The fallback reads the exact MR `start_sha` and `head_sha` file versions, generates an in-memory unified diff under existing review budgets, preserves exact changed-line publication, and remains fail-closed for missing, binary, oversized, generated, renamed, added, deleted, or otherwise unverifiable files.
+- Bind privacy-safe raw-diff fallback metadata into the review evidence digest and structured logs without storing source content or generated diff text.
+
+## 7.5.4
+
+- Publish the merged notification/report local-time display consistency fixes as Service 7.5.4 while preserving canonical UTC receipt/audit values; Database Schema 8, Config Schema 8, Safe Core 4.17.0 and Runtime/Provider/Model Routing contracts remain unchanged.
+
 ## 7.5.3
 
 - Consolidate the complete Review Service pull-request validation graph behind the canonical `CI Gate` while retaining Node/migration/Docker/recovery checks, Security, dependency review, Family governance, SQLite fault injection and real GitLab CE 14.6.1 / 17.11.7 / 19.3.0 system E2E; publish this exact workflow-consolidated main snapshot as a new immutable service release.
@@ -11,6 +33,12 @@
 
 - Repin to Codex Safe Core 4.16.0 because the shipped Core runtime digest changed to `3ea979b7903eac7740f5357e9346af5741ccb4090c2441146b2e8707642463bd`; publish a new immutable product release and distribution receipt.
 - Refresh Product Contract v2 and generated/current-state Family identity for the exact Core pin.
+
+## 7.5.0 - 2026-09-04
+
+- Consume Core Model Routing Contract v1 in the production GitLab review loop with authoritative Reviewer routing, optional Scout, conditional fail-closed Adjudicator, and shadow evaluation that never affects production verdicts.
+- Hard-cut Config Schema 8: retire codex.model/fastModel in favor of Auto/Preference/Fixed routing, role controls, and an explicit same-provider shadow candidate.
+- Record Model Evidence, Shadow comparison, and Token Economics in review audit metadata; persist only privacy-safe numeric token calibration in a protected sidecar while Database Schema 8 and Review Receipt v5 remain unchanged.
 
 ## 7.4.3
 
@@ -37,6 +65,14 @@
 - Preserve Service secret isolation: only the resolved provider credential may enter the Codex child process; GitLab and notification credentials remain filtered.
 - Extend Doctor with runtime provenance, endpoint/transport and credential-presence diagnostics without exposing secret values.
 - Preserve Database Schema 8, Config Schema 7, Review Receipt 5 and GitLab provider compatibility behavior unchanged.
+
+## 7.3.2 - 2026-09-02
+
+- Release-only patch carrying the exact Codex Safe Core 4.12.4 family pin, refreshed production documentation, and the already validated GitLab 14.6.1 / 17.11.7 / 19.3.0 provider contracts; no service runtime or database/config schema semantics change.
+
+## 7.3.1
+
+- Fix Provider Contract v2 auth.json path portability on Windows by asserting the runtime path with platform-native path semantics, and permanently exercise the provider contract in the three-OS portability matrix.
 
 ## 7.3.0 - 2026-09-01
 
@@ -98,30 +134,6 @@
 - Preserve GitLab 14.6.1 Classic, >=15.7 Modern and >=19.1 Standard HMAC capability boundaries.
 
 # Changelog
-
-## 7.5.5
-
-- Recover bounded text diffs for GitLab 14.6.1 classic `/changes` entries that expose a changed file path but an empty diff. The fallback reads the exact MR `start_sha` and `head_sha` file versions, generates an in-memory unified diff under existing review budgets, preserves exact changed-line publication, and remains fail-closed for missing, binary, oversized, generated, renamed, added, deleted, or otherwise unverifiable files.
-- Bind privacy-safe raw-diff fallback metadata into the review evidence digest and structured logs without storing source content or generated diff text.
-
-## 7.5.4
-
-- Publish the merged notification/report local-time display consistency fixes as Service 7.5.4 while preserving canonical UTC receipt/audit values; Database Schema 8, Config Schema 8, Safe Core 4.17.0 and Runtime/Provider/Model Routing contracts remain unchanged.
-
-## 7.5.0 - 2026-09-04
-
-- Consume Core Model Routing Contract v1 in the production GitLab review loop with authoritative Reviewer routing, optional Scout, conditional fail-closed Adjudicator, and shadow evaluation that never affects production verdicts.
-- Hard-cut Config Schema 8: retire codex.model/fastModel in favor of Auto/Preference/Fixed routing, role controls, and an explicit same-provider shadow candidate.
-- Record Model Evidence, Shadow comparison, and Token Economics in review audit metadata; persist only privacy-safe numeric token calibration in a protected sidecar while Database Schema 8 and Review Receipt v5 remain unchanged.
-
-
-## 7.3.2 - 2026-09-02
-
-- Release-only patch carrying the exact Codex Safe Core 4.12.4 family pin, refreshed production documentation, and the already validated GitLab 14.6.1 / 17.11.7 / 19.3.0 provider contracts; no service runtime or database/config schema semantics change.
-
-## 7.3.1
-
-- Fix Provider Contract v2 auth.json path portability on Windows by asserting the runtime path with platform-native path semantics, and permanently exercise the provider contract in the three-OS portability matrix.
 
 ## 6.3.1 - 2026-08-30
 

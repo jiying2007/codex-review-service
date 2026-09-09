@@ -26,6 +26,8 @@ function hasChangelogVersion(changelog, version) {
   const escaped = String(version).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^## ${escaped}(?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`, 'm').test(changelog);
 }
+function changelogVersions(changelog){return[...String(changelog||'').matchAll(/^## (\d+\.\d+\.\d+)(?:\s+-\s+\d{4}-\d{2}-\d{2})?\s*$/gm)].map(match=>match[1]);}
+function compareVersionDesc(a,b){const av=a.split('.').map(Number),bv=b.split('.').map(Number);for(let i=0;i<3;i++)if(av[i]!==bv[i])return bv[i]-av[i];return 0;}
 function expectedNodeEngine(contract){return `>=${contract.minimumNodeVersion} <23 || >=${contract.canonicalNodeVersion} <25`;}
 
 function verifyStatic() {
@@ -38,6 +40,7 @@ function verifyStatic() {
   if(JSON.stringify(contract.supportedNodeMajors)!=='[22,24]')fail('supported Node majors must remain explicit 22/24 LTS lines.');
   const changelog = fs.readFileSync(changelogPath, 'utf8');
   if (!hasChangelogVersion(changelog, pkg.version)) fail(`CHANGELOG.md must contain a release heading for ${pkg.version}.`);
+  const versions=changelogVersions(changelog),sorted=[...versions].sort(compareVersionDesc);if(!changelog.startsWith('# Changelog\n\n')||versions[0]!==pkg.version||JSON.stringify(versions)!==JSON.stringify(sorted)||new Set(versions).size!==versions.length)fail('CHANGELOG.md must begin with the current release and remain unique in descending SemVer order.');
   const staged = run('git', ['ls-files', '--stage', 'src/codex-safe-core']);
   const match = staged.match(/^160000 ([0-9a-f]{40,64}) 0\tsrc\/codex-safe-core$/i);
   if (!match || match[1] !== contract.safeCoreCommit) fail(`src/codex-safe-core must pin ${contract.safeCoreCommit}.`);
@@ -102,4 +105,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { run, validVersion, hasChangelogVersion, expectedNodeEngine, verifyStatic, main };
+module.exports = { run, validVersion, hasChangelogVersion, changelogVersions, compareVersionDesc, expectedNodeEngine, verifyStatic, main };
