@@ -182,10 +182,12 @@ function migrate8To9(db, dbPath, hooks = {}) {
         mr_iid INTEGER NOT NULL,
         claim_fingerprint TEXT NOT NULL,
         review_run_id INTEGER REFERENCES review_runs(id) ON DELETE SET NULL,
+        dedupe_key TEXT NOT NULL,
         event_type TEXT NOT NULL,
         content_digest TEXT NOT NULL DEFAULT '',
         metadata_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        UNIQUE(project_id,mr_iid,claim_fingerprint,dedupe_key)
       );
       CREATE INDEX idx_finding_claim_projection_state ON finding_claim_projection(state,updated_at,project_id,mr_iid);
       CREATE INDEX idx_finding_claim_events_claim ON finding_claim_events(project_id,mr_iid,claim_fingerprint,id);

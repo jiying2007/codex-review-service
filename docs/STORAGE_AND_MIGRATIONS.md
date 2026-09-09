@@ -7,6 +7,8 @@ SQLite WAL + FULL remains the only shipped backend. `src/storage.js` is the expl
 
 Schema 9 adds `finding_claim_projection` as the current GitLab projection of a known semantic claim and `finding_claim_events` as its append-only lifecycle audit. Review findings persist stable root-cause/class identity, anchor and content digests, and the service-owned note identifier. Migration 8 -> 9 creates and verifies a Schema 8 backup before transactional DDL; rollback requires restoring that backup with the matching Service release. Unknown claims deliberately remain outside the reusable projection.
 
+Claim events are immutable during their configured retention window, not immortal. Both claim events and current projections are pruned using `lifecycle.dataRetentionDays`; deleting an old projection is safe because the publisher falls back to an exhaustive bot-marker scan before creating a replacement discussion.
+
 The notification outbox now observes a publication barrier for final review cards: delivery waits until every same-run GitLab publication is terminal. A bounded 15-minute timeout prevents permanent notification starvation and is rendered explicitly as a degraded publication state rather than a successful publication claim.
 
 ## Schema 8 (historical)

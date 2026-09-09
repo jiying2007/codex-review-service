@@ -6,6 +6,7 @@ const { GitLabClient } = require('./gitlab');
 const { ProjectScopeManager } = require('./project-scope');
 const { probeCodexRuntime, inspectRuntimeFromConfig } = require('./codex');
 const { contract } = require('./product-contract');
+function publicationDoctorState(config={}){const configured=Boolean(String(config.botUsername||'').trim());return{ok:true,mode:'durable-outbox',publishers:config.publisherConcurrency,maxAttempts:config.maxPublishAttempts,botOwnershipConfigured:configured,warnings:configured?[]:['finding_note_reuse_disabled: gitlab.botUsername is empty']};}
 
 async function runDoctor({ loadConfigFn = loadConfig } = {}) {
   const checks = { product: { ok: true, ...contract, node: process.version } };
@@ -27,7 +28,7 @@ async function runDoctor({ loadConfigFn = loadConfig } = {}) {
       checks.gitlab = { ok: true, version: version?.version || 'unknown', minimumVersion: contract.minimumGitLabVersion, recommendedPolicy: contract.recommendedGitLabPolicy, profile: capabilities.profile, diffCompleteness: capabilities.diffCompleteness, webhookAuth: capabilities.webhookAuth, webhookReplayWindow: capabilities.webhookReplayWindow, webhookInstanceHeader: capabilities.webhookInstanceHeader, circuit: gitlab.health().circuit };
       checks.projectScope = { ok: resolved.healthy, mode: resolved.mode, explicitProjects: resolved.explicitProjects, groups: resolved.groups, discoveredProjects: resolved.discoveredProjects, totalProjects: resolved.totalProjects };
     } catch (error) { checks.gitlab = { ok: false, code: error.code || 'EGITLAB', status: error.status || null, version: error.version || null, minimumVersion: error.minimumVersion || contract.minimumGitLabVersion }; checks.projectScope = { ok: false, code: error.code || 'EPROJECTSCOPE' }; }
-    checks.publication = { ok: true, mode: 'durable-outbox', publishers: config.publisherConcurrency, maxAttempts: config.maxPublishAttempts };
+    checks.publication = publicationDoctorState(config);
     checks.notifications = { ok: true, enabled: config.notificationEnabled, notifiers: config.notificationEnabled ? config.notificationConcurrency : 0, maxAttempts: config.maxNotificationAttempts, routeWarnings };
     checks.context = { ok: true, enabled: config.contextEnabled, maxBytes: config.maxContextBytes, maxFiles: config.maxContextFiles };
     checks.budget = { ok: true, mrMaxTokens: config.mrMaxTokenBudget, projectDailyTokens: config.projectDailyTokenBudget };
@@ -39,4 +40,4 @@ async function runDoctor({ loadConfigFn = loadConfig } = {}) {
 async function main() { const result = await runDoctor(); process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); if (!result.ok) process.exitCode = 1; }
 if (require.main === module) main().catch(error => { process.stderr.write(`${JSON.stringify({ ok: false, error: error.code || 'EDOCTOR' })}\n`); process.exitCode = 1; });
 
-module.exports = { main, runDoctor };
+module.exports = { main, runDoctor, publicationDoctorState };

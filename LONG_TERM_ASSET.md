@@ -4,7 +4,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 
 ## Product identity
 
-`product-contract.json` is the machine-checked product fact source: Service 7.6.0, Database Schema 9, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `197de61f6c187513a182dbae8e4c077b8ad4677e`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
+`product-contract.json` is the machine-checked product fact source: Service 7.6.0, Database Schema 9, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `1df3a632c12d349f17f985cd928e40df7876b11d`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
 
 ## Non-negotiable invariants
 
