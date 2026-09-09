@@ -34,6 +34,24 @@ Service 永远不执行仓库定义的 Analyzer 命令；CI 负责真正执行�
 
 Semantic Impact Candidate 仍只通过 GitLab Repository API 从 MR 精确 head SHA 获取；Core 只对受限 include/import/symbol/build/Kconfig/DeviceTree Evidence 做评分，不自行访问仓库。
 
+## Cross-review Differential Gate
+
+`src/differential-quality.js` 提供一个确定性的离线 Comparator，用于比较两个针对**同一个 exact diff fingerprint** 的规范化审查 Judgment。它不会调用另一个 Reviewer、不会执行模型，也不会让 Codex Review Safe 与 Codex Review Service 形成运行时依赖。
+
+默认阻断边界是 High。当两个 Judgment 都 coverage complete 且绑定同一个 64 位十六进制 diff fingerprint 时，只要另一条审查链也在相同的精确 `file + side + line` causal anchor 上接受了 High/Critical Finding，就视为 High+ 对齐。不同产品可以使用不同 category、文字描述和 claim taxonomy，不会因此制造伪分歧。
+
+High+ anchor 缺失会进一步分类：
+
+- `controller_gate_disagreement`：另一条审查链其实看到了同一 anchor，但被 suppress 或 reject；
+- `severity_disagreement`：另一条审查链接受了同一 anchor，但严重级别低于阻断阈值；
+- `recall_disagreement`：另一条审查链没有任何对应的 accepted / suppressed / rejected candidate。
+
+不同 diff fingerprint 或任一侧 coverage incomplete 都属于 `inconclusive`，绝不能作为 clean pass。`assertCrossReviewDifferential()` 默认因此对 High+ 分歧以及 inconclusive evidence 都 fail closed。
+
+永久 corpus 位于 `quality/cross-review-corpus.json`，固定覆盖：删除鉴权产生的 old-side High 漏报、controller suppression、severity boundary 分歧、修复后 High+ 对齐、coverage incomplete 与 exact-diff mismatch。
+
+这是质量评估门禁，不是生产运行时 quorum：没有第二份 Judgment Envelope 时，正常 MR Review 仍保持独立可用。
+
 ## 人工 Resolution 边界
 
 人工 finding resolution 采用 append-only 历史：`fixed`、`false_positive`、`accepted_risk`、`duplicate`、`obsolete`、`not_applicable`、`policy_exception`。这些反馈只进入可观测指标，绝不会自动训练模型、动态修改 Prompt 或形成自训练闭环。
