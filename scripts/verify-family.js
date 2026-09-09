@@ -30,6 +30,7 @@ const requiredPackageFiles=[
   '.codex-safe.example.json','.env.example','CHANGELOG.md','LICENSE','LONG_TERM_ASSET.md','OPERATIONS.md','README.md','README.zh-CN.md','SUPPORT.md','SECURITY.md','VERIFY_RELEASE.md','config.example.json','product-contract.json',
   'deploy/systemd/config.example.json','deploy/systemd/*.service','deploy/systemd/*.env.example','deploy/docker/Dockerfile','deploy/docker/compose.yaml','deploy/docker/README.md','deploy/docker/config.example.json',
   'docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md','docs/NOTIFICATIONS.md','docs/NOTIFICATIONS.zh-CN.md','docs/FLOW_TRACKING.md','docs/FLOW_TRACKING.zh-CN.md','docs/GITLAB_SETUP.md','docs/GITLAB_SETUP.zh-CN.md','docs/TOKEN_EFFICIENCY.md','docs/TOKEN_EFFICIENCY.zh-CN.md','docs/CODEX_PROVIDER.md','docs/CODEX_PROVIDER.zh-CN.md','docs/PRODUCT_CONTRACT.md','docs/QUALITY_PLATFORM.md','docs/QUALITY_PLATFORM.zh-CN.md','docs/STORAGE_AND_MIGRATIONS.md',
+  'quality/*.json',
   'src/*.js','src/codex-safe-core/*.js','src/codex-safe-core/codex-safe.schema.json','src/codex-safe-core/quality/profile-packs.json','src/codex-safe-core/CHANGELOG.md','src/codex-safe-core/LICENSE','src/codex-safe-core/README.md','src/codex-safe-core/README.zh-CN.md','src/codex-safe-core/SECURITY.md','src/codex-safe-core/core-contract.json','src/codex-safe-core/family-non-goals.json','src/codex-safe-core/family-error-taxonomy.json','src/codex-safe-core/scripts/family-diagnostics.js','src/codex-safe-core/scripts/verify-release-artifact.js'
 ];
 assert.deepEqual(pkg.files,requiredPackageFiles);
