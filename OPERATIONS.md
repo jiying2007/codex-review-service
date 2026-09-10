@@ -2,7 +2,7 @@
 
 ## Product baseline
 
-Codex Review Service **7.6.0** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.6.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 9
 - Config Schema 8
@@ -185,7 +185,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.0 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.1 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

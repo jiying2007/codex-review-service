@@ -45,6 +45,13 @@ function checkVersionPolicy(version, config) {
   return matched;
 }
 
+function normalizeReviewError(error) {
+  if (!error || typeof error !== 'object') return error;
+  const detail=[error.message,error.stderr,error.stdout,error.diagnosticTail].filter(Boolean).join('\n').toLowerCase();
+  if (/invalid_json_schema|invalid schema for response_format/.test(detail)) error.code='ECODEXSCHEMA';
+  return error;
+}
+
 function abortReason(signal) { return signal?.reason instanceof Error ? signal.reason : Object.assign(new Error('Review aborted'),{code:'EABORTED'}); }
 function cancellationToken(signal) {
   return {
@@ -83,7 +90,7 @@ async function runCodexLocal(prompt, config, signal, maxFindings=config.maxFindi
     if (signal?.aborted) throw abortReason(signal);
     if (error?.code==='ETIMEDOUT') error.code='ECODEXTIMEOUT';
     if (error?.code==='EOUTPUTLIMIT') error.code='ECODEXOUTPUT';
-    throw error;
+    throw normalizeReviewError(error);
   }
 }
 
@@ -126,4 +133,4 @@ async function probeCodexCapabilities(config, force=false) {
 async function probeCodexRuntime(config,force=false){const socket=runnerSocket(config);if(!socket)return probeCodexRuntimeLocal(config,force);const value=await unixRequest(socket,'POST','/probe',{},(config.codexRequestTimeoutSeconds+15)*1000);return{...value,mode:'runner'};}
 async function runCodex(prompt,config,signal,maxFindings=config.maxFindings){const socket=runnerSocket(config);if(!socket)return runCodexLocal(prompt,config,signal,maxFindings);const result=await unixRequest(socket,'POST','/review',{prompt,maxFindings,reviewTimeoutSeconds:config.reviewTimeoutSeconds,model:config.codexModel||'',promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION},(config.reviewTimeoutSeconds+15)*1000,signal);return{...result,usage:usageShape(result.usage),mode:'runner'};}
 
-module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexRuntime,probeCodexRuntimeLocal,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};
+module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,normalizeReviewError,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexRuntime,probeCodexRuntimeLocal,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};

@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.6.1
+
+- Fix the strict structured-output schema used for review findings: all declared properties are now required, while unknown semantic identity is represented by explicit empty strings.
+- Classify upstream `invalid_json_schema` failures as `ECODEXSCHEMA` so review diagnostics retain the actionable cause instead of a raw CLI exit code.
+
 ## 7.6.0
 
 - Introduce Safe Core Finding Claim Contract v1 so stable root-cause identity is independent from model wording while uncertain claims remain fail-closed and never authorize note reuse.
