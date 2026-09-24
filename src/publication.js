@@ -8,13 +8,44 @@ function serviceFindingNote(discussion,finding,botUsername=''){const marker=`<!-
 function positionMatches(note,diffRefs={}){const position=note?.position;if(!position)return false;return String(position.base_sha||'')===String(diffRefs.base_sha||'')&&String(position.start_sha||'')===String(diffRefs.start_sha||'')&&String(position.head_sha||'')===String(diffRefs.head_sha||'');}
 function createdServiceNote(discussion){return(discussion?.notes||[]).find(note=>note?.resolvable===true)||discussion?.notes?.[0]||null;}
 class Publisher{
-  constructor({config,store,gitlab,logger=console}){this.config=config;this.store=store;this.gitlab=gitlab;this.logger=logger;this.stopping=false;this.workers=[];this.discussionScans=new Map();}
+  constructor({config,store,gitlab,logger=console}){this.config=config;this.store=store;this.gitlab=gitlab;this.logger=logger;this.stopping=false;this.workers=[];this.discussionScans=new Map();this.findingPublications=new Map();}
   projectAllowed(item){return !this.config.gitlabProjectAllowlist||this.config.gitlabProjectAllowlist.has(Number(item.project_id));}
   async currentSnapshot(item){const p=item.payload||{};if(!p.headSha||!p.startSha)return true;const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid),head=String(mr.diff_refs?.head_sha||mr.sha||''),start=String(mr.diff_refs?.start_sha||'');return mr.state==='opened'&&head===String(p.headSha)&&start===String(p.startSha);}
   async publishSummary(item){if(!(await this.currentSnapshot(item)))return{cancelled:true};const result=await this.gitlab.upsertSummary(item.project_id,item.mr_iid,item.payload.body);return{remoteId:String(result?.id||'')};}
   async findExistingDiscussion(item,finding,diffRefs){const projection=this.store.claimProjection?.(item.project_id,item.mr_iid,finding.claimFingerprint);if(projection?.discussion_id&&typeof this.gitlab.getDiscussion==='function'){const direct=await this.gitlab.getDiscussion(item.project_id,item.mr_iid,projection.discussion_id),note=serviceFindingNote(direct,finding,this.config.botUsername);if(direct&&discussionResolved(direct)===false&&note&&positionMatches(note,diffRefs))return direct;}if(typeof this.gitlab.listDiscussions!=='function')return this.gitlab.findDiscussionByFingerprint(item.project_id,item.mr_iid,finding.fingerprint,diffRefs);const key=`${item.project_id}:${item.mr_iid}:${diffRefs?.head_sha||item.payload?.headSha||''}`;let scan=this.discussionScans.get(key);if(!scan){scan=this.gitlab.listDiscussions(item.project_id,item.mr_iid);this.discussionScans.set(key,scan);if(this.discussionScans.size>128)this.discussionScans.delete(this.discussionScans.keys().next().value);}let result;try{result=await scan;}catch(error){this.discussionScans.delete(key);throw error;}if(!result.complete){this.discussionScans.delete(key);const error=new Error('Could not exhaustively scan MR discussions');error.code='EGITLABPAGINATION';throw error;}return selectDiscussionByFingerprint(result.items,finding.fingerprint,diffRefs);}
-  async publishFinding(item){const p=item.payload,finding=p.finding;if(!(await this.currentSnapshot(item)))return{cancelled:true,findingSettlement:{projectionState:'superseded',eventType:'claim_snapshot_superseded'}};const known=finding.claimState==='known'&&Boolean(finding.claimFingerprint);let existing=null;if(known)existing=await this.findExistingDiscussion(item,finding,p.diffRefs);if(existing&&discussionResolved(existing)===false){const note=serviceFindingNote(existing,finding,this.config.botUsername);if(note&&positionMatches(note,p.diffRefs)){const target=findingBody(finding),changed=String(note.body||'')!==target;if(changed)await this.gitlab.updateFindingNote(item.project_id,item.mr_iid,note.id,finding);return{remoteId:String(existing.id),findingSettlement:{discussionId:String(existing.id),serviceNoteId:String(note.id),diffRefs:p.diffRefs,projectionState:changed?'reused_updated':'reused_unchanged',eventType:changed?'claim_note_updated':'claim_reused'}};}}
-    const created=await this.gitlab.createDiscussion(item.project_id,item.mr_iid,finding,p.diffRefs,p.oldPath,p.newPath),note=createdServiceNote(created);return{remoteId:String(created.id),findingSettlement:{discussionId:String(created.id),serviceNoteId:String(note?.id||''),diffRefs:p.diffRefs,projectionState:'created',eventType:existing?'claim_created_for_current_snapshot':'claim_created'}};}
+  invalidateDiscussionScans(item) {
+    const prefix = `${item.project_id}:${item.mr_iid}:`;
+    for (const key of this.discussionScans.keys()) if (key.startsWith(prefix)) this.discussionScans.delete(key);
+  }
+  async publishFinding(item) {
+    // Serialize same-MR writes inside this Publisher; remote reads, not cached
+    // absence, decide whether an uncertain previous write already took effect.
+    const key = `${item.project_id}:${item.mr_iid}`;
+    const previous = this.findingPublications.get(key) || Promise.resolve();
+    let unlock;
+    const current = new Promise(resolve => { unlock = resolve; });
+    this.findingPublications.set(key, current);
+    await previous;
+    try {
+      this.invalidateDiscussionScans(item);
+      return await this.publishFindingCurrent(item);
+    } finally {
+      this.invalidateDiscussionScans(item);
+      unlock();
+      if (this.findingPublications.get(key) === current) this.findingPublications.delete(key);
+    }
+  }
+  async publishFindingCurrent(item){const p=item.payload,finding=p.finding;if(!(await this.currentSnapshot(item)))return{cancelled:true,findingSettlement:{projectionState:'superseded',eventType:'claim_snapshot_superseded'}};const known=finding.claimState==='known'&&Boolean(finding.claimFingerprint);let existing=null;if(known)existing=await this.findExistingDiscussion(item,finding,p.diffRefs);if(!(await this.currentSnapshot(item)))return{cancelled:true,findingSettlement:{projectionState:'superseded',eventType:'claim_snapshot_superseded'}};if(existing&&discussionResolved(existing)===false){const note=serviceFindingNote(existing,finding,this.config.botUsername);if(note&&positionMatches(note,p.diffRefs)){const target=findingBody(finding),changed=String(note.body||'')!==target;if(changed)await this.gitlab.updateFindingNote(item.project_id,item.mr_iid,note.id,finding);return{remoteId:String(existing.id),findingSettlement:{discussionId:String(existing.id),serviceNoteId:String(note.id),diffRefs:p.diffRefs,projectionState:changed?'reused_updated':'reused_unchanged',eventType:changed?'claim_note_updated':'claim_reused'}};}}
+    let created;
+    try {
+      created = await this.gitlab.createDiscussion(item.project_id,item.mr_iid,finding,p.diffRefs,p.oldPath,p.newPath);
+    } catch (error) {
+      if ((!known || !this.config.botUsername) && retryablePublication(error)) {
+        throw Object.assign(new Error('Finding publication outcome is uncertain and cannot be safely reconciled; inspect the remote discussion before retrying.'), { code:'ECLAIMPUBLISHUNCERTAIN', cause:error });
+      }
+      throw error;
+    }
+    const note=createdServiceNote(created);return{remoteId:String(created.id),findingSettlement:{discussionId:String(created.id),serviceNoteId:String(note?.id||''),diffRefs:p.diffRefs,projectionState:'created',eventType:existing?'claim_created_for_current_snapshot':'claim_created'}};}
   async resolveDiscussion(item){if(!(await this.currentSnapshot(item)))return{cancelled:true,reason:'stale_snapshot'};const p=item.payload,finding=p.finding||{};if(finding.claimState!=='known'||!finding.claimFingerprint)return{cancelled:true,reason:'claim_identity'};const discussion=await this.gitlab.getDiscussion(item.project_id,item.mr_iid,p.discussionId);if(!discussion)return{remoteId:String(p.discussionId),findingSettlement:{discussionId:String(p.discussionId),projectionState:'resolved',eventType:'claim_discussion_missing'}};let note=null;if(discussionResolved(discussion)===false){note=serviceFindingNote(discussion,finding,this.config.botUsername);if(!note)return{cancelled:true,reason:'note_ownership'};await this.gitlab.setDiscussionResolved(item.project_id,item.mr_iid,p.discussionId,true);}return{remoteId:String(p.discussionId),findingSettlement:{discussionId:String(p.discussionId),serviceNoteId:String(note?.id||''),projectionState:'resolved',eventType:'claim_resolved'}};}
   staleRunningStatus(item){if(item.payload?.state!=='running')return false;const match=String(item.dedupe_key||'').match(/^job:(\d+):status:running$/);if(!match)return false;const job=this.store.getJob(Number(match[1]));return !job||job.status!=='running';}
   async publishStatus(item){if(this.staleRunningStatus(item))return{cancelled:true};const p=item.payload,result=await this.gitlab.setCommitStatus(p.statusProjectId,p.headSha,p.state,p.description,p.ref||'',p.pipelineId||null);return{remoteId:String(result?.id||'')};}
