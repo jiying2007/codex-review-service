@@ -87,20 +87,22 @@ async function collectAnalyzerReports(gitlab, mr, config) {
   }
   const jobsResult = await gitlab.listPipelineJobs(projectId,pipelineId);
   if (!jobsResult.complete && specs.some(spec=>spec.required)) throw Object.assign(new Error('Could not completely enumerate jobs for required analyzer reports'),{code:'EANALYZERJOBS'});
-  const parsed=[], artifacts=[];
+  const parsed=[], artifacts=[];let complete=jobsResult.complete;
   for (const spec of specs) {
-    const jobs=(jobsResult.items||[]).filter(job=>globMatch(job.name,spec.job||'*')).slice(0,20);
+    const matching=(jobsResult.items||[]).filter(job=>globMatch(job.name,spec.job||'*'));if(matching.length>20){if(spec.required)throw Object.assign(new Error('Required analyzer job bound exceeded'),{code:'EANALYZERJOBS'});complete=false;}const jobs=matching.slice(0,20);
     let acquired=0;
     for (const job of jobs) {
-      const raw = await gitlab.getJobArtifactFile(projectId,job.id,spec.path);
-      if (raw === null) continue;
-      const artifact=parseAnalyzerArtifact({format:spec.format,content:raw,maxBytes:spec.maxBytes});
-      parsed.push(artifact);artifacts.push(Object.freeze({format:spec.format,path:spec.path,job:String(job.name||''),jobId:Number(job.id),bytes:artifact.bytes}));acquired++;
+      try {
+        const raw = await gitlab.getJobArtifactFile(projectId,job.id,spec.path);
+        if (raw === null) continue;
+        const artifact=parseAnalyzerArtifact({format:spec.format,content:raw,maxBytes:spec.maxBytes});
+        parsed.push(artifact);artifacts.push(Object.freeze({format:spec.format,path:spec.path,job:String(job.name||''),jobId:Number(job.id),bytes:artifact.bytes}));acquired++;
+      } catch(error) { if(spec.required)throw error;complete=false; }
     }
     if (spec.required && acquired===0) throw Object.assign(new Error(`Required analyzer report missing: ${spec.format} ${spec.job}:${spec.path}`),{code:'EANALYZERMISSING'});
   }
   const merged=mergeAnalyzerArtifacts(parsed);
-  return Object.freeze({findings:merged.findings,metadata:merged.metadata,artifacts:Object.freeze(artifacts),complete:jobsResult.complete});
+  return Object.freeze({findings:merged.findings,metadata:merged.metadata,artifacts:Object.freeze(artifacts),complete});
 }
 function testCandidatePath(file,prefixes) {
   const normalized=String(file||'').replace(/\\/g,'/').replace(/^\.\//,'');
@@ -122,11 +124,16 @@ function formatAnalyzerMetadata(metadata=[]) {
 }
 async function collectServiceQualityEvidence(gitlab, mr, diffResult, config) {
   const profile = resolveReviewProfilePack(config.reviewProfile || 'general');
-  const [impact, analyzer, testImpact] = await Promise.all([
+  // Optional context degradation must never discard a required analyzer result.
+  const [impactResult, analyzerResult, testResult] = await Promise.allSettled([
     collectImpact(gitlab, mr, diffResult, profile),
     collectAnalyzerReports(gitlab, mr, config),
     collectTestImpact(gitlab, mr, diffResult, config)
   ]);
+  if (analyzerResult.status === 'rejected') throw analyzerResult.reason;
+  const analyzer = analyzerResult.value;
+  const impact = impactResult.status === 'fulfilled' ? impactResult.value : { nodes:[], edges:[], text:'', bytes:0, complete:false, truncated:true };
+  const testImpact = testResult.status === 'fulfilled' ? testResult.value : { version:1, changedPaths:[], recommendedTests:[], candidateCount:0, truncated:true, digest:'' };
   const analyzerFindings=dedupeAnalyzerFindings(analyzer.findings||[]);
   const analyzerEvidence = formatAnalyzerEvidence(analyzerFindings, { maxFindings: 80, maxBytes: 64 * 1024 });
   const testImpactEvidence=formatTestImpactEvidence(testImpact,{maxBytes:48*1024});

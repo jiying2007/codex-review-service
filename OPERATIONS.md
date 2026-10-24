@@ -2,7 +2,7 @@
 
 ## Product baseline
 
-Codex Review Service **7.6.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.6.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 9
 - Config Schema 8
@@ -133,6 +133,16 @@ Recovery invariants:
 
 Never delete queue/outbox rows as an incident workaround.
 
+### Commit-status uncertainty and merge enforcement
+
+The durable Review Job, Run and Receipt record the Service verdict. A GitLab commit status is a remote projection of that verdict. Status requests for one source project, SHA, ref and status name share one local publication order, including implicit and explicit pipeline targets. The publisher checks the latest durable generation immediately before each HTTP send.
+
+A timeout or lost response does not prove that the remote request stopped. An older accepted request can still finish after a newer status has been published. The current implementation does not persist a per-target unresolved status-write fence or run an automatic read-back/reconciliation loop for the latest status. A `published` outbox row, a fixed waiting period, a fresh MR read or client-side cancellation cannot establish strict remote ordering. GitLab's documented `409` retry behavior is not a generation acknowledgement from the timed-out request. See the [GitLab commit-status API](https://docs.gitlab.com/api/commits/#set-commit-pipeline-status).
+
+If this status participates in automatic merge enforcement, an independent trusted server-side gate must verify the latest durable review generation and exact source snapshot and reject unresolved publication uncertainty. This Service does not currently supply that gate or claim a GitLab conditional-generation write capability. Deployments requiring a strictly ordered merge gate remain blocked on that integration and its provider-level acceptance tests.
+
+After overlapping status generations and an uncertain HTTP outcome, hold automated merge for the affected source snapshot through an independent control. Retain the affected job/outbox IDs, source SHA, start SHA, ref and pipeline IDs; compare the latest durable verdict with the remote status and investigate the outstanding request. Do not reissue an obsolete successful status or reset outbox counters as proof of safety. Re-publishing the latest verdict can repair the current projection, but does not prove that an older remote handler can no longer finish. `admin reconcile` discovers review work; it is not a remote status fencing or read-back command. `/health/ready` continues to describe durable local intake, not this stronger merge-enforcement guarantee.
+
 ## Fatal runtime behavior
 
 `unhandledRejection` and `uncaughtException` are fatal integrity events. The process stops intake/workers, flushes telemetry, checkpoints/closes SQLite and exits non-zero. systemd/Docker restarts it and durable recovery resumes interrupted work. Do not turn this into “log and keep running”.
@@ -185,7 +195,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.1 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

@@ -11,6 +11,7 @@ const TERMINAL_JOB_STATUSES = Object.freeze(['pass','needs_attention','blocked',
 const TERMINAL_PUBLICATION_STATUSES = Object.freeze(['published','failed','cancelled']);
 function isoAfter(ms){return new Date(Date.now()+Math.max(0,ms)).toISOString();}
 function json(value){return JSON.stringify(value??null);}
+function publicationPayload(type,payload){return type==='finding'?{...payload,findingPublicationProtocol:2}:payload;}
 function parseJson(value){try{return JSON.parse(value);}catch{return null;}}
 function cardTextForDb(value,max=120){return String(value??'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);}
 
@@ -70,13 +71,49 @@ class Store{
   claimNext(){return this.withTransaction(()=>{const now=new Date().toISOString(),row=this.db.prepare(`SELECT j.* FROM review_jobs j WHERE j.status='queued' AND j.available_at<=? AND NOT EXISTS(SELECT 1 FROM review_jobs r WHERE r.project_id=j.project_id AND r.mr_iid=j.mr_iid AND r.status='running') ORDER BY j.id LIMIT 1`).get(now);if(!row)return null;const result=this.db.prepare("UPDATE review_jobs SET status='running',started_at=?,attempt=attempt+1 WHERE id=? AND status='queued'").run(now,row.id);return result.changes===1?this.getJob(row.id):null;});}
   claimPublication(){return this.withTransaction(()=>{const now=new Date().toISOString(),row=this.db.prepare(`SELECT p.* FROM publication_outbox p WHERE p.status='pending' AND p.available_at<=? AND NOT EXISTS(SELECT 1 FROM publication_outbox prior WHERE prior.run_id=p.run_id AND p.run_id IS NOT NULL AND prior.id<p.id AND prior.status IN ('pending','publishing')) ORDER BY p.id LIMIT 1`).get(now);if(!row)return null;const result=this.db.prepare("UPDATE publication_outbox SET status='publishing',started_at=?,attempt=attempt+1 WHERE id=? AND status='pending'").run(now,row.id);if(result.changes!==1)return null;const value=this.db.prepare('SELECT * FROM publication_outbox WHERE id=?').get(row.id);value.payload=parseJson(value.payload_json);return value;});}
   claimNotification(){return this.withTransaction(()=>{const now=new Date().toISOString(),barrierCutoff=new Date(Date.now()-PUBLICATION_BARRIER_TIMEOUT_MS).toISOString(),row=this.db.prepare("SELECT n.* FROM notification_outbox n WHERE n.status='pending' AND n.available_at<=? AND (n.run_id IS NULL OR n.created_at<=? OR NOT EXISTS(SELECT 1 FROM publication_outbox p WHERE p.run_id=n.run_id AND p.status IN ('pending','publishing'))) ORDER BY n.id LIMIT 1").get(now,barrierCutoff);if(!row)return null;const result=this.db.prepare("UPDATE notification_outbox SET status='delivering',started_at=?,attempt=attempt+1 WHERE id=? AND status='pending'").run(now,row.id);if(result.changes!==1)return null;const value=this.db.prepare('SELECT * FROM notification_outbox WHERE id=?').get(row.id);value.payload=parseJson(value.payload_json);if(value.run_id!==null){const states=Object.fromEntries(this.db.prepare('SELECT status,COUNT(*) count FROM publication_outbox WHERE run_id=? GROUP BY status').all(value.run_id).map(item=>[item.status,Number(item.count)])),active=Number(states.pending||0)+Number(states.publishing||0);value.payload._publicationSummary={published:Number(states.published||0),failed:Number(states.failed||0),cancelled:Number(states.cancelled||0),pending:active};value.payload._publicationState=states.failed?'failed':states.cancelled?'partial':active?'timeout':'published';}return value;});}
+  statusPublicationJob(item){
+    const explicit=Number(item.payload?.jobId),dedupe=Number(String(item.dedupe_key||'').match(/^job:(\d+):status:/)?.[1]),run=item.run_id?this.db.prepare('SELECT job_id FROM review_runs WHERE id=?').get(item.run_id):null;
+    return this.getJob(explicit||dedupe||Number(run?.job_id)||0);
+  }
+  isCurrentStatusPublication(item){
+    const p=item.payload||{},job=this.statusPublicationJob(item);
+    if(!job||Number(job.project_id)!==Number(item.project_id)||Number(job.mr_iid)!==Number(item.mr_iid))return false;
+    if(String(job.head_sha)!==String(p.headSha)||String(job.source_branch||'')!==String(p.ref||''))return false;
+    if(p.startSha!==undefined&&String(p.startSha)!==String(job.start_sha||''))return false;
+    if(Number(job.status_project_id||job.project_id)!==Number(p.statusProjectId)||Number(job.pipeline_id||0)!==Number(p.pipelineId||0))return false;
+    if(p.state==='running'&&job.status!=='running')return false;
+    const newer=this.db.prepare(`SELECT id FROM review_jobs WHERE id>? AND status NOT IN ('duplicate','unauthorized','skipped') AND (
+      (project_id=? AND mr_iid=? AND (head_sha=? OR head_sha='')) OR
+      (COALESCE(status_project_id,project_id)=? AND head_sha=? AND source_branch=?)
+    ) ORDER BY id DESC LIMIT 1`).get(job.id,item.project_id,item.mr_iid,p.headSha,p.statusProjectId,p.headSha,p.ref||'');
+    return !newer;
+  }
+  findingWriteStarted(outboxId){
+    const row=this.db.prepare('SELECT payload_json,attempt,error_code FROM publication_outbox WHERE id=?').get(Number(outboxId));
+    if(!row)throw Object.assign(new Error('Finding outbox item is missing'),{code:'EDBSTATE'});
+    const payload=parseJson(row.payload_json)||{};
+    if(payload.findingWriteIntent)return true;
+    const uncertain=Number(payload.findingPublicationProtocol||0)<2&&(Number(row.attempt)>1||['ESERVICERESTART','EADMINRETRY','ECLAIMPUBLISHUNCERTAIN'].includes(row.error_code));
+    // Preserve observed legacy uncertainty independently of mutable retry counts.
+    if(uncertain){payload.findingWriteIntent={version:1,legacyUncertain:true,recordedAt:new Date().toISOString()};this.db.prepare('UPDATE publication_outbox SET payload_json=? WHERE id=?').run(json(payload),Number(outboxId));}
+    return uncertain;
+  }
+  markFindingWriteStarted(outboxId,{reconciled=false,reconciliationKey=''}={}){return this.withTransaction(()=>{
+    const row=this.db.prepare('SELECT payload_json,status FROM publication_outbox WHERE id=?').get(Number(outboxId));
+    if(!row||row.status!=='publishing')throw Object.assign(new Error('Finding outbox item is not publishing'),{code:'EDBSTATE'});
+    const payload=parseJson(row.payload_json)||{};
+    if(this.findingWriteStarted(outboxId)&&(!reconciled||!/^[0-9a-f]{64}$/.test(reconciliationKey)||payload.findingWriteIntent?.reconciliationKey!==reconciliationKey))throw Object.assign(new Error('Unreconciled finding write or changed publication identity requires inspection'),{code:'ECLAIMPUBLISHUNCERTAIN'});
+    payload.findingWriteIntent={version:2,startedAt:payload.findingWriteIntent?.startedAt||new Date().toISOString(),reconciliationKey};
+    this.db.prepare("UPDATE publication_outbox SET payload_json=? WHERE id=? AND status='publishing'").run(json(payload),Number(outboxId));
+    return true;
+  });}
   getJob(id){return this.db.prepare('SELECT * FROM review_jobs WHERE id=?').get(id)||null;}
   retryJob(id,errorCode,delayMs){this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,isoAfter(delayMs),id);}
   requeueRunningJob(id,errorCode='ESHUTDOWN'){this.db.prepare("UPDATE review_jobs SET status='queued',error_code=?,started_at=NULL,available_at=? WHERE id=? AND status='running'").run(errorCode,new Date().toISOString(),id);}
   finishJob(id,status,errorCode=null){this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,new Date().toISOString(),id);}
   finishJobWithNotifications(id,status,errorCode,actions=[]){return this.withTransaction(()=>{const now=new Date().toISOString();this.db.prepare('UPDATE review_jobs SET status=?,error_code=?,finished_at=? WHERE id=?').run(status,errorCode,now,id);const insert=this.db.prepare("INSERT OR IGNORE INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(NULL,?,?,?,?,?,?,?,?,'pending',?,?)");for(const action of actions||[])insert.run(action.payload?.projectId||0,action.payload?.mrIid||0,action.routeName,action.provider,action.secretRef,action.eventType,action.dedupeKey,json(action.payload),now,now);return actions.length;});}
   cancelMergeRequest(projectId,mrIid,status='cancelled'){return this.db.prepare("UPDATE review_jobs SET status=?,finished_at=? WHERE project_id=? AND mr_iid=? AND status IN ('queued','running')").run(status,new Date().toISOString(),projectId,mrIid).changes;}
-  enqueuePublication({runId=null,projectId,mrIid,type,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare(`INSERT INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`).run(runId,projectId,mrIid,type,dedupeKey,json(payload),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
+  enqueuePublication({runId=null,projectId,mrIid,type,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare(`INSERT INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`).run(runId,projectId,mrIid,type,dedupeKey,json(publicationPayload(type,payload)),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
   enqueueNotification({runId=null,routeName,provider,secretRef,eventType,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare("INSERT INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)").run(runId,payload?.projectId||0,payload?.mrIid||0,routeName,provider,secretRef,eventType,dedupeKey,json(payload),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
   saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null,notificationActions=[]){return this.withTransaction(()=>{
     const usage=review.usage||{},now=new Date().toISOString();
@@ -84,7 +121,7 @@ class Store{
     const runId=Number(run.lastInsertRowid),insertFinding=this.db.prepare(`INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence,side,anchor_hash,root_cause_key,claim_class,claim_state,anchor_fingerprint,claim_fingerprint,content_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     for(const f of review.findings)insertFinding.run(runId,f.fingerprint,f.severity,f.category,f.file,f.line,f.endLine,f.title,f.description,f.suggestion,f.confidence,f.side,f.anchorHash||'',f.rootCauseKey||'',f.claimClass||'',f.claimState||'legacy',f.anchorFingerprint||'',f.claimFingerprint||'',f.contentDigest||'');
     const insertAction=this.db.prepare(`INSERT OR IGNORE INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`),insertNotification=this.db.prepare("INSERT OR IGNORE INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)");
-    for(const action of actions||[])insertAction.run(runId,action.projectId,action.mrIid,action.type,action.dedupeKey,json(action.payload),now,now);
+    for(const action of actions||[])insertAction.run(runId,action.projectId,action.mrIid,action.type,action.dedupeKey,json(publicationPayload(action.type,action.payload)),now,now);
     for(const action of notificationActions||[])insertNotification.run(runId,action.payload?.projectId||0,action.payload?.mrIid||0,action.routeName,action.provider,action.secretRef,action.eventType,action.dedupeKey,json(action.payload),now,now);
     return runId;
   });}

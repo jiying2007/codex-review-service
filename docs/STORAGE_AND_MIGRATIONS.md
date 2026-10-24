@@ -18,3 +18,9 @@ Schema 8 adds `review_status_cards`, keyed by Review Job and notification Route.
 ## Schema 7 history
 
 Schema 7 adds `flow_state`, a compact transition projection keyed by project/type/external ID. Migration 6 -> 7 follows the existing integrity-check + verified `VACUUM INTO` backup + transactional DDL process. Old flow state is pruned with normal data retention.
+
+## Publication proof payloads in Service 7.6.2
+
+Database Schema 9 is unchanged. Status payloads bind `jobId`, `startSha` and `statusName` to the existing durable job and remote status target. Writes for the same status project, SHA, ref and status name share one publication order even when one payload has no explicit pipeline ID.
+
+Finding payloads use `findingPublicationProtocol: 2`. Every create records `findingWriteIntent` in the same durable outbox row immediately before HTTP transport. Known claims bind that intent to the normalized bot identity, claim, finding and exact position; a retry can create only after a fresh complete remote scan under the same identity. Removing or changing the bot identity, or losing known claim identity, never turns a previous create into a first attempt. Recovery and administrative retry preserve this marker. Legacy rows, including protocol 1 rows, with uncertain prior attempts are durably marked and can recover an existing owned discussion, but cannot authorize a blind new create. Protocol 2 failures before transport remain retryable without creating an intent. No prior receipts or historical model findings are promoted to fresh authority.

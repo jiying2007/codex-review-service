@@ -2,7 +2,7 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.6.1** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.6.2** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
 Machine-checked security identity lives in `product-contract.json`: Database Schema 9, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `190651770a444b0693d82228afc66879dd57b0c0`.
 
@@ -87,3 +87,15 @@ Production should deploy verified release artifacts or the digest-pinned OCI ima
 ## Reporting
 
 Do not publish credentials, private source or exploitable details in public issues. Use GitHub private vulnerability reporting/security advisories when available.
+
+## Publication and transport boundaries
+
+Required analyzer artifacts are mandatory current evidence. Their acquisition/parse failure cannot be treated as an optional context failure. The final verdict includes current analyzer findings before display truncation.
+
+Commit-status writes are bound to a durable review job generation and exact source SHA, start SHA, ref, source project and pipeline. Requests for the same source project, SHA, ref and status name share a local publication order even when their pipeline IDs differ or are implicit. The generation is checked again after throttling and before GitLab's 409 retry.
+
+These checks do not establish a remote generation fence. A timed-out POST can remain active remotely and finish after a newer request. The current Service has no durable per-target unresolved-status fence or automatic latest-status reconciliation loop, and does not use or prove a GitLab conditional-generation write capability. A strict automatic merge gate therefore requires an additional trusted server-side check of the latest durable generation, exact snapshot and unresolved publication state. The implementation's local ordering tests do not close this production assurance requirement; operating guidance is in [OPERATIONS.md](OPERATIONS.md#commit-status-uncertainty-and-merge-enforcement).
+
+Every finding create carries a durable outbox write intent before HTTP transport. Known-claim retries bind that intent to the same bot, claim, finding and position and require a fresh remote reconciliation. If a remote write may have happened and no safe remote identity can reconcile it, publication fails with `ECLAIMPUBLISHUNCERTAIN`; changing bot identity, claim eligibility or retry counters does not authorize another create. This is a fail-closed uncertainty boundary, not a distributed exactly-once guarantee.
+
+GitLab API redirects stay on the configured origin. Artifact downloads may follow signed CDN redirects without credentials, and credentials remain absent if redirected back. Writes, HTTPS downgrades, credential-bearing URLs and unbounded redirect chains are rejected.
