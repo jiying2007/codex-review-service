@@ -34,6 +34,11 @@ jobs:
       - name: Start real GitLab CE ${{ matrix.gitlab }}
         run: |
           set -euo pipefail
+          fixture_nonce="$(node -e "process.stdout.write(require('node:crypto').randomBytes(16).toString('hex'))")"
+          fixture_marker_dir="/tmp/codex-safe-gitlab-init-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.gitlab }}-${fixture_nonce}"
+          printf 'GITLAB_INIT_MARKER_DIR=%s\nGITLAB_INIT_NONCE=%s\n' "$fixture_marker_dir" "$fixture_nonce" >> "$GITHUB_ENV"
+          # The official image invokes this hook after synchronous reconfigure and upgrade.
+          fixture_post_reconfigure="umask 077 && mkdir -m 700 '$fixture_marker_dir' && printf '%s' '$fixture_nonce' > '$fixture_marker_dir/complete'"
           fixture_omnibus_config="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4TQ9zV2mL7xK5pR8wN3cY6fH4sJ9'"
           if [ '${{ matrix.gitlab }}' = '14.6.1-ce.0' ]; then
             # This short-lived fixture hit a runit logrotate/log startup timeout.
@@ -44,6 +49,8 @@ jobs:
             --shm-size=256m \
             -p 127.0.0.1:8080:80 \
             -e GITLAB_OMNIBUS_CONFIG="$fixture_omnibus_config" \
+            -e GITLAB_SKIP_RECONFIGURE=false \
+            -e GITLAB_POST_RECONFIGURE_SCRIPT="$fixture_post_reconfigure" \
             "gitlab/gitlab-ce:${{ matrix.gitlab }}"
       - name: Wait for real GitLab provider dependencies
         run: |
@@ -55,13 +62,24 @@ jobs:
               exit 1
             fi
           }
+          initial_reconfigure_ready() {
+            docker exec gitlab sh -c '
+              marker="$1"; expected="$2"; directory="${marker%/*}"
+              [ -d "$directory" ] && [ ! -L "$directory" ] &&
+                [ -f "$marker" ] && [ ! -L "$marker" ] &&
+                [ "$(wc -c < "$marker")" -eq "${#expected}" ] &&
+                [ "$(cat "$marker")" = "$expected" ]
+            ' sh "$GITLAB_INIT_MARKER_DIR/complete" "$GITLAB_INIT_NONCE" >/dev/null 2>&1
+          }
           rails_http_ready=false
           rails_runner_ready=false
           for i in $(seq 1 210); do
             require_running_container
-            http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
-            if [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; then rails_http_ready=true; fi
-            if docker exec gitlab gitlab-rails runner "raise 'root user missing' unless User.find_by_username('root')" >/dev/null 2>&1; then rails_runner_ready=true; fi
+            if initial_reconfigure_ready; then
+              http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
+              if [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; then rails_http_ready=true; fi
+              if docker exec gitlab gitlab-rails runner "raise 'root user missing' unless User.find_by_username('root')" >/dev/null 2>&1; then rails_runner_ready=true; fi
+            fi
             if [ "$rails_http_ready" = true ] && [ "$rails_runner_ready" = true ]; then break; fi
             if [ "$i" = 210 ]; then
               echo "GitLab provider dependencies did not become ready: rails_http=$rails_http_ready rails_runner=$rails_runner_ready"
@@ -69,6 +87,7 @@ jobs:
             fi
             sleep 5
           done
+          echo 'Initial GitLab reconfigure and upgrade completion marker verified.'
 
           critical_pids() {
             status="$(docker exec gitlab gitlab-ctl status 2>/dev/null || true)"
