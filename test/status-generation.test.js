@@ -21,9 +21,10 @@ test('an old success retry cannot overwrite a newer failed status on the same SH
     status(store,'success','old');await publisher.process(store.claimPublication());
     status(store,'failed','new');await publisher.process(store.claimPublication());
     store.db.exec("UPDATE publication_outbox SET available_at='2000-01-01' WHERE status='pending'");
-    await publisher.process(store.claimPublication());
+    assert.equal(store.claimPublication(),null);
     assert.deepEqual(writes,[{state:'failed',description:'new'}]);
-    assert.equal(store.db.prepare('SELECT status FROM publication_outbox ORDER BY id LIMIT 1').get().status,'cancelled');
+    assert.deepEqual(store.db.prepare('SELECT status FROM publication_outbox ORDER BY id').all().map(row=>row.status),['uncertain','uncertain']);
+    assert.equal(store.statusWrites.summary().unresolvedAttempts,1);
   }finally{store.close();}
 });
 test('generation changes while rate limited are checked before the actual HTTP write',async()=>{

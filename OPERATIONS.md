@@ -4,7 +4,7 @@
 
 Codex Review Service **7.6.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 9
+- Database Schema 10
 - Config Schema 8
 - Model Routing Contract 1
 - Policy Schema 4
@@ -16,7 +16,7 @@ Codex Review Service **7.6.2** is the current production-operations baseline. Ma
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 9, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 10, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
@@ -125,7 +125,7 @@ Review Run + Receipt
 Recovery invariants:
 
 - `running` jobs requeue after restart.
-- `publishing` GitLab actions return to pending.
+- `publishing` GitLab actions return to pending unless a commit-status transport may already have started. Those status attempts recover as `uncertain` and enter readback reconciliation.
 - `delivering` notifications return to pending.
 - publication/notification retry never reruns a persisted Codex review.
 - stale/out-of-scope publication is canceled.
@@ -137,11 +137,21 @@ Never delete queue/outbox rows as an incident workaround.
 
 The durable Review Job, Run and Receipt record the Service verdict. A GitLab commit status is a remote projection of that verdict. Status requests for one source project, SHA, ref and status name share one local publication order, including implicit and explicit pipeline targets. The publisher checks the latest durable generation immediately before each HTTP send.
 
-A timeout or lost response does not prove that the remote request stopped. An older accepted request can still finish after a newer status has been published. The current implementation does not persist a per-target unresolved status-write fence or run an automatic read-back/reconciliation loop for the latest status. A `published` outbox row, a fixed waiting period, a fresh MR read or client-side cancellation cannot establish strict remote ordering. GitLab's documented `409` retry behavior is not a generation acknowledgement from the timed-out request. See the [GitLab commit-status API](https://docs.gitlab.com/api/commits/#set-commit-pipeline-status).
+A timeout or lost response does not prove that the remote request stopped. An older accepted request can still finish after a newer status has been acknowledged. Database Schema 10 records each transport attempt in `status_write_attempts` before sending it, including each internal `409` retry. A definite HTTP rejection is recorded separately from an unknown result. A crash with an unfinished intent recovers as `uncertain`. The shared uncertainty domain includes the GitLab API URL, status project, SHA, ref and status name; it spans MR IDs and implicit/explicit pipeline aliases.
+
+`status_publication_targets` retains the latest durable generation, acknowledgement ID, next readback time, last observation and repair count. While any older request in this domain has an unknown result, the current outbox remains `uncertain`, even after a successful new POST or a matching GET. A matching read only describes the current remote projection. It does not clear an unknown attempt, and it does not issue another POST. Normal acknowledged writes with no known uncertainty retain the existing `published` behavior and do not add a readback loop.
+
+The publisher reconciles uncertain targets using its existing worker concurrency, rate limiter and bounded retry backoff. It repairs only a complete, unambiguous read showing the latest target is missing or mismatched, after rechecking the current generation and MR snapshot and checking generation again immediately before transport. A queued reconciliation claim cannot act on a different or already published generation after it acquires the shared status lock. Repair cycles are durably capped by `publication.maxAttempts` for each latest outbox item; internal `409` retries remain separately bounded. The `repaired` count and `repairAcknowledged` observation describe a repair response with a valid acknowledgement ID; they never resolve an older unknown request. Matched targets are only observed at `lifecycle.reconcileIntervalMs`. Stop requests prevent new repair writes. This process reuses persisted review output and never reruns Codex.
+
+Exact automatic readback currently requires an explicit pipeline ID and GitLab 17.9 or later, which added pipeline filtering to the status-list API. It validates project endpoint, SHA, ref, name, pipeline and the authenticated bot, and records whether the returned status ID matches the acknowledged ID. Missing identity, incomplete pagination, duplicate candidates, an implicit pipeline or an older provider remains uncertain without a repair POST. GitLab 14.6.1 remains supported for ordinary operation; this conservative recovery boundary does not raise the product compatibility floor. The existing 14.6.1 / 17.11.7 / 19.3.0 real Docker provider matrix includes acceptance checks for these paths. See the [GitLab commit-status API](https://docs.gitlab.com/api/commits/#list-commit-statuses).
 
 If this status participates in automatic merge enforcement, an independent trusted server-side gate must verify the latest durable review generation and exact source snapshot and reject unresolved publication uncertainty. This Service does not currently supply that gate or claim a GitLab conditional-generation write capability. Deployments requiring a strictly ordered merge gate remain blocked on that integration and its provider-level acceptance tests.
 
-After overlapping status generations and an uncertain HTTP outcome, hold automated merge for the affected source snapshot through an independent control. Retain the affected job/outbox IDs, source SHA, start SHA, ref and pipeline IDs; compare the latest durable verdict with the remote status and investigate the outstanding request. Do not reissue an obsolete successful status or reset outbox counters as proof of safety. Re-publishing the latest verdict can repair the current projection, but does not prove that an older remote handler can no longer finish. `admin reconcile` discovers review work; it is not a remote status fencing or read-back command. `/health/ready` continues to describe durable local intake, not this stronger merge-enforcement guarantee.
+After overlapping generations and an uncertain HTTP outcome, hold automated merge for the affected source snapshot through an independent control. Retain job/outbox/attempt IDs, source SHA, start SHA, ref and pipeline IDs; inspect the two status tables in a verified database backup and investigate the outstanding request in provider-side records. Unknown attempts, their source jobs and the latest desired verdict survive ordinary retention, restart and backup/restore. Legacy rows with a missing job are retained as `ELEGACYSTATUSORPHAN` with a null job identity and cannot authorize a repair. If a legacy target itself is incomplete, its unknown scope conservatively prevents stable publication across the store. Previously discarded legacy history cannot be reconstructed.
+
+There is deliberately no command that converts a matching observation, elapsed timeout or reset retry counter into proof that an old handler stopped. Deleting an attempt, restoring an older DB or restarting is not a valid uncertainty-resolution procedure. `admin status` and `admin diagnostics` expose `statusWrites` counts; `admin drain` reports incomplete while unknown attempts or uncertain publications remain. Metrics expose `codex_review_status_unknown_writes` and `codex_review_status_uncertain_targets`. Final notifications show uncertainty after the existing publication barrier timeout. `admin reconcile` still discovers review work; the publisher workers own status readback. `/health/ready` includes `publicationUncertainty` while continuing to describe durable local intake, not merge authority.
+
+Before rollback from Schema 10, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 9 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 10, and an in-place schema downgrade is unsupported.
 
 ## Fatal runtime behavior
 
@@ -195,7 +205,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 10 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

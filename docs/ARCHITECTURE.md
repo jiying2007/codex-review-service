@@ -8,7 +8,7 @@ Codex Review Service **7.6.2** owns production operations and GitLab compatibili
 
 ```text
 Service 7.6.2
-DB Schema 9
+DB Schema 10
 Config Schema 8
 Policy Schema 4
 Review Receipt 5

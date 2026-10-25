@@ -11,7 +11,7 @@
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
 - Service：**7.6.2**
-- Database Schema：**9**
+- Database Schema：**10**
 - Config Schema：**8**
 - Policy Schema：**4**
 - Review Receipt：**5**
@@ -158,7 +158,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 9 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
+备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 10 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
 
 ## Upgrade 契约
 

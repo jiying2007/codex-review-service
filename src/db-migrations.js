@@ -3,8 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { STATUS_WRITE_SCHEMA } = require('./status-write-store');
 
-const CURRENT_SCHEMA_VERSION = 9;
+const CURRENT_SCHEMA_VERSION = 10;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
 
 function sqlString(value) { return `'${String(value).replace(/'/g, "''")}'`; }
@@ -200,7 +201,27 @@ function migrate8To9(db, dbPath, hooks = {}) {
   integrityCheck(db, 'post-migration'); return Object.freeze({ from: 8, to: 9, backupPath });
 }
 
-const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8],[8, migrate8To9]]));
+function migrate9To10(db, dbPath, hooks = {}) {
+  integrityCheck(db, 'pre-migration');
+  const backupPath = createBackup(db, dbPath, 9);
+  hooks.afterBackup?.({ backupPath, from: 9, to: 10 });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec(STATUS_WRITE_SCHEMA);
+    hooks.afterDdl?.({ backupPath, from: 9, to: 10 });
+    db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)').run(10, new Date().toISOString(), backupPath);
+    db.exec('PRAGMA user_version=10');
+    hooks.beforeCommit?.({ backupPath, from: 9, to: 10 });
+    db.exec('COMMIT');
+  } catch (cause) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw Object.assign(new Error(`SQLite schema migration 9 -> 10 failed; original database remains authoritative and backup is ${backupPath}`), { code: 'EDBMIGRATION', backupPath, cause });
+  }
+  integrityCheck(db, 'post-migration');
+  return Object.freeze({ from: 9, to: 10, backupPath });
+}
+
+const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8],[8, migrate8To9],[9, migrate9To10]]));
 function migrationPlan(fromVersion, toVersion = CURRENT_SCHEMA_VERSION) {
   const plan = [];
   let current = Number(fromVersion);
@@ -241,5 +262,6 @@ module.exports = Object.freeze({
   migrate5To6,
   migrate6To7,
   migrate7To8,
-  migrate8To9
+  migrate8To9,
+  migrate9To10
 });

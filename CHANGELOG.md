@@ -4,6 +4,7 @@
 
 - Include current external analyzer findings in the final blocking decision before output truncation; required analyzer failures cannot produce a passing review. Optional context failures retain acquired required evidence.
 - Bind commit-status writes to the latest durable job generation and serialize status project/SHA/ref/name targets, including implicit and explicit pipeline aliases; recheck after throttling and before every HTTP retry.
+- Add Database Schema 10 with verified additive migration, durable status-write attempts, persistent uncertainty and bounded latest-target readback/repair. Preserve unknown outcomes through restarts, legacy adoption, retention and backups; expose uncertainty in drain, diagnostics, metrics and notifications without claiming server-side generation fencing.
 - Reconcile known finding publication after uncertain writes; persist identity-bound write intent for every create so local settlement failures, restarts, changed bot/claim identity and administrative retry counters cannot blindly create duplicates.
 - Follow bounded GitLab read redirects explicitly; signed artifact CDN requests become anonymous permanently after leaving the configured origin. Reject redirected writes and HTTPS downgrades.
 - Synchronize bilingual setup/backup contracts and provide least-privilege Actions read scopes for private-repository security jobs.

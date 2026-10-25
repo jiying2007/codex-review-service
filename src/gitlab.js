@@ -1,7 +1,7 @@
 'use strict';
 
 const{version:SERVICE_VERSION}=require('../package.json');
-const{selectGitLabCapabilities}=require('./gitlab-capabilities');
+const{selectGitLabCapabilities,versionAtLeast}=require('./gitlab-capabilities');
 const{safePath,sha,createRawTextDiff}=require('./raw-diff-fallback');
 const GITLAB_RESPONSE_MAX_BYTES=8*1024*1024;
 async function readBoundedResponseText(response,maxBytes=GITLAB_RESPONSE_MAX_BYTES){const limit=Number(maxBytes);if(!Number.isSafeInteger(limit)||limit<1)throw Object.assign(new Error('GitLab response byte limit is invalid'),{code:'EGITLABOUTPUT'});const declared=Number(response.headers?.get?.('content-length')||0);if(Number.isFinite(declared)&&declared>limit){try{await response.body?.cancel?.();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:declared});}if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let total=0;try{for(;;){const{done,value}=await reader.read();if(done)break;const chunk=Buffer.from(value);total+=chunk.length;if(total>limit){try{await reader.cancel();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:total});}chunks.push(chunk);}return Buffer.concat(chunks,total).toString('utf8');}finally{try{reader.releaseLock();}catch{}}}const fallback=typeof response.text==='function'?await response.text():'';const bytes=Buffer.byteLength(fallback,'utf8');if(bytes>limit)throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:bytes});return fallback;}
@@ -75,7 +75,45 @@ async getDiscussion(projectId,iid,discussionId){const response=await this.reques
 async setDiscussionResolved(projectId,iid,discussionId,resolved){return(await this.request('PUT',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions/${encodeURIComponent(discussionId)}`,{body:{resolved:Boolean(resolved)}})).data;}
 async getProjectMember(projectId,userId){const response=await this.request('GET',`/projects/${encodeProject(projectId)}/members/all/${encodeURIComponent(userId)}`,{expected:[200,404]});return response.status===404?null:response.data;}
 async getRepositoryFileRaw(projectId,filePath,ref){const response=await this.request('GET',`/projects/${encodeProject(projectId)}/repository/files/${encodeURIComponent(filePath)}/raw`,{query:{ref},expected:[200,404],accept:'text'});return response.status===404?null:response.data;}
-async setCommitStatus(projectId,sha,state,description,ref='',pipelineId=null,{beforeSend}={}){const doRequest=()=>this.request('POST',`/projects/${encodeProject(projectId)}/statuses/${sha}`,{query:{state,name:this.statusName,description:String(description||'').slice(0,255),ref,pipeline_id:pipelineId||undefined,target_url:this.config.statusTargetUrl||undefined},expected:[201],beforeSend});let lastError;for(let attempt=0;attempt<this.config.gitlabStatusRetries;attempt++){try{return(await doRequest()).data;}catch(error){lastError=error;if(error.status!==409||attempt===this.config.gitlabStatusRetries-1)throw error;await sleep(Math.min(2000,250*(attempt+1)));}}throw lastError;}
+async setCommitStatus(projectId,sha,state,description,ref='',pipelineId=null,{beforeSend,onAttemptSettled}={}){
+  const doRequest=()=>this.request('POST',`/projects/${encodeProject(projectId)}/statuses/${sha}`,{query:{state,name:this.statusName,description:String(description||'').slice(0,255),ref,pipeline_id:pipelineId||undefined,target_url:this.config.statusTargetUrl||undefined},expected:[201],beforeSend});
+  let lastError;
+  for(let attempt=0;attempt<this.config.gitlabStatusRetries;attempt++){
+    let result;
+    try{result=(await doRequest()).data;}
+    catch(error){
+      onAttemptSettled?.({error});lastError=error;
+      if(error.status!==409||attempt===this.config.gitlabStatusRetries-1)throw error;
+      await sleep(Math.min(2000,250*(attempt+1)));continue;
+    }
+    onAttemptSettled?.({result});return result;
+  }
+  throw lastError;
+}
+async readCommitStatus(payload,{remoteId='',botUsername=''}={}){
+  // pipeline_id filtering is absent before GitLab 17.9. Never infer a pipeline
+  // from name/SHA alone, and never treat an implicit pipeline as exact evidence.
+  const version=String((await this.getVersion())?.version||'');
+  if(!versionAtLeast(version,'17.9.0')||!Number.isSafeInteger(Number(payload.pipelineId))||Number(payload.pipelineId)<=0){
+    return{kind:'ambiguous',reason:'pipeline_identity_unavailable'};
+  }
+  if(!this.statusAuthor)this.statusAuthor=(await this.request('GET','/user')).data;
+  const author=this.statusAuthor,username=String(botUsername||'').toLowerCase();
+  if(!Number.isSafeInteger(Number(author?.id))||Number(author.id)<=0||!author?.username||(username&&String(author.username).toLowerCase()!==username))return{kind:'ambiguous',reason:'bot_identity_unavailable'};
+  const result=await this.paginated(`/projects/${encodeProject(payload.statusProjectId)}/repository/commits/${encodeURIComponent(payload.headSha)}/statuses`,{ref:payload.ref,name:payload.statusName||this.statusName,pipeline_id:payload.pipelineId,all:false});
+  if(!result.complete)return{kind:'ambiguous',reason:'incomplete_status_scan'};
+  if(!result.items.length)return{kind:'missing',reason:'exact_pipeline_has_no_status'};
+  if(result.items.length!==1)return{kind:'ambiguous',reason:'multiple_statuses'};
+  const status=result.items[0];
+  if(String(status.sha||'')!==String(payload.headSha)||String(status.ref||'')!==String(payload.ref||'')||String(status.name||'')!==String(payload.statusName||this.statusName)||
+    !Number.isSafeInteger(Number(status.id))||Number(status.id)<=0||Number(status.author?.id)!==Number(author.id)||String(status.author?.username||'').toLowerCase()!==String(author.username).toLowerCase()||
+    (status.pipeline_id!==undefined&&Number(status.pipeline_id)!==Number(payload.pipelineId))||!['pending','running','success','failed','canceled','skipped'].includes(status.status)){
+    return{kind:'ambiguous',reason:'status_identity_mismatch'};
+  }
+  const matches=String(status.status)===String(payload.state)&&String(status.description||'')===String(payload.description||'').slice(0,255);
+  return{kind:matches?'match':'mismatch',remoteId:String(status.id),remoteIdMatches:Boolean(remoteId)&&String(status.id)===String(remoteId),
+    state:status.status,description:String(status.description||''),pipelineId:Number(payload.pipelineId),authorId:Number(author.id)};
+}
 health(){return{circuit:this.circuit.state(),profile:this.capabilities?.profile||'unknown',version:this.capabilities?.version||null};}
 }
 function discussionResolved(discussion){if(!discussion||!Array.isArray(discussion.notes))return null;const note=discussion.notes.find(item=>item?.resolvable===true);return note?Boolean(note.resolved):null;}

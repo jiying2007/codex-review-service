@@ -248,7 +248,7 @@ function verdictLabel(event) {
 function coverageLabel(event) { const en=event._language==='en',reviewed=Number(event.reviewedFileCount||0),gaps=event.coverageGaps||[];if(event.coverageComplete!==false)return en?`Complete${reviewed?` · ${reviewed} text files`:''}`:`完整${reviewed?` · ${reviewed} 个文本文件`:''}`;const first=gaps[0],reason=first?.reasonCode==='unavailable_unknown'?(en?'GitLab did not provide a reviewable diff':'GitLab 未返回可审核 diff'):first?.reason||'';if(first)return `${en?'Incomplete':'不完整'} · ${gaps.length} ${en?'gap':'个缺口'} · ${first.path}${reason?`: ${reason}`:''}`.slice(0,220);if(Number(event.rejectedFindingCount||0)>0)return en?'Incomplete · a model finding could not be mapped exactly to a changed line':'不完整 · 模型 finding 无法精确映射到变更行';return en?'Incomplete · review evidence is insufficient':'不完整 · 审查证据不足'; }
 
 function displayTime(value) { return value ? formatDisplayTime(value) : ''; }
-function publicationLabel(event){const state=String(event._publicationState||'');if(!state||state==='published')return'';const en=event._language==='en',summary=event._publicationSummary||{},counts=['published','failed','cancelled','pending'].some(key=>Number(summary[key]||0))?(en?` (published ${Number(summary.published||0)}, failed ${Number(summary.failed||0)}, cancelled ${Number(summary.cancelled||0)}, pending ${Number(summary.pending||0)})`:`（成功 ${Number(summary.published||0)} · 失败 ${Number(summary.failed||0)} · 取消 ${Number(summary.cancelled||0)} · 等待 ${Number(summary.pending||0)}）`):'';if(state==='timeout')return(en?'GitLab publication is still pending':'GitLab 发布仍在等待')+counts;if(state==='failed')return(en?'Some GitLab findings failed to publish':'部分 GitLab 问题发布失败')+counts;return(en?'Some GitLab findings were not published':'部分 GitLab 问题未发布')+counts;}
+function publicationLabel(event){const state=String(event._publicationState||'');if(!state||state==='published')return'';const en=event._language==='en',summary=event._publicationSummary||{},counts=['published','failed','cancelled','pending'].some(key=>Number(summary[key]||0))?(en?` (published ${Number(summary.published||0)}, failed ${Number(summary.failed||0)}, cancelled ${Number(summary.cancelled||0)}, pending ${Number(summary.pending||0)})`:`（成功 ${Number(summary.published||0)} · 失败 ${Number(summary.failed||0)} · 取消 ${Number(summary.cancelled||0)} · 等待 ${Number(summary.pending||0)}）`):'';if(state==='uncertain')return(en?'GitLab status write outcome remains uncertain':'GitLab 状态写入结果仍未确定')+counts;if(state==='timeout')return(en?'GitLab publication is still pending':'GitLab 发布仍在等待')+counts;if(state==='failed')return(en?'Some GitLab findings failed to publish':'部分 GitLab 问题发布失败')+counts;return(en?'Some GitLab findings were not published':'部分 GitLab 问题未发布')+counts;}
 
 function feishuMentionList(value) { return (Array.isArray(value)?value:[]).filter(item=>/^ou_[A-Za-z0-9]+$/.test(String(item?.openId||''))).slice(0,10).map(item=>`<at id=${item.openId}>${cardText(item.name||'责任人',80)}</at>`).join(' '); }
 function feishuFields(event) {
@@ -369,7 +369,7 @@ function payloadFor(provider, event, route = null, env = process.env) {
 
 async function postJson(url, payload, timeoutMs, { headers = {}, fetchImpl = fetch, provider = 'notification', method = 'POST' } = {}) {
   let response;
-  try { response = await fetchImpl(url, { method, headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs) }); }
+  try { response = await fetchImpl(url, { method, redirect: 'manual', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs) }); }
   catch (cause) { throw notifyError(`${provider} network request failed`, 'ENOTIFYNETWORK', { cause, retryable: true }); }
   let body = {};
   try { body = await readBoundedJsonResponse(response); } catch (error) { if (error?.code === 'ENOTIFYPROTOCOL') throw error; }
@@ -379,8 +379,13 @@ async function postJson(url, payload, timeoutMs, { headers = {}, fetchImpl = fet
 
 async function postWebhook(url, payload, timeoutMs, options = {}) {
   const body = await postJson(url, payload, timeoutMs, { ...options, provider: 'notification' });
-  if (Object.hasOwn(body, 'errcode') && Number(body.errcode) !== 0) throw notifyError(`WeCom rejected notification: ${body.errcode}`, 'ENOTIFYREMOTE', { providerCode: Number(body.errcode), retryable: false });
-  if ((Object.hasOwn(body, 'code') && Number(body.code) !== 0) || (Object.hasOwn(body, 'StatusCode') && Number(body.StatusCode) !== 0)) throw notifyError('Feishu rejected notification', 'ENOTIFYREMOTE', { providerCode: Number(body.code ?? body.StatusCode), retryable: false });
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw notifyError('Notification response omitted a valid acknowledgement', 'ENOTIFYPROTOCOL', { retryable: false });
+  const fields = ['code', 'errcode', 'StatusCode'].filter(key => Object.hasOwn(body, key));
+  if (fields.some(key => typeof body[key] !== 'number' || !Number.isSafeInteger(body[key]))) throw notifyError('Notification acknowledgement codes must be integers', 'ENOTIFYPROTOCOL', { retryable: false });
+  const rejected = fields.find(key => body[key] !== 0);
+  if (rejected) throw notifyError('Notification provider rejected notification', 'ENOTIFYREMOTE', { providerCode: body[rejected], retryable: false });
+  const expected = options.provider === 'wecom' ? ['errcode'] : options.provider === 'feishu' ? ['code', 'StatusCode'] : fields;
+  if (!expected.some(key => Object.hasOwn(body, key) && body[key] === 0)) throw notifyError('Notification response omitted an explicit success acknowledgement', 'ENOTIFYPROTOCOL', { retryable: false });
   return body;
 }
 
@@ -397,7 +402,7 @@ function isFeishuTokenError(error) {
 class WebhookProvider {
   constructor({ env, fetchImpl }) { this.env = env; this.fetchImpl = fetchImpl; }
   validate(route) { webhookFor(route, this.env); }
-  async send(route, event, timeoutMs) { const body = await postWebhook(webhookFor(route, this.env), payloadFor(route.provider, event, route, this.env), timeoutMs, { fetchImpl: this.fetchImpl }); return { remoteId: `${route.provider}:${route.name}`, body }; }
+  async send(route, event, timeoutMs) { const body = await postWebhook(webhookFor(route, this.env), payloadFor(route.provider, event, route, this.env), timeoutMs, { fetchImpl: this.fetchImpl, provider: route.provider }); return { remoteId: `${route.provider}:${route.name}`, body }; }
 }
 
 function feishuRecipient(credentials,event){const requested=event?._recipient;if(requested?.type==='open_id'&&/^ou_[A-Za-z0-9]+$/.test(String(requested.id||'')))return Object.freeze({type:'open_id',id:String(requested.id)});return Object.freeze({type:'chat_id',id:credentials.chatId});}

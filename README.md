@@ -11,7 +11,7 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 `product-contract.json` is the single machine-checked source for the current product identity:
 
 - Service: **7.6.2**
-- Database Schema: **9**
+- Database Schema: **10**
 - Config Schema: **8**
 - Policy Schema: **4**
 - Review Receipt: **5**
@@ -185,7 +185,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 9 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 10 verification pass.
 
 ## Failure semantics
 

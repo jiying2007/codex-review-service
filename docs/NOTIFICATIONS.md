@@ -6,6 +6,8 @@ Codex Review Service can deliver deterministic review cards to Feishu/Lark and W
 
 A completed review persists GitLab publication actions and notification actions in the same SQLite transaction. A terminal failed review persists its failed job state and `review.failed` notification actions in one transaction as well. `notification_outbox` has independent retries, idempotency keys, restart recovery, and a terminal failed state. Notification failure never changes a review verdict and never reruns Codex.
 
+Notification POST/PATCH requests stop at redirects, including Feishu tenant-token requests, so a redirect cannot forward credentials or review content. Webhook delivery requires an explicit numeric success acknowledgement: Feishu/Lark `code: 0` or legacy `StatusCode: 0`, and WeCom `errcode: 0`. Every recognized acknowledgement code present must be numeric zero. Missing, malformed or conflicting acknowledgements and invalid JSON fail delivery even with HTTP 200; Feishu application APIs retain their separate response validation.
+
 ## Routes and secrets
 
 Enable `notifications.enabled` in Config Schema 6 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.

@@ -6,6 +6,8 @@ Codex Review Service 支持把确定性 Review 卡片推送到飞书/Lark 与企
 
 Review 成功完成时，GitLab publication actions 与 notification actions 在同一个 SQLite transaction 中持久化；Review 最终失败时，failed job 状态与 `review.failed` notification actions 也在同一个 transaction 中持久化。`notification_outbox` 独立重试、独立幂等、支持重启恢复，并有独立 failed 终态；通知失败不会改变 Review Verdict，也绝不会重新运行 Codex。
 
+通知 POST/PATCH 请求遇到重定向即失败，包括飞书 tenant token 请求，避免把凭据或审查内容转发到重定向目标。Webhook 投递必须收到明确的数字成功码：飞书/Lark 的 `code: 0` 或旧版 `StatusCode: 0`，以及企业微信的 `errcode: 0`；响应中所有已识别的回执码都必须是数字零。缺失、畸形或互相冲突的回执以及无效 JSON，即使返回 HTTP 200 也不能标记送达。飞书应用 API 继续使用各自的响应校验。
+
 ## Route 与 Secret
 
 在 Config Schema 6 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
