@@ -7,7 +7,7 @@ Codex Review Service treats model tokens as a bounded production resource. Versi
 1. **Webhook delivery idempotency and supersession** deduplicate only the same delivered event and cancel stale in-flight snapshots. A later review event at the same Git SHA is still eligible for a fresh review.
 2. **Fresh current-evidence review** rebuilds the current MR review from the complete bounded diff, current policy, current context and current analyzer evidence. Historical model findings are lifecycle/lineage evidence only and never enter the new prompt or verdict.
 3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Adaptive sizing can shrink but never exceed configured caps.
-4. **Optional fast-model routing** uses codex.fastModel only for low-risk chunks.
+4. **Model policy and role routing** uses Model Routing Contract v1 with `codex.selectionStrategy` set to `auto|preference|fixed`. Optional Scout hypotheses require Reviewer verification; same-provider role routing never reuses historical model judgments.
 5. **MR total diff budget** limits model-reviewed diff bytes; omissions make coverage incomplete.
 6. **Token preflight** checks the next bounded request before execution.
 7. **Project reservation ledger** prevents concurrent workers from oversubscribing the daily token budget.
@@ -16,7 +16,7 @@ Codex Review Service treats model tokens as a bounded production resource. Versi
 
 ## Defaults
 
-Config Schema 5 defaults include review.maxTotalDiffBytes equal to review.maxDiffBytes, review.adaptiveContextEnabled=true, review.mrMaxTokenBudget=250000, review.projectDailyTokenBudget=5000000, and an empty codex.fastModel. The retired review.incrementalReviewEnabled field is unsupported.
+Config Schema 8 ships `config.example.json` defaults of `review.maxTotalDiffBytes=1048576`, `review.maxDiffBytes=1048576`, `review.adaptiveContextEnabled=true`, `review.mrMaxTokenBudget=250000`, and `review.projectDailyTokenBudget=5000000`. `codex.selectionStrategy` defaults to `auto`, with `codex.scoutEnabled=false` and `codex.adjudicatorEnabled=false`; `fixedModel` and `shadowCandidate` are empty and `candidates` is an empty array. Legacy `codex.model`, `codex.fastModel` and `review.incrementalReviewEnabled` are unsupported.
 
 ## Fail-closed behavior
 
@@ -28,7 +28,7 @@ Prometheus reports actual/cached/cache-write/output/reasoning token usage, risk 
 
 ## Online token calibration
 
-Core 4.11.0 keeps bounded ephemeral provider+model bytes/token calibration. It stores numeric calibration only, never prompts, source text, findings or judgments.
+The exact-pinned Safe Core keeps bounded ephemeral provider+model bytes/token calibration. It stores numeric calibration only, never prompts, source text, findings or judgments.
 
 ## Flow Tracking
 

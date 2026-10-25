@@ -10,7 +10,7 @@ Notification POST/PATCH requests stop at redirects, including Feishu tenant-toke
 
 ## Routes and secrets
 
-Enable `notifications.enabled` in Config Schema 6 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.
+Enable `notifications.enabled` in Config Schema 8 and define routes. Routes may target explicit `projects`, GitLab `groups`, or all resolved service projects when both are empty. Each route selects `feishu`, `feishu_app`, or `wecom`, a `secretRef`, and optional event filtering.
 
 `secretRef: "embedded"` resolves the webhook from `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` or the production-preferred file form `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`. A direct value and `_FILE` form are mutually exclusive. Webhook URLs are never stored in JSON or SQLite. Feishu routes require official `open.feishu.cn`/`open.larksuite.com` bot URLs; WeCom routes require `qyapi.weixin.qq.com`.
 
@@ -22,7 +22,7 @@ Set `statusCard: true` only on a `feishu_app` route to send one durable running 
 
 Concurrent token acquisition for one App is single-flight. Send and PATCH operations are throttled to 20 RPS, and provider/HTTP `Retry-After` overrides exponential delay within the configured maximum. Serialized Feishu cards have a 28,000-byte safety gate and deterministically degrade to a compact result plus the primary link when necessary.
 
-Commit pushes use a 30-second pending aggregation window per project, branch and route. Schema 8 generated columns and composite indexes expose aggregation key/deadline, operation type and status-card Job ID without full-table JSON parsing. The final card expands at most three commits while retaining the total count. Pipeline state tracking suppresses duplicate states and publishes only configured terminal states. MR correlation requires project, source branch, a 24-hour freshness window and an available matching head SHA; otherwise events remain independent.
+Commit pushes use a 30-second pending aggregation window per project, branch and route. Generated columns and composite indexes introduced in Database Schema 8 expose aggregation key/deadline, operation type and status-card Job ID without full-table JSON parsing. The final card expands at most three commits while retaining the total count. Pipeline state tracking suppresses duplicate states and publishes only configured terminal states. MR correlation requires project, source branch, a 24-hour freshness window and an available matching head SHA; otherwise events remain independent.
 
 Review, Push, Pipeline, MR, Tag, and branch cards display a repository path. Review events prefer GitLab `references.full` with the `!IID` suffix removed; Flow events use the webhook `project.path_with_namespace`. A missing trusted path suppresses the field rather than substituting an unstable project ID.
 
@@ -68,7 +68,7 @@ Do not delete `notification_outbox` rows as an incident workaround.
 Notification event timestamps and Review Receipt `createdAt` values are persisted as canonical UTC ISO-8601 values, representing the actual review completion time rather than delayed outbox delivery time. User-facing cards display the runtime local time zone (or the IANA zone selected by `CODEX_SAFE_DISPLAY_TIME_ZONE`); audit summaries also retain the original UTC value.
 ## GitLab Flow events
 
-Config Schema 4 can route deterministic `gitlab.pipeline.*`, `gitlab.mr.*`, `gitlab.tag.*` and `gitlab.branch.*` events through the same durable outbox. Acquisition is controlled by `flowTracking`; delivery remains controlled by `notifications.routes[].events`. Flow cards are local deterministic formatters and consume zero Codex tokens. See `FLOW_TRACKING.md`.
+Current Config Schema 8 routes deterministic `gitlab.pipeline.*`, `gitlab.mr.*`, `gitlab.tag.*` and `gitlab.branch.*` events through the same durable outbox. Acquisition is controlled by `flowTracking`; delivery remains controlled by `notifications.routes[].events`. Flow cards are local deterministic formatters and consume zero Codex tokens. See `FLOW_TRACKING.md`.
 
 ## Commit Push notifications
 

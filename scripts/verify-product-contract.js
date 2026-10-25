@@ -3,6 +3,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const os=require('node:os');
+const {CURRENT_DOCS}=require('./sync-operational-docs');
 const {execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..');
 const contract=require('../product-contract.json');
@@ -41,6 +43,37 @@ for(const file of ['config.example.json','deploy/systemd/config.example.json','d
   assert.ok(['general','backend','frontend','security','cpp','embedded-linux','embedded-mcu','driver','kernel','realtime'].includes(config.review?.profile),`${file} must use a Profile Pack`);
 }
 
+// Validate documented complete configs and explicitly described fragments with
+// the production loader. This child sees synthetic secrets only and performs
+// no provider/model/network calls; it cannot inherit an operator credential.
+const exampleDirectory=fs.mkdtempSync(path.join(os.tmpdir(),'service-doc-config-'));
+let documentedConfigs=0;
+try{
+  const examples=['config.example.json','deploy/systemd/config.example.json','deploy/docker/config.example.json'].map(file=>({label:file,value:JSON.parse(fs.readFileSync(path.join(root,file),'utf8'))}));
+  const base=examples[0].value;
+  for(const file of CURRENT_DOCS){
+    const text=fs.readFileSync(path.join(root,file),'utf8');
+    for(const [index,match] of [...text.matchAll(/```json\s*\n([\s\S]*?)\n```/g)].entries()){
+      const fragment=JSON.parse(match[1]);
+      assert.ok(fragment&&typeof fragment==='object'&&!Array.isArray(fragment),`${file} JSON example ${index+1} must be a configuration object`);
+      let value=fragment;
+      if(!Object.prototype.hasOwnProperty.call(fragment,'schemaVersion')){
+        value=structuredClone(base);
+        for(const[key,section]of Object.entries(fragment))value[key]=section&&typeof section==='object'&&!Array.isArray(section)?{...value[key],...section}:section;
+      }
+      assert.equal(value.schemaVersion,contract.configSchemaVersion,`${file} JSON example ${index+1} must use the current configuration schema`);
+      examples.push({label:`${file} JSON example ${index+1}`,value});documentedConfigs++;
+    }
+  }
+  const files=examples.map(({label,value},index)=>{const file=path.join(exampleDirectory,`${index}.json`);fs.writeFileSync(file,JSON.stringify(value),{mode:0o600});return{file,label};});
+  const env=Object.fromEntries(['PATH','Path','SystemRoot','WINDIR','TEMP','TMP'].filter(key=>process.env[key]!==undefined).map(key=>[key,process.env[key]]));
+  env.GITLAB_API_TOKEN='documentation-validation-token';
+  env.GITLAB_WEBHOOK_SIGNING_TOKEN=`whsec_${Buffer.alloc(32,7).toString('base64')}`;
+  const code="const{loadConfig}=require('./src/config');for(const{file,label}of JSON.parse(process.argv[1])){process.env.CODEX_REVIEW_CONFIG_FILE=file;try{loadConfig();}catch(error){throw new Error(label+': '+error.message);}}";
+  execFileSync(process.execPath,['-e',code,JSON.stringify(files)],{cwd:root,env,stdio:'pipe'});
+  console.log(`Production config loader verified ${examples.length} examples (${documentedConfigs} documented JSON blocks).`);
+}finally{fs.rmSync(exampleDirectory,{recursive:true,force:true});}
+
 const floorCapabilities=selectGitLabCapabilities(contract.minimumGitLabVersion),modernCapabilities=selectGitLabCapabilities(contract.modernGitLabProfileMinimumVersion),standardWebhookCapabilities=selectGitLabCapabilities(contract.standardWebhookMinimumVersion||contract.standardWebhookMinimumGitLabVersion);
 assert.equal(floorCapabilities.profile,'classic','GitLab compatibility floor must use classic diff profile');
 assert.equal(floorCapabilities.webhookAuth,'classic-token','GitLab compatibility floor must use classic webhook auth');
@@ -49,7 +82,7 @@ assert.equal(standardWebhookCapabilities.webhookAuth,'standard-hmac','standard w
 assert.equal(standardWebhookCapabilities.webhookReplayWindow,true,'standard webhook mode must retain replay-window capability');
 assert.equal(contract.recommendedGitLabPolicy,'vendor-supported','recommended GitLab policy must not pretend the compatibility floor is recommended');
 
-const docs=['README.md','README.zh-CN.md','OPERATIONS.md','SECURITY.md','docs/ARCHITECTURE.md','docs/DEPLOYMENT.md','docs/DEPLOYMENT.zh-CN.md'];
+const docs=CURRENT_DOCS;
 for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');assert.doesNotMatch(text,/SQLite schema 4|SQLite Schema 4|Database Schema 4|Schema 4 database/i,`${file} contains stale Schema 4 product facts`);}
 const qualityDocs=`${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.md'),'utf8')}\n${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.zh-CN.md'),'utf8')}`;
 for(const term of ['Analyzer Adapter','JUnit','Code Quality','Test Impact','Profile Pack'])assert.match(qualityDocs,new RegExp(term,'i'));

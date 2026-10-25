@@ -49,7 +49,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 8 is the current boundary. Service 7.5.2 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
+Config Schema 8 is the current boundary. Service 7.6.2 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 

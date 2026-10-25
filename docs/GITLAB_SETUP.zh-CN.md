@@ -2,12 +2,12 @@
 
 1. 确认实例为 GitLab Self-Managed **14.6.1 或更高版本**。14.6.1 是兼容下限，不代表建议长期运行已经停止官方维护的旧 GitLab；条件允许时应运行 GitLab 官方仍支持的版本。
 2. 创建只包含 Codex Review Service 所需 API 权限的 Group/Project Access Token。生产环境使用受保护文件，并配置 `GITLAB_API_TOKEN_FILE`。
-3. 创建 Config Schema 2（`"schemaVersion": 2`），在 `config.json` 配置显式 Project ID 和/或 Group ID。
+3. 从 `config.example.json` 创建当前 Config Schema 8（`"schemaVersion": 8`），在 `config.json` 配置显式 Project ID 和/或 Group ID。
 4. 生成一个 `whsec_...` Webhook Secret，通过 `GITLAB_WEBHOOK_SIGNING_TOKEN` 或生产优先的 `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` 提供；两者不能同时设置。GitLab **<19.1** 时，把这个值原样填入 Webhook 的 **Secret Token**；GitLab **>=19.1** 时，将其配置为 Standard Webhooks Signing Token。
 5. 添加 Webhook `https://<host>/webhooks/gitlab`，开启 **Merge request events** 与 **Note events**。
 6. 运行 `npm run doctor`，记录检测出的 GitLab version、diff profile 与 `webhookAuth`，再检查 `GET /health/ready`、`GET /health/dependencies`、`GET /version`。
 7. 创建或更新可丢弃测试 MR，确认 GitLab `running` → terminal status、单一 Summary、确定性 Discussion；duplicate webhook 不应产生重复 Review Run。
-8. Push 新 source commit，确认上一 immutable snapshot 被 supersede，stale publication 不会覆盖新结果。
+8. Push 新 source commit，确认旧快照和未发送的过期 publication 被取消；若旧 HTTP 写入结果未知，应保留 `uncertain`，按 [Operations](../OPERATIONS.md#commit-status-uncertainty-and-merge-enforcement) 验证恢复。客户端无法保证已接收远端写入的原子顺序。
 9. 如开启 IM，确认飞书/企业微信 Route 通过 `notification_outbox` 收到确定性卡片；通知失败不改变 GitLab Verdict。
 10. Group scope 场景确认完整 refresh 能发现预期 Project；失败/不完整 refresh 保留上一次完整 scope，同时 `/health/dependencies` 进入 degraded。
 
@@ -22,7 +22,7 @@ MR 自动 Review 由 `review.triggerAssignment` 统一控制：
 
 在 `reviewer`、`assignee`、`either` 模式下，`userIds` 为空表示所选角色中只要存在任意当前用户即可；`userIds` 非空时，至少一个当前用户必须匹配配置中的 GitLab 数字 User ID。对于已经打开的 MR，后续只要新增一个匹配的 Reviewer，即使没有新的 source commit，也会立即触发 Review；移除 Reviewer 不会触发，标题等无关 MR 元数据更新也不会误触发。
 
-显式 `/codex review` Note 命令按设计绕过指派门禁，但 Project allowlist、调用者身份/权限检查、Bot 自触发保护以及全部 Review 安全门禁仍然生效。Config Schema 2 已硬删除 `requiredAssigneeUserIds` 和 `manualReviewBypassAssignee`；旧配置直接 fail-closed，不做静默兼容转换。
+显式 `/codex review` Note 命令按设计绕过指派门禁，但 Project allowlist、调用者身份/权限检查、Bot 自触发保护以及全部 Review 安全门禁仍然生效。历史上，Config Schema 2 删除了 `requiredAssigneeUserIds` 和 `manualReviewBypassAssignee`；旧配置直接 fail-closed，不做静默兼容转换。
 
 ## Provider Profile
 

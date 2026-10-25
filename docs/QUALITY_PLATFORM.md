@@ -1,6 +1,6 @@
 # Quality Platform
 
-Codex Review Service 6.2 consumes Safe Core 4.8 Quality Platform v2, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
+Codex Review Service 7.6.2 consumes exact-pinned Safe Core 4.18.1: Quality Platform v3, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
 
 ## Review Profile Packs
 
@@ -8,7 +8,7 @@ Codex Review Service 6.2 consumes Safe Core 4.8 Quality Platform v2, Review Prof
 
 ## Analyzer Adapter Hub
 
-Config Schema 3 replaces the former repository-file-only `sarifFiles` setting with `review.analyzerReports`. Reports are acquired from the exact head pipeline through GitLab Job Artifact APIs and parsed by product-owned bounded adapters. Supported formats are:
+Current configuration uses Config Schema 8. Historically, Config Schema 3 replaced the former repository-file-only `sarifFiles` setting with `review.analyzerReports`. Reports are acquired from the exact head pipeline through GitLab Job Artifact APIs and parsed by product-owned bounded adapters. Supported formats are:
 
 - SARIF 2.1-compatible JSON;
 - GitLab Code Quality JSON;

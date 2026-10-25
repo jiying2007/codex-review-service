@@ -34,17 +34,33 @@ jobs:
       - name: Start real GitLab CE ${{ matrix.gitlab }}
         run: |
           set -euo pipefail
+          fixture_omnibus_config="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4TQ9zV2mL7xK5pR8wN3cY6fH4sJ9'"
+          if [ '${{ matrix.gitlab }}' = '14.6.1-ce.0' ]; then
+            # This short-lived fixture hit a runit logrotate/log startup timeout.
+            # Keep container logs; rotation is unnecessary during one CI job.
+            fixture_omnibus_config+="; logrotate['enable']=false"
+          fi
           docker run -d --name gitlab \
             --shm-size=256m \
             -p 127.0.0.1:8080:80 \
-            -e GITLAB_OMNIBUS_CONFIG="external_url 'http://localhost'; gitlab_rails['initial_root_password']='g4TQ9zV2mL7xK5pR8wN3cY6fH4sJ9'" \
+            -e GITLAB_OMNIBUS_CONFIG="$fixture_omnibus_config" \
             "gitlab/gitlab-ce:${{ matrix.gitlab }}"
       - name: Wait for real GitLab provider dependencies
         run: |
           set -euo pipefail
+          require_running_container() {
+            fixture_state="$(docker inspect --format '{{.State.Status}}' gitlab 2>/dev/null || true)"
+            if [ "$fixture_state" != running ]; then
+              echo "GitLab fixture is not running: ${fixture_state:-unavailable}" >&2
+              docker inspect --format '{{json .State}}' gitlab || true
+              docker logs --tail 500 gitlab || true
+              exit 1
+            fi
+          }
           rails_http_ready=false
           rails_runner_ready=false
           for i in $(seq 1 210); do
+            require_running_container
             http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
             if [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; then rails_http_ready=true; fi
             if docker exec gitlab gitlab-rails runner "raise 'root user missing' unless User.find_by_username('root')" >/dev/null 2>&1; then rails_runner_ready=true; fi
@@ -66,12 +82,14 @@ jobs:
           }
           omnibus_stable=false
           for i in $(seq 1 20); do
+            require_running_container
             before="$(critical_pids)"
             if [ "$(printf '%s\n' "$before" | sed '/^$/d' | wc -l)" -ne 4 ]; then
               sleep 10
               continue
             fi
             sleep 30
+            require_running_container
             after="$(critical_pids)"
             http_code="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/users/sign_in || true)"
             if [ "$before" = "$after" ] && { [ "$http_code" = 200 ] || [ "$http_code" = 302 ]; }; then

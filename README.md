@@ -143,9 +143,15 @@ GitLab remains the Review system of record. SQLite is service durable state. IM 
 
 One instance can manage explicit Projects, a Group hierarchy, or both. Group discovery is paginated and fail-closed; incomplete refresh keeps the last complete scope.
 
+Merge this `gitlab` object into the current configuration based on `config.example.json`:
+
 ```json
-"projects": [101, 102, 103],
-"groups": [{ "id": 20, "includeSubgroups": true }]
+{
+  "gitlab": {
+    "projects": [101, 102, 103],
+    "groups": [{ "id": 20, "includeSubgroups": true }]
+  }
+}
 ```
 
 **One Service instance is one administrative/security trust domain.** Projects in materially different credential, confidentiality or OpenAI data-policy domains should use separate instances rather than introducing hidden multi-tenant behavior.

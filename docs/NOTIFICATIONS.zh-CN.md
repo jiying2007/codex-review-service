@@ -10,7 +10,7 @@ Review 成功完成时，GitLab publication actions 与 notification actions 在
 
 ## Route 与 Secret
 
-在 Config Schema 6 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
+在 Config Schema 8 中开启 `notifications.enabled` 并配置 routes。Route 可按明确 `projects`、GitLab `groups` 路由；两者都为空时表示当前 Service 已解析的全部 Project。每个 Route 指定 `feishu`、`feishu_app` 或 `wecom`、`secretRef` 与可选事件过滤。
 
 `secretRef: "embedded"` 可从 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK` 读取；生产环境优先使用文件形式 `CODEX_REVIEW_NOTIFY_EMBEDDED_WEBHOOK_FILE`。直接值与 `_FILE` 不能同时设置。Webhook URL 不进入 JSON 或 SQLite。飞书只允许官方 `open.feishu.cn`/`open.larksuite.com` Bot URL；企业微信只允许 `qyapi.weixin.qq.com`。
 
@@ -40,11 +40,11 @@ Route 还支持 `branches`、`severities`、`authors`、`reviewers` 精确订阅
 
 `notifications.identities` 以 GitLab `gitlabUserId`（优先）或 `gitlabUsername` 精确映射到飞书 `feishuOpenId`；禁止按姓名猜测。`feishu_app` Route 可设置 `responsibility`：`order` 的默认优先级是 Reviewer → Assignee → Author，只有 `mentionEvents`、`mentionSeverities` 同时命中时才在最终群卡写入安全生成的 `@责任人`。`directMessage: true` 会对每位已映射责任人另投递一张终态只读私聊卡；它有独立 outbox 去重键，私聊失败不会影响群卡或 Review Verdict。
 
-私聊使用 `receive_id_type=open_id`，因此飞书应用必须具有向目标用户发送消息的权限，且目标用户必须在应用可用范围内。群内同卡仍仅由 Route 的 `chat_id` 持久化和 PATCH 更新；私聊不创建“审查中”卡片，也不会争用群卡 `message_id`。身份映射不包含密钥，但属于组织用户标识，日志和诊断输出必须脱敏。
+私聊使用 `receive_id_type=open_id`，因此飞书应用必须具有向目标用户发送消息的权限，且目标用户必须在应用可用范围内。群卡通过 `job_id + route_name` 关联已持久化的 `message_id` 并执行 PATCH；Chat ID 继续从受保护的环境变量或文件解析；私聊不创建“审查中”卡片，也不会争用群卡 `message_id`。身份映射不包含密钥，但属于组织用户标识，日志和诊断输出必须脱敏。
 
 Notifier 的 `provider_accepted` 表示飞书 API 已接受请求并创建消息会话，不表示用户客户端已读或一定弹出系统通知；飞书客户端的会话可见性、免打扰和应用通知设置由用户/管理员控制。
 
-`gitlab.push.committed` 默认等待 30 秒聚合窗口。同一 Project、Branch、Route 的 pending Push 合并为一张卡，累计 Commit 数量和 SHA 范围；正文只展开最多 3 条 Commit，其余显示数量。Schema 8 用生成列和复合索引保存聚合键、截止时间、操作类型与状态卡 Job ID，Notifier 不再全表解析 JSON。Pipeline 仅选择配置的终态并沿用 `flow_state` 状态去重。Push/Pipeline 只有在 Project、Source Branch、24 小时时效和可用 Head SHA 同时匹配已有 Review Job 时才关联 MR；无法可靠关联时保持独立。
+`gitlab.push.committed` 默认等待 30 秒聚合窗口。同一 Project、Branch、Route 的 pending Push 合并为一张卡，累计 Commit 数量和 SHA 范围；正文只展开最多 3 条 Commit，其余显示数量。Database Schema 8 引入的生成列和复合索引保存聚合键、截止时间、操作类型与状态卡 Job ID，Notifier 不再全表解析 JSON。Pipeline 仅选择配置的终态并沿用 `flow_state` 状态去重。Push/Pipeline 只有在 Project、Source Branch、24 小时时效和可用 Head SHA 同时匹配已有 Review Job 时才关联 MR；无法可靠关联时保持独立。
 
 每张 Review、Push、Pipeline、MR、Tag 与分支卡片都会显示“仓库”。Review 优先使用 GitLab `references.full` 中的 `group/project!IID` 路径，Flow 通知使用 webhook 的 `project.path_with_namespace`；缺失时隐藏字段，而不是以不稳定的 Project ID 伪装仓库名。
 
@@ -73,7 +73,7 @@ npm run admin -- retry-notification <id>
 通知事件时间与 Review Receipt `createdAt` 统一以 canonical UTC ISO-8601 持久化，表示实际审查完成时间，而不是 notification outbox 延迟后的投递时间。卡片面向用户显示运行环境本地时区（或 `CODEX_SAFE_DISPLAY_TIME_ZONE` 指定的 IANA 时区）；审计摘要同时附带原始 UTC 值。
 ## GitLab Flow 事件
 
-Config Schema 4 可以通过同一 durable outbox 路由确定性的 `gitlab.pipeline.*`、`gitlab.mr.*`、`gitlab.tag.*`、`gitlab.branch.*` 事件。事件采集由 `flowTracking` 控制，投递仍由 `notifications.routes[].events` 控制；Flow 卡片完全由本地 formatter 生成，Codex Token 消耗为 0。详见 `FLOW_TRACKING.zh-CN.md`。
+当前 Config Schema 8 可以通过同一 durable outbox 路由确定性的 `gitlab.pipeline.*`、`gitlab.mr.*`、`gitlab.tag.*`、`gitlab.branch.*` 事件。事件采集由 `flowTracking` 控制，投递仍由 `notifications.routes[].events` 控制；Flow 卡片完全由本地 formatter 生成，Codex Token 消耗为 0。详见 `FLOW_TRACKING.zh-CN.md`。
 
 ## Commit Push 通知
 
