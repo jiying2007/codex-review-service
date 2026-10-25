@@ -161,6 +161,22 @@ After overlapping generations and an uncertain HTTP outcome, hold automated merg
 
 There is deliberately no command that converts a matching observation, elapsed timeout or reset retry counter into proof that an old handler stopped. Deleting an attempt, restoring an older DB or restarting is not a valid uncertainty-resolution procedure. `admin status` and `admin diagnostics` expose `statusWrites` counts; `admin drain` reports incomplete while unknown attempts or uncertain publications remain. Metrics expose `codex_review_status_unknown_writes` and `codex_review_status_uncertain_targets`. Final notifications show uncertainty after the existing publication barrier timeout. `admin reconcile` still discovers review work; the publisher workers own status readback. `/health/ready` includes `publicationUncertainty` while continuing to describe durable local intake, not merge authority.
 
+#### Read-only publication evidence
+
+Use `npm run admin -- publication-evidence PROJECT_ID MR_IID` to inspect the latest applicable local evidence for one MR without writing SQL. Both IDs must be positive safe integers. The command uses the configured instance/status name and the same database path parser as the controller, including rootless XDG defaults. It opens that existing database read-only and reads all evidence in one SQLite read transaction. It does not load API credentials, contact GitLab, migrate/recover the database, adopt legacy attempts, modify publication state or choose an older job on request. There is no HTTP authorization endpoint.
+
+The versioned JSON result binds the latest applicable MR job, source project/ref and head/start/base SHAs, latest run and Review Receipt, final outbox, retained target generation and the exact acknowledged attempt. A newer same-SHA review, a newer cross-MR job in the shared status domain, an unfinished review, incomplete/blocking coverage, an unsettled publication, a missing/mismatched acknowledgement or an applicable unknown attempt produces `decision: "blocked"`. Receipt omission is accepted only for a persisted zero-chunk, empty-model/version, zero-token no-inference run. A model run needs its valid, matching canonical receipt.
+
+Started and uncertain attempts are checked across implicit/explicit pipeline aliases and MR IDs, with orphan/global uncertainty retained. Unknown-scope or noncanonical recorded identities impose a store-wide hold. Old or unsupported-format outbox history that may have reached transport also imposes a hold until its scope is established; the read-only command never marks it adopted. Output includes counts and at most 20 attempt IDs and 20 unadopted outbox IDs, with explicit truncation flags. It excludes finding bodies, status descriptions, credentials and database paths. Re-run it for a fresh snapshot; a completed read has no validity period or lease.
+
+| Exit status | JSON decision | Meaning |
+| --- | --- | --- |
+| `1` | `error` | Invalid arguments/configuration, incompatible schema or evidence that could not be read consistently. |
+| `2` | `blocked` | The local evidence is missing, incomplete, stale, contradictory or uncertain. |
+| `3` | `evidence_complete_unbound` | This local snapshot is complete; no target-ref transaction or remote merge operation is bound to it. |
+
+Every command result explicitly reports `mergeAuthorized: false` and `refTransactionBound: false`. The command deliberately has no successful approval exit status. Do not install it directly as an allowing `pre-receive` hook, required-CI success proxy or merge permission check. It supplies the deny-side evidence inspection for an operator/future trusted adapter; the server-side serialization/conditional-consumption protocol described above remains unimplemented. An error or exit `3` must never release an existing independent merge hold.
+
 Before rollback from Schema 10, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 9 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 10, and an in-place schema downgrade is unsupported.
 
 ## Fatal runtime behavior
@@ -173,6 +189,7 @@ Before rollback from Schema 10, stop the controller, retain the current DB and i
 npm run admin -- status
 npm run admin -- jobs [limit]
 npm run admin -- publications [limit]
+npm run admin -- publication-evidence PROJECT_ID MR_IID
 npm run admin -- notifications [limit]
 npm run admin -- retry-publication <id>
 npm run admin -- retry-notification <id>

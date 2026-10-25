@@ -5,16 +5,18 @@ const path=require('node:path');
 const {backup,DatabaseSync}=require('node:sqlite');
 const {SCHEMA_VERSION}=require('./db');
 const {createStorage}=require('./storage');
-const {loadStructuredConfig,loadConfig,defaultStateDir}=require('./config');
+const {loadStructuredConfig,loadConfig,storagePaths,publicationIdentity}=require('./config');
 const {GitLabClient}=require('./gitlab');
 const {ProjectScopeManager,applyProjectScope}=require('./project-scope');
 const {ReviewService}=require('./service');
 const {prepareNotificationRoutes,FeishuAppProvider,eventForReviewStarted,feishuPayload}=require('./notification');
 const {contract}=require('./product-contract');
+const {readPublicationEvidence,evidenceBase,positiveId}=require('./publication-evidence');
 
 function adminError(message,code='EADMIN'){const error=new Error(message);error.code=code;return error;}
-function resolveDbPath(){const structured=loadStructuredConfig(),raw=String(structured.value.server?.dataDir||'').trim(),dataDir=path.resolve(raw||defaultStateDir());return path.join(dataDir,'review-service.sqlite');}
+function resolveDbPath(structured=loadStructuredConfig()){return storagePaths(structured.value.server).dbPath;}
 function requireDbPath(){const dbPath=resolveDbPath();if(!fs.existsSync(dbPath))throw adminError(`Database does not exist: ${dbPath}`,'EADMINDB');return dbPath;}
+function publicationEvidence(projectId,mrIid){projectId=positiveId(projectId);mrIid=positiveId(mrIid);const structured=loadStructuredConfig();return readPublicationEvidence(resolveDbPath(structured),publicationIdentity(structured.value.gitlab),projectId,mrIid);}
 function openStore(){return createStorage({dbPath:requireDbPath()});}
 function rows(store,table,limit=50){const allowed=new Set(['review_jobs','publication_outbox','notification_outbox']);if(!allowed.has(table))throw adminError('Unsupported admin table');const n=Math.max(1,Math.min(500,Number(limit)||50));return store.db.prepare(`SELECT * FROM ${table} ORDER BY id DESC LIMIT ?`).all(n);}
 function status(store){const stats=store.stats(),oldest=table=>store.db.prepare(`SELECT MIN(created_at) created_at FROM ${table}`).get()?.created_at||null;return{product:contract,database:{path:store.db.location?.()||requireDbPath(),schemaVersion:store.schemaVersion(),synchronous:store.synchronousMode(),quickCheck:store.db.prepare('PRAGMA quick_check').get()?.quick_check||'unknown'},stats,oldest:{job:oldest('review_jobs'),publication:oldest('publication_outbox'),notification:oldest('notification_outbox')}};}
@@ -36,4 +38,4 @@ function resolveFinding(store,findingId,resolution,note='',actor='admin-cli'){co
 function resolutionMetrics(store,since=''){return store.resolutionMetrics(since);}
 function diagnostics(store){const s=status(store);return{serviceVersion:contract.serviceVersion,node:process.version,platform:process.platform,arch:process.arch,database:{schemaVersion:s.database.schemaVersion,synchronous:s.database.synchronous,quickCheck:s.database.quickCheck},counts:{jobs:s.stats.jobs,publications:s.stats.publications,statusWrites:s.stats.statusWrites,notifications:s.stats.notifications,webhooks:s.stats.webhookCount,findings:s.stats.findings}};}
 async function smokeFeishuCard(routeName,{send=false,config=loadConfig(),env=process.env,fetchImpl=fetch}={}){const route=(config.notificationRoutes||[]).find(item=>item.name===String(routeName||''));if(!route)throw adminError(`Notification route does not exist: ${routeName}`,'EADMINROUTE');if(route.provider!=='feishu_app')throw adminError('Feishu status-card smoke requires a feishu_app route','EADMINROUTE');const job={project_id:1,mr_iid:1,head_sha:'a'.repeat(40),source_branch:'smoke/feishu-card'},running={...eventForReviewStarted(job,{title:'Codex Review status-card smoke test',web_url:'https://gitlab.example.invalid/smoke',target_branch:'main'}),_language:route.language||'zh-CN'},completed={...running,type:'review.completed',verdict:'pass',occurredAt:new Date().toISOString(),durationMs:1000};if(!send)return{dryRun:true,route:route.name,provider:route.provider,runningCard:feishuPayload(running).card,completedCard:feishuPayload(completed).card};const provider=new FeishuAppProvider({env,fetchImpl});provider.validate(route);const created=await provider.send(route,running,config.notificationRequestTimeoutMs||10000),updated=await provider.update(route,created.remoteId,completed,config.notificationRequestTimeoutMs||10000);return{dryRun:false,route:route.name,messageId:created.remoteId,updatedMessageId:updated.remoteId,status:'updated'};}
-module.exports={adminError,resolveDbPath,requireDbPath,openStore,rows,status,retryTerminal,verifyDatabase,createBackup,drain,reconcile,resolveFinding,resolutionMetrics,diagnostics,smokeFeishuCard};
+module.exports={publicationEvidence,evidenceBase,adminError,resolveDbPath,requireDbPath,openStore,rows,status,retryTerminal,verifyDatabase,createBackup,drain,reconcile,resolveFinding,resolutionMetrics,diagnostics,smokeFeishuCard};

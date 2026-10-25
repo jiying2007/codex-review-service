@@ -2,6 +2,7 @@
 
 ## 7.6.2 - 2026-10-25
 
+- Add read-only `admin publication-evidence PROJECT_ID MR_IID` with one consistent SQLite snapshot of latest review/receipt/publication/attempt identity and shared/global uncertainty. Bound diagnostic output and explicit non-authorizing exit statuses preserve the server-side ref-transaction boundary; no credentials, remote calls, migration or uncertainty reset is involved.
 - Include current external analyzer findings in the final blocking decision before output truncation; required analyzer failures cannot produce a passing review. Optional context failures retain acquired required evidence.
 - Bind commit-status writes to the latest durable job generation and serialize status project/SHA/ref/name targets, including implicit and explicit pipeline aliases; recheck after throttling and before every HTTP retry.
 - Add Database Schema 10 with verified additive migration, durable status-write attempts, persistent uncertainty and bounded latest-target readback/repair. Preserve unknown outcomes through restarts, legacy adoption, retention and backups; expose uncertainty in drain, diagnostics, metrics and notifications without claiming server-side generation fencing.

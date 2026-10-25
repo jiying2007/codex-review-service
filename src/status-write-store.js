@@ -37,6 +37,8 @@ const STATUS_WRITE_SCHEMA = `
   CREATE INDEX idx_status_target_reconcile ON status_publication_targets(projection_state,next_reconcile_at);
 `;
 
+const UNRESOLVED_STATUS_ATTEMPT_PREDICATE = "(target_key=? OR target_key IN(SELECT target_key FROM status_publication_targets WHERE json_extract(identity_json,'$.scopeUnknown')=1)) AND outcome IN ('started','uncertain')";
+
 function statusTarget(item, config) {
   const p = item.payload || {};
   // An implicit and an explicit pipeline can alias the same GitLab status.
@@ -76,7 +78,7 @@ class StatusWriteStore {
     return row ? { ...row, identity: JSON.parse(row.identity_json), item: JSON.parse(row.latest_item_json), observation: JSON.parse(row.observation_json) } : null;
   }
   unresolved(key) {
-    return Number(this.db.prepare("SELECT COUNT(*) count FROM status_write_attempts WHERE (target_key=? OR target_key IN(SELECT target_key FROM status_publication_targets WHERE json_extract(identity_json,'$.scopeUnknown')=1)) AND outcome IN ('started','uncertain')").get(key).count);
+    return Number(this.db.prepare(`SELECT COUNT(*) count FROM status_write_attempts WHERE ${UNRESOLVED_STATUS_ATTEMPT_PREDICATE}`).get(key).count);
   }
   registerOrphan(item, config) {
     const { key, identity } = statusTarget(item, config), now = new Date().toISOString();
@@ -233,4 +235,4 @@ class StatusWriteStore {
   }
 }
 
-module.exports = { STATUS_WRITE_SCHEMA, StatusWriteStore, statusTarget, definitelyRejected };
+module.exports = { STATUS_WRITE_SCHEMA, StatusWriteStore, statusTarget, definitelyRejected, legacyStatusUncertain, UNRESOLVED_STATUS_ATTEMPT_PREDICATE };
