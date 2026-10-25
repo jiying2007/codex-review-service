@@ -2,6 +2,7 @@
 
 const fs=require('node:fs');
 const path=require('node:path');
+const {execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..');
 const contract=require('../product-contract.json');
 const core=require('../src/codex-safe-core/core-contract.json');
@@ -38,6 +39,15 @@ function readmeBlock(zh=false){const facts=zh?[
 function replaceGenerated(text,replacement=block()){const start=text.indexOf(START),end=text.indexOf(END);if(start<0||end<start)throw new Error('Generated product-contract markers are missing');return text.slice(0,start)+replacement+text.slice(end+END.length);}
 function ensureReadmeBlock(text,{zh=false}={}){let out=text;if(out.includes(START)&&out.includes(END))out=replaceGenerated(out,readmeBlock(zh));else{const heading=zh?'## 产品契约':'## Product contract';const boundary=zh?'\nGitLab 兼容通过':'\nGitLab compatibility';const start=out.indexOf(heading),end=out.indexOf(boundary,start);if(start<0||end<start)throw new Error(`Unable to locate ${heading} identity section`);out=out.slice(0,start+heading.length)+'\n\n'+readmeBlock(zh)+'\n'+out.slice(end);}out=zh?out.replace(/当前正式产品基线为 \*\*v\d+\.\d+\.\d+\*\*：/,'当前产品身份由下方机器生成契约区块定义：').replace(/codex-review-service-\d+\.\d+\.\d+\.tgz/g,`codex-review-service-${contract.serviceVersion}.tgz`).replace(/Service v\d+\.\d+ 不改变共享 Review 协议/g,`Service v${contract.serviceVersion.split('.').slice(0,2).join('.')} 不改变共享 Review 协议`).replace(/Schema \d+ 全部通过才接受备份/g,`Schema ${contract.databaseSchemaVersion} 全部通过才接受备份`):out.replace(/Service \*\*v\d+\.\d+\.\d+\*\* is the current compatibility\/operations baseline:/,'The current product identity is defined by the machine-generated contract block below:').replace(/codex-review-service-\d+\.\d+\.\d+\.tgz/g,`codex-review-service-${contract.serviceVersion}.tgz`).replace(/Service v\d+\.\d+ does not change the shared review protocol/g,`Service v${contract.serviceVersion.split('.').slice(0,2).join('.')} does not change the shared review protocol`).replace(/Schema \d+ verification pass/g,`Schema ${contract.databaseSchemaVersion} verification pass`);return out;}
 function productContractDoc(){return `# Product Contract\n\nThis file is generated from \`product-contract.json\` and the exact Safe Core contract. Do not hand-edit version facts.\n\n${block()}\n`;}
-function main(){const architecturePath=path.join(root,'docs','ARCHITECTURE.md');fs.writeFileSync(architecturePath,replaceGenerated(fs.readFileSync(architecturePath,'utf8')));fs.writeFileSync(path.join(root,'docs','PRODUCT_CONTRACT.md'),productContractDoc());const readme=path.join(root,'README.md'),readmeZh=path.join(root,'README.zh-CN.md');fs.writeFileSync(readme,ensureReadmeBlock(fs.readFileSync(readme,'utf8')));fs.writeFileSync(readmeZh,ensureReadmeBlock(fs.readFileSync(readmeZh,'utf8'),{zh:true}));}
+function main(){
+  const architecturePath=path.join(root,'docs','ARCHITECTURE.md');
+  fs.writeFileSync(architecturePath,replaceGenerated(fs.readFileSync(architecturePath,'utf8')));
+  fs.writeFileSync(path.join(root,'docs','PRODUCT_CONTRACT.md'),productContractDoc());
+  const readme=path.join(root,'README.md'),readmeZh=path.join(root,'README.zh-CN.md');
+  fs.writeFileSync(readme,ensureReadmeBlock(fs.readFileSync(readme,'utf8')));
+  fs.writeFileSync(readmeZh,ensureReadmeBlock(fs.readFileSync(readmeZh,'utf8'),{zh:true}));
+  // Exact Core repins call this entry directly, so it must refresh operational identity too.
+  execFileSync(process.execPath,[path.join(__dirname,'sync-operational-docs.js')],{cwd:root,stdio:'inherit'});
+}
 if(require.main===module)main();
 module.exports={START,END,contractLines,block,readmeBlock,replaceGenerated,ensureReadmeBlock,productContractDoc};
