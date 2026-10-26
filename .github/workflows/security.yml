@@ -61,7 +61,8 @@ jobs:
         with:
           category: /language:javascript-typescript
           output: codeql-results
-          upload: always
+          # Preserve local SARIF and the fail-closed CI gate without paid private Code Scanning.
+          upload: never
       - name: Enforce actual CodeQL findings
         if: ${{ always() }}
         run: node src/codex-safe-core/scripts/codeql-findings-gate.js codeql-results
