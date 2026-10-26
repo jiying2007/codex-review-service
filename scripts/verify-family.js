@@ -1,6 +1,6 @@
 'use strict';
 
-// Keep the required CI dependency bound to real SARIF, including failed uploads.
+// Require local CodeQL SARIF findings and immutable CI evidence without private Code Scanning upload.
 {
   const assert = require('node:assert/strict');
   const fs = require('node:fs');
@@ -28,7 +28,7 @@
   assert.ok(action('actions/setup-node').includes("node-version: '24.19.0'"), 'SARIF gate must use supported Node 24.19.0');
   const analyze = action('github/codeql-action/analyze');
   assert.ok(analyze.includes('output: codeql-results'), 'analyze must produce the gated report directory');
-  assert.ok(analyze.includes('upload: always'), 'GitHub code scanning upload must stay enabled');
+  assert.ok(analyze.includes('upload: never'), 'private repository must rely on locally gated real CodeQL SARIF rather than licensed upload');
   const findings = steps.filter(lines => lines.includes('run: node ' + helper + ' codeql-results'));
   assert.equal(findings.length, 1, 'the production Core SARIF gate must run exactly once');
   assert.ok(findings[0].includes('if: ${{ always() }}'), 'findings gate must run even when analyze/upload fails');
