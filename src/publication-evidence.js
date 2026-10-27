@@ -105,11 +105,11 @@ function inspectSnapshot(db, config, projectId, mrIid) {
   if (job) {
     result.generation = { jobId: job.id, runId: null, outboxId: null, latestSharedJobId: job.id };
     const identity = { apiUrl: config.gitlabApiUrl, projectId: job.status_project_id, headSha: job.head_sha, ref: job.source_branch, statusName: config.statusName };
-    const snapshotValid = validIdentity(identity) && validSha(job.start_sha) && validSha(job.base_sha) && job.head_sha.length === job.start_sha.length && job.head_sha.length === job.base_sha.length &&
+    const snapshotValid = validIdentity(identity) && boundedText(job.target_branch,1024) && validSha(job.start_sha) && validSha(job.base_sha) && job.head_sha.length === job.start_sha.length && job.head_sha.length === job.base_sha.length &&
       (job.pipeline_id === null || (Number.isSafeInteger(job.pipeline_id) && job.pipeline_id > 0));
     if (!snapshotValid) reasons.add('source_identity_incomplete');
     else {
-      result.source = { gitlabApiUrl: identity.apiUrl, statusProjectId: identity.projectId, ref: identity.ref, headSha: job.head_sha, startSha: job.start_sha, baseSha: job.base_sha, statusName: identity.statusName, pipelineId: job.pipeline_id };
+      result.source = { gitlabApiUrl: identity.apiUrl, statusProjectId: identity.projectId, ref: identity.ref, targetBranch:job.target_branch, headSha: job.head_sha, startSha: job.start_sha, baseSha: job.base_sha, statusName: identity.statusName, pipelineId: job.pipeline_id };
       const key = identityKey(identity);
       const shared = db.prepare(`SELECT id FROM review_jobs WHERE id>? AND status NOT IN (${IGNORED_JOB_STATUSES})
         AND COALESCE(status_project_id,project_id)=? AND head_sha=? AND source_branch=? ORDER BY id DESC LIMIT 1`)
