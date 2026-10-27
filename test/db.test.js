@@ -44,3 +44,12 @@ test('same start/head SHAs with a retarget must not dedupe two review generation
  assert.equal(store.bindJobSnapshot(second,{baseSha:'c'.repeat(40),startSha:identity.startSha,headSha:identity.headSha,sourceBranch:'feat',targetBranch:'release',statusProjectId:1}).status,'bound');
  assert.equal(store.getJob(second).target_branch,'release');
 }));
+
+test('changed comparison base is never duplicated even with identical head and target branch',()=>withStore(store=>{
+ const common={projectId:1,mrIid:2,startSha:'b'.repeat(40),headSha:'a'.repeat(40)};
+ const one=store.enqueue({...common,trigger:'open',dedupeKey:'base-one',maxQueueDepth:10});
+ store.bindJobSnapshot(one,{...common,baseSha:'c'.repeat(40),sourceBranch:'feat',targetBranch:'main',statusProjectId:1});
+ const two=store.enqueue({...common,trigger:'reconcile',dedupeKey:'base-two',maxQueueDepth:10});
+ assert.equal(store.bindJobSnapshot(two,{...common,baseSha:'d'.repeat(40),sourceBranch:'feat',targetBranch:'main',statusProjectId:1}).status,'bound');
+ assert.equal(store.getJob(two).base_sha,'d'.repeat(40));
+}));
