@@ -44,3 +44,17 @@ test('same-SHA retarget changes reconcile generation and aborts old active job',
  assert.equal(aborted,true);
  assert.equal(entries.length,3);
 });
+
+test('same-head reconciliation is a different generation after base SHA or source-branch drift',()=>{
+ const enqueued=[],service=new ReviewService({config:config(),store:{enqueue:item=>(enqueued.push(item),enqueued.length)},gitlab:{},logger:{}});
+ const first=mr(),movedBase=mr({diff_refs:{...first.diff_refs,base_sha:'e'.repeat(40)}}),movedSource=mr({source_branch:'other'});
+ service.enqueueHydratedMr(7,first);
+ service.enqueueHydratedMr(7,movedBase);
+ service.enqueueHydratedMr(7,movedSource);
+ assert.equal(enqueued.length,3);
+ assert.equal(new Set(enqueued.map(item=>item.dedupeKey)).size,3);
+ let interrupted=false;
+ service.active.set(service.key(7,9),{headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,sourceBranch:'feat',targetBranch:'main',controller:{abort:()=>interrupted=true}});
+ service.enqueueHydratedMr(7,movedBase);
+ assert.equal(interrupted,true,'base_sha changed even when HEAD is unchanged');
+});
