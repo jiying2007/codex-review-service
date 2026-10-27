@@ -26,7 +26,7 @@ function fixture(t) {
   let next = 0;
   function complete({ mrIid = 9, pipelineId = 123, model = true, phase = 'ack', head = headSha } = {}) {
     const jobId = store.enqueue({ projectId: 7, mrIid, trigger: 'command', dedupeKey: `command-${++next}`, headSha: head, startSha });
-    store.bindJobSnapshot(jobId, { baseSha, startSha, headSha: head, sourceBranch: 'feature', statusProjectId: 7, pipelineId });
+    store.bindJobSnapshot(jobId, { baseSha, startSha, headSha: head, sourceBranch: 'feature', targetBranch: 'main', statusProjectId: 7, pipelineId });
     const review = { verdict: 'pass', summary: 'private finding body must not appear', coverageComplete: true, findings: [], allFindings: [], usage: {},
       ...(model ? { chunkCount: 1, codexModel: 'test-model', codexVersion: 'codex-cli 9.9.9', usage: { inputTokens: 10, outputTokens: 2 }, reviewSubjectFingerprint: 'd'.repeat(64), evidenceManifestDigest: 'e'.repeat(64) } : {}) };
     const policy = { source: 'service-default', fingerprint: 'f'.repeat(64) };
