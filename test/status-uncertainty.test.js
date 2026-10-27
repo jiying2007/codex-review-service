@@ -375,7 +375,7 @@ test('Schema 9 migration adds the durable ledger transactionally and preserves a
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'status-schema9-')), file = path.join(dir, 'service.sqlite');
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   let store = new Store(file);
-  store.db.exec('DROP TABLE status_write_attempts; DROP TABLE status_publication_targets; DELETE FROM schema_migrations WHERE version=10; PRAGMA user_version=9;');
+  store.db.exec('DROP TABLE status_write_attempts; DROP TABLE status_publication_targets; ALTER TABLE review_jobs DROP COLUMN target_branch; DELETE FROM schema_migrations WHERE version IN (10,11); PRAGMA user_version=9;');
   store.close();
   assert.throws(() => new Store(file, { migrationHooks: { beforeCommit({ from }) { if (from === 9) throw new Error('injected crash'); } } }), error => error.code === 'EDBMIGRATION');
   let raw = new DatabaseSync(file);
@@ -384,7 +384,7 @@ test('Schema 9 migration adds the durable ledger transactionally and preserves a
   raw.close();
   store = new Store(file);
   try {
-    assert.equal(store.schemaVersion(), 10);
+    assert.equal(store.schemaVersion(), 11);
     const backup = new DatabaseSync(store.lastMigration.applied[0].backupPath, { readOnly: true });
     try { assert.equal(backup.prepare('PRAGMA user_version').get().user_version, 9); assert.equal(backup.prepare('PRAGMA integrity_check').get().integrity_check, 'ok'); }
     finally { backup.close(); }
