@@ -27,7 +27,9 @@ class Publisher{
         ||typeof p.sourceBranch!=='string'||!p.sourceBranch||p.sourceBranch.length>1024
         ||typeof p.targetBranch!=='string'||!p.targetBranch||p.targetBranch.length>1024
         ||!Number.isSafeInteger(p.sourceProjectId)||p.sourceProjectId<=0
-        ||!Number.isSafeInteger(p.targetProjectId)||p.targetProjectId<=0)return false;
+        ||!Number.isSafeInteger(p.targetProjectId)||p.targetProjectId<=0
+        ||!Number.isSafeInteger(Number(item.project_id))||Number(item.project_id)!==p.targetProjectId
+        ||!Number.isSafeInteger(Number(item.mr_iid))||Number(item.mr_iid)<=0)return false;
     }else if(!p.headSha||!p.startSha)return false; // Missing legacy SHA identity cannot authorize a positive remote publication.
     const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid);
     const head=String(mr?.diff_refs?.head_sha||mr?.sha||''),start=String(mr?.diff_refs?.start_sha||'');

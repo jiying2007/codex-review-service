@@ -120,3 +120,10 @@ test('discussion resolution rechecks MR after fetching the discussion and reject
  assert.equal(reads,2);
  assert.equal(writes,0,'retargeted MR must not have its discussion resolved');
 });
+
+test('new publication envelope must bind the exact target project of the queued outbox item',async()=>{
+ const f=fixture();
+ f.item.project_id=8;
+ assert.equal(await f.publisher.currentSnapshot(f.item),false);
+ assert.equal(f.reads(),0,'outbox project substitution must be rejected before provider access');
+});
