@@ -122,3 +122,24 @@ test('Schema 10 migration preserves old rows without falsely backfilling target 
   assert.equal(verifyMigrationBackup(migration.backupPath,10),true);
  }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('Schema 10 to 11 injected failure rolls back DDL, retains historical data and a verified backup',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-db10-injected-'));
+ const file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);
+ let backupPath='';
+ try{
+  db.exec("CREATE TABLE review_jobs(id INTEGER PRIMARY KEY,source_branch TEXT NOT NULL DEFAULT ''); INSERT INTO review_jobs(id,source_branch) VALUES(1,'legacy-feature'); CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT ''); PRAGMA user_version=10;");
+  assert.throws(()=>migrate10To11(db,file,{
+   afterDdl(info){backupPath=info.backupPath;throw new Error('injected cut between DDL and commit');}
+  }),error=>error?.code==='EDBMIGRATION');
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,10);
+  assert.equal(db.prepare('SELECT source_branch FROM review_jobs WHERE id=1').get().source_branch,'legacy-feature');
+  assert.equal(db.prepare('PRAGMA table_info(review_jobs)').all().some(row=>row.name==='target_branch'),false);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations WHERE version=11').get().n,0);
+  assert.equal(verifyMigrationBackup(backupPath,10),true);
+  assert.equal(fs.statSync(backupPath).mode & 0o777,0o600);
+  const committed=migrate10To11(db,file);
+  assert.equal(committed.to,11);
+  assert.equal(db.prepare('SELECT target_branch FROM review_jobs WHERE id=1').get().target_branch,'');
+ }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
