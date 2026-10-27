@@ -53,3 +53,39 @@ test('changed comparison base is never duplicated even with identical head and t
  assert.equal(store.bindJobSnapshot(two,{...common,baseSha:'d'.repeat(40),sourceBranch:'feat',targetBranch:'main',statusProjectId:1}).status,'bound');
  assert.equal(store.getJob(two).base_sha,'d'.repeat(40));
 }));
+
+test('publication transaction rejects cancelled and retargeted generations without outbox side effects',()=>{
+ const refs={headSha:'a'.repeat(40),startSha:'b'.repeat(40),baseSha:'c'.repeat(40)};
+ const original={iid:9,sourceProjectId:7,targetProjectId:7,sourceBranch:'feature',targetBranch:'main',...refs};
+ const review={verdict:'pass',summary:'review completed',coverageComplete:true,findings:[],usage:{}};
+ const policy={source:'fixture',fingerprint:'f'.repeat(64)};
+ const actions=[{projectId:7,mrIid:9,type:'status',dedupeKey:'tx-guard:status',payload:{state:'success'}}];
+ function fixture(callback){return withStore(store=>{
+  const id=store.enqueue({projectId:7,mrIid:9,...refs,sourceBranch:'feature',trigger:'open',dedupeKey:'tx-guard',maxQueueDepth:10});
+  assert.equal(store.claimNext().id,id);
+  assert.equal(store.bindJobSnapshot(id,{...refs,sourceBranch:'feature',targetBranch:'main',statusProjectId:7,pipelineId:42}).status,'bound');
+  return callback(store,id);
+ });}
+ fixture((store,id)=>{
+  const runId=store.saveRunWithOutbox(id,review,1,policy,actions,null,[],original);
+  assert.ok(runId>0);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM publication_outbox').get().n,1);
+ });
+ fixture((store,id)=>{
+  store.cancelMergeRequest(7,9);
+  assert.throws(()=>store.saveRunWithOutbox(id,review,1,policy,actions,null,[],original),e=>e.code==='ESUPERSEDED');
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM publication_outbox').get().n,0);
+ });
+ fixture((store,id)=>{
+  store.db.prepare("UPDATE review_jobs SET target_branch='release' WHERE id=?").run(id);
+  assert.throws(()=>store.saveRunWithOutbox(id,review,1,policy,actions,null,[],original),e=>e.code==='ESUPERSEDED');
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM publication_outbox').get().n,0);
+ });
+ fixture((store,id)=>{
+  const missing={...original};delete missing.targetBranch;
+  assert.throws(()=>store.saveRunWithOutbox(id,review,1,policy,actions,null,[],missing),e=>e.code==='ESUPERSEDED');
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
+ });
+});
