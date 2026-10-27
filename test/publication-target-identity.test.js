@@ -74,3 +74,11 @@ test('new actions reject malformed SHA widths and stringified project identifier
   assert.equal(f.reads(),0,key);
  }
 });
+
+test('stripping protocol version and target branch cannot downgrade a new action',async()=>{
+ const f=fixture();
+ delete f.item.payload.snapshotIdentityVersion;
+ delete f.item.payload.targetBranch;
+ assert.equal(await f.publisher.currentSnapshot(f.item),false);
+ assert.equal(f.reads(),0);
+});
