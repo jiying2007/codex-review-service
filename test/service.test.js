@@ -58,3 +58,40 @@ test('same-head reconciliation is a different generation after base SHA or sourc
  service.enqueueHydratedMr(7,movedBase);
  assert.equal(interrupted,true,'base_sha changed even when HEAD is unchanged');
 });
+
+test('publication precommit rejects retargets with identical head and start SHAs',async()=>{
+ const original=mr(),freeze={
+  projectId:7,sourceProjectId:7,targetProjectId:7,iid:9,
+  headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,
+  sourceBranch:'feat',targetBranch:'main'
+ };
+ let current=original,reads=0;
+ const service=new ReviewService({config:config(),store:{},gitlab:{getMergeRequest:async()=>{reads++;return current;}},logger:{}});
+ const job={project_id:7,mr_iid:9};
+ await assert.doesNotReject(()=>service.assertCurrentSnapshot(job,freeze));
+ for(const changed of [
+  {target_branch:'release'},
+  {source_branch:'different'},
+  {source_project_id:8},
+  {target_project_id:8},
+  {diff_refs:{...original.diff_refs,base_sha:'e'.repeat(40)}},
+  {diff_refs:{...original.diff_refs,start_sha:'e'.repeat(40)}},
+  {diff_refs:{...original.diff_refs,head_sha:'e'.repeat(40)}},
+  {state:'closed'},
+  {draft:true},
+  {sha:'e'.repeat(40)}
+ ]){
+  current={...original,...changed};
+  await assert.rejects(()=>service.assertCurrentSnapshot(job,freeze),error=>error.code==='ESUPERSEDED',JSON.stringify(changed));
+ }
+ assert.equal(reads,11);
+});
+test('precommit snapshot requires complete frozen MR and provider identities',async()=>{
+ const current=mr(),job={project_id:7,mr_iid:9};
+ const service=new ReviewService({config:config(),store:{},gitlab:{getMergeRequest:async()=>current},logger:{}});
+ for(const field of ['iid','sourceProjectId','targetProjectId','headSha','startSha','baseSha','sourceBranch','targetBranch']){
+  const complete={iid:9,sourceProjectId:7,targetProjectId:7,headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,sourceBranch:'feat',targetBranch:'main'};
+  delete complete[field];
+  await assert.rejects(()=>service.assertCurrentSnapshot(job,complete),error=>error.code==='ESUPERSEDED',field);
+ }
+});
