@@ -11,7 +11,7 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 `product-contract.json` is the single machine-checked source for the current product identity:
 
 - Service: **7.6.2**
-- Database Schema: **10**
+- Database Schema: **11**
 - Config Schema: **8**
 - Policy Schema: **4**
 - Review Receipt: **5**
