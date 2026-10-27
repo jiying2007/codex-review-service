@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor 校验产品/配置身份、SQLite Schema 10/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
+Doctor 校验产品/配置身份、SQLite Schema 11/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
 
 ## 启动与健康检查
 
@@ -175,7 +175,7 @@ npm run admin -- drain 120
 
 从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。当前 Service 7.6.2 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。历史上，Service 7.5.5 引入 Config Schema 7 -> 8 并退役 `codex.model`/`codex.fastModel`；Service 7.3.0 引入 Config Schema 6 -> 7 Provider 边界，Service 7.2.0 引入 Config Schema 5 -> 6 责任人身份边界，Service 7.0.0 引入 Config Schema 4 -> 5 并退役 `review.incrementalReviewEnabled`。Runtime 不翻译这些历史配置版本。
 
-历史 Database Schema 5 -> 6、6 -> 7、7 -> 8 与 8 -> 9 迁移保持显式和受测试；8 -> 9 引入 Finding Claim 投影与生命周期状态。Schema 9 -> 10 新增状态写入 attempt 与 uncertainty 账本，使用经过验证的备份和事务迁移。当前数据库版本为 10。回滚必须保留当前 uncertainty 账本、控制未完成的远端写入，并恢复与目标 Release 匹配的备份；不支持原地降级。详见 [Storage and migrations](STORAGE_AND_MIGRATIONS.md)。
+历史 Database Schema 5 -> 6、6 -> 7、7 -> 8 与 8 -> 9 迁移保持显式和受测试；8 -> 9 引入 Finding Claim 投影与生命周期状态。Schema 9 -> 10 新增状态写入 attempt 与 uncertainty 账本，使用经过验证的备份和事务迁移。当前数据库版本为 11。回滚必须保留当前 uncertainty 账本、控制未完成的远端写入，并恢复与目标 Release 匹配的备份；不支持原地降级。详见 [Storage and migrations](STORAGE_AND_MIGRATIONS.md)。
 
 升级顺序：
 
