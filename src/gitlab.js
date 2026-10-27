@@ -67,7 +67,19 @@ listNotes(projectId,iid){return this.paginated(`/projects/${encodeProject(projec
 listDiscussions(projectId,iid){return this.paginated(`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions`);}
 async createNote(projectId,iid,body){return(await this.request('POST',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/notes`,{body:{body},expected:[201]})).data;}
 async updateNote(projectId,iid,noteId,body){return(await this.request('PUT',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/notes/${noteId}`,{body:{body}})).data;}
-async upsertSummary(projectId,iid,body){const marker='<!-- codex-review-service:summary -->',result=await this.listNotes(projectId,iid);if(!result.complete){const error=new Error('Could not exhaustively scan MR notes for summary marker');error.code='EGITLABPAGINATION';throw error;}const existing=result.items.find(note=>typeof note.body==='string'&&note.body.includes(marker)),rendered=`${body}\n\n${marker}`;return existing?this.updateNote(projectId,iid,existing.id,rendered):this.createNote(projectId,iid,rendered);}
+async upsertSummary(projectId,iid,body){
+  if(!this.statusAuthor)this.statusAuthor=(await this.request('GET','/user')).data;
+  const actorId=Number(this.statusAuthor?.id);
+  if(!Number.isSafeInteger(actorId)||actorId<=0||typeof this.statusAuthor?.username!=='string'||!this.statusAuthor.username){
+    throw Object.assign(new Error('Authenticated GitLab actor identity is unavailable; refusing summary publication.'),{code:'EGITLABAUTHOR'});
+  }
+  const marker='<!-- codex-review-service:summary -->',result=await this.listNotes(projectId,iid);
+  if(!result.complete)throw Object.assign(new Error('Could not exhaustively scan MR notes for summary marker'),{code:'EGITLABPAGINATION'});
+  const own=result.items.filter(note=>typeof note.body==='string'&&note.body.includes(marker)&&Number(note.author?.id)===actorId);
+  if(own.length>1)throw Object.assign(new Error('Multiple actor-owned summary notes require reconciliation.'),{code:'EGITLABAMBIGUOUS'});
+  const rendered=`${body}\n\n${marker}`;
+  return own.length?this.updateNote(projectId,iid,own[0].id,rendered):this.createNote(projectId,iid,rendered);
+}
 async findDiscussionByFingerprint(projectId,iid,fingerprint,diffRefs=null){const result=await this.listDiscussions(projectId,iid);if(!result.complete){const error=new Error('Could not exhaustively scan MR discussions');error.code='EGITLABPAGINATION';throw error;}return selectDiscussionByFingerprint(result.items,fingerprint,diffRefs);}
 async createDiscussion(projectId,iid,finding,diffRefs,oldPath,newPath,{beforeSend}={}){const position={position_type:'text',base_sha:diffRefs.base_sha,start_sha:diffRefs.start_sha,head_sha:diffRefs.head_sha,old_path:oldPath||newPath,new_path:newPath||oldPath};if(finding.side==='old')position.old_line=finding.line;else position.new_line=finding.line;return(await this.request('POST',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions`,{body:{body:findingBody(finding),position},expected:[201],beforeSend})).data;}
 updateFindingNote(projectId,iid,noteId,finding){return this.updateNote(projectId,iid,noteId,findingBody(finding));}
