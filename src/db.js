@@ -117,7 +117,29 @@ class Store{
   cancelMergeRequest(projectId,mrIid,status='cancelled'){return this.db.prepare("UPDATE review_jobs SET status=?,finished_at=? WHERE project_id=? AND mr_iid=? AND status IN ('queued','running')").run(status,new Date().toISOString(),projectId,mrIid).changes;}
   enqueuePublication({runId=null,projectId,mrIid,type,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare(`INSERT INTO publication_outbox(run_id,project_id,mr_iid,action_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,'pending',?,?)`).run(runId,projectId,mrIid,type,dedupeKey,json(publicationPayload(type,payload)),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
   enqueueNotification({runId=null,routeName,provider,secretRef,eventType,dedupeKey,payload,delayMs=0}){const now=new Date().toISOString();try{const result=this.db.prepare("INSERT INTO notification_outbox(run_id,project_id,mr_iid,route_name,provider,secret_ref,event_type,dedupe_key,payload_json,status,available_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)").run(runId,payload?.projectId||0,payload?.mrIid||0,routeName,provider,secretRef,eventType,dedupeKey,json(payload),isoAfter(delayMs),now);return Number(result.lastInsertRowid);}catch(error){if(String(error.message).includes('UNIQUE constraint failed'))return null;throw error;}}
-  saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null,notificationActions=[]){return this.withTransaction(()=>{
+  saveRunWithOutbox(jobId,review,durationMs,policy,actions,receiptProjection=null,notificationActions=[],expectedSnapshot=null){return this.withTransaction(()=>{
+    if(expectedSnapshot){
+      // This check and every outbox insert share one SQLite write transaction.
+      // A cancelled/retargeted job cannot publish a stale positive generation
+      // even if its final remote MR GET raced with local cancellation.
+      const actual=this.db.prepare('SELECT project_id,mr_iid,status,head_sha,start_sha,base_sha,source_branch,target_branch,status_project_id FROM review_jobs WHERE id=?').get(jobId);
+      const expected={
+        project_id:Number(expectedSnapshot.targetProjectId),
+        mr_iid:Number(expectedSnapshot.iid),
+        head_sha:String(expectedSnapshot.headSha||''),
+        start_sha:String(expectedSnapshot.startSha||''),
+        base_sha:String(expectedSnapshot.baseSha||''),
+        source_branch:String(expectedSnapshot.sourceBranch||''),
+        target_branch:String(expectedSnapshot.targetBranch||''),
+        status_project_id:Number(expectedSnapshot.sourceProjectId)
+      };
+      const complete=Number.isSafeInteger(expected.project_id)&&expected.project_id>0&&
+        Number.isSafeInteger(expected.mr_iid)&&expected.mr_iid>0&&
+        Number.isSafeInteger(expected.status_project_id)&&expected.status_project_id>0&&
+        ['head_sha','start_sha','base_sha','source_branch','target_branch'].every(key=>Boolean(expected[key]));
+      if(!complete||actual?.status!=='running'||Object.entries(expected).some(([key,value])=>actual[key]!==value))
+        throw Object.assign(new Error('Review generation changed or was cancelled before publication commit.'),{code:'ESUPERSEDED'});
+    }
     const usage=review.usage||{},now=new Date().toISOString();
     const run=this.db.prepare(`INSERT INTO review_runs(job_id,verdict,summary,coverage_complete,finding_count,codex_version,codex_model,duration_ms,created_at,policy_source,policy_fingerprint,chunk_count,rejected_finding_count,truncated_finding_count,input_tokens,cached_input_tokens,cache_write_input_tokens,output_tokens,reasoning_output_tokens,receipt_json,receipt_fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(jobId,review.verdict,review.summary,review.coverageComplete?1:0,review.findings.length,review.codexVersion||null,review.codexModel||'',durationMs,now,policy.source,policy.fingerprint,review.chunkCount||0,review.rejectedFindingCount||0,review.truncatedFindingCount||0,usage.inputTokens||0,usage.cachedInputTokens||0,usage.cacheWriteInputTokens||0,usage.outputTokens||0,usage.reasoningOutputTokens||0,receiptProjection?json(receiptProjection.receipt):'',receiptProjection?.fingerprint||'');
     const runId=Number(run.lastInsertRowid),insertFinding=this.db.prepare(`INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence,side,anchor_hash,root_cause_key,claim_class,claim_state,anchor_fingerprint,claim_fingerprint,content_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
