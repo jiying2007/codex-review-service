@@ -19,6 +19,11 @@ function assessLiveMergeRequest(local,remote,{observedAt=new Date().toISOString(
   if(remote.state!=='opened'||remote.draft===true||remote.work_in_progress===true)reasons.add('mr_not_mergeable_state');
   if(typeof remote.source_branch!=='string'||remote.source_branch!==source?.ref)reasons.add('source_branch_mismatch');
   if(typeof remote.target_branch!=='string'||!remote.target_branch)reasons.add('target_branch_unavailable');
+  // This generation of local review_jobs stores the source branch but not the
+  // reviewed target branch. Never treat a merely nonempty remote target as
+  // evidence that the original merge target was unchanged.
+  if(typeof source?.targetBranch!=='string'||!source.targetBranch)reasons.add('target_branch_unbound');
+  else if(remote.target_branch!==source.targetBranch)reasons.add('target_branch_mismatch');
   if(!refs||typeof refs!=='object')reasons.add('current_diff_refs_missing');
   else{
    if(!SHA.test(String(refs.head_sha||''))||refs.head_sha!==source?.headSha)reasons.add('head_sha_changed');
