@@ -2,6 +2,8 @@
 
 ## 7.6.2 - 2026-10-25
 
+- Persist original GitLab target branch in Database Schema 11 for new review generations, with a verified transactional Schema 10 -> 11 backup migration. Preserve historical empty target identity and block unbound/mismatched remote targets; the read-only witness never authorizes merge.
+
 - Synchronize operational documents through the direct product-document generator so automated exact Core repins update the complete Service documentation before the drift check.
 - Add read-only `admin publication-evidence PROJECT_ID MR_IID` with one consistent SQLite snapshot of latest review/receipt/publication/attempt identity and shared/global uncertainty. Bound diagnostic output and explicit non-authorizing exit statuses preserve the server-side ref-transaction boundary; no credentials, remote calls, migration or uncertainty reset is involved.
 - Include current external analyzer findings in the final blocking decision before output truncation; required analyzer failures cannot produce a passing review. Optional context failures retain acquired required evidence.
