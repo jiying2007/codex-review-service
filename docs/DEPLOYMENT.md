@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 10/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 11/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
 
 ## Start and health
 
@@ -175,7 +175,7 @@ npm run admin -- drain 120
 
 From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Current Service 7.6.2 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Historically, Service 7.5.5 introduced Config Schema 7 -> 8 and retired `codex.model`/`codex.fastModel`; Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced Config Schema 5 -> 6 responsibility identity, and Service 7.0.0 introduced Config Schema 4 -> 5 and retired `review.incrementalReviewEnabled`. Runtime translates none of these historical configuration versions.
 
-Historical Database Schema 5 -> 6, 6 -> 7, 7 -> 8 and 8 -> 9 migrations remain explicit and tested; 8 -> 9 introduced Finding Claim projection and lifecycle state. Schema 9 -> 10 adds the status-write attempt and uncertainty ledger with verified backups and transactional migration. The current database version is 10. Rollback must preserve the current uncertainty ledger, control outstanding remote writes and restore a backup matching the target release; in-place downgrade is unsupported. See [Storage and migrations](STORAGE_AND_MIGRATIONS.md).
+Historical Database Schema 5 -> 6, 6 -> 7, 7 -> 8 and 8 -> 9 migrations remain explicit and tested; 8 -> 9 introduced Finding Claim projection and lifecycle state. Schema 9 -> 10 adds the status-write attempt and uncertainty ledger with verified backups and transactional migration. The current database version is 11. Rollback must preserve the current uncertainty ledger, control outstanding remote writes and restore a backup matching the target release; in-place downgrade is unsupported. See [Storage and migrations](STORAGE_AND_MIGRATIONS.md).
 
 Upgrade sequence:
 
