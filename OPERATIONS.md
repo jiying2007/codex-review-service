@@ -179,11 +179,11 @@ Every command result explicitly reports `mergeAuthorized: false` and `refTransac
 
 #### Optional live GitLab ref observation (still not merge authority)
 
-`npm run admin -- publication-evidence-live PROJECT_ID MR_IID` begins with the same read-only local SQLite evidence, and only when the local snapshot reports `evidence_complete_unbound` does it use the configured GitLab API token for a single **GET** of the current merge request. It compares MR/project, source branch and head/start/base SHA identities. Missing fields, changed refs, a closed or draft MR, or a different configured API origin return `blocked` or a fixed error code. **The current Schema 10 `review_jobs` record does not persist the originally reviewed target branch.** The probe therefore emits `target_branch_unbound` and remains `blocked` even if the live target is nonempty and all observed SHAs match. This is deliberate: target-branch binding requires a durable schema/pipeline upgrade, not an assumed value from the latest GET. The tool never writes a GitLab status, resolves a discussion, or merges a ref; it returns only a minimal identity observation without tokens or finding bodies.
+`npm run admin -- publication-evidence-live PROJECT_ID MR_IID` begins with the same read-only local SQLite evidence, and only when the local snapshot reports `evidence_complete_unbound` does it use the configured GitLab API token for a single **GET** of the current merge request. It compares MR/project, source branch and head/start/base SHA identities. Missing fields, changed refs, a closed or draft MR, or a different configured API origin return `blocked` or a fixed error code. **Schema 11 persists `review_jobs.target_branch` for newly hydrated reviews. Historical Schema 10 records migrated to 11 retain an empty target branch and remain `target_branch_unbound` / blocked until a fresh review creates a new complete generation.** The probe never backfills old evidence from the latest GET. The tool never writes a GitLab status, resolves a discussion, or merges a ref; it returns only a minimal identity observation without tokens or finding bodies.
 
 Exit code 2 means blocked and 3 means `observed_current_unbound`. Both still carry `mergeAuthorized: false` and `refTransactionBound: false`. No result is an approval, lease, lock, or atomic observation at the final Git ref update. Never use exit 3 as a passing protected-branch required check: authoritative server-side merge fencing is still tracked separately.
 
-Before rollback from Schema 10, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 9 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 10, and an in-place schema downgrade is unsupported.
+Before rollback from Schema 11, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 10 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 11, and an in-place schema downgrade is unsupported.
 
 ## Fatal runtime behavior
 
@@ -239,7 +239,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 10 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 11 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
