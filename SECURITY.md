@@ -4,7 +4,7 @@
 
 Codex Review Service **7.6.2** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 10, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `190651770a444b0693d82228afc66879dd57b0c0`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 11, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `190651770a444b0693d82228afc66879dd57b0c0`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -64,7 +64,7 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 ## Storage, backup, migration and rollback
 
-The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 10.
+The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 11.
 
 The historical **Schema 5 -> 6**, **Schema 6 -> 7**, and **Schema 7 -> 8** database migrations remain explicit and tested. **Schema 8 -> 9** adds Finding Claim projection and immutable lifecycle state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. **Schema 9 -> 10** adds durable status-write attempts and target uncertainty under the same verified additive migration process; unknown outcomes survive restart, retention and backup, and rollback must preserve their ledger and control outstanding remote writes. Config Schema 6 -> 7 is the historical Provider Contract hard cut; Config Schema 7 -> 8 is the Model Routing Contract v1 hard cut that retires `codex.model`/`codex.fastModel`. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
@@ -96,7 +96,7 @@ Required analyzer artifacts are mandatory current evidence. Their acquisition/pa
 
 Commit-status writes are bound to a durable review job generation and exact source SHA, start SHA, ref, source project and pipeline. Requests for the same source project, SHA, ref and status name share a local publication order even when their pipeline IDs differ or are implicit. The generation is checked again after throttling and before GitLab's 409 retry.
 
-Database Schema 10 adds durable per-transport status intents and per-target uncertainty. Each actual send has a separate attempt record, including `409` retries; acknowledged or definitely rejected attempts cannot erase an earlier unknown result. Interrupted intents recover as unknown. A newer generation remains `uncertain` while its shared status domain contains an unknown attempt, even if a current read matches. Unknown records and the latest desired verdict survive retention, restart and backup. Missing legacy jobs remain explicit orphan uncertainty without an invented generation; incomplete legacy targets conservatively retain unknown scope.
+Database Schema 11 adds durable per-transport status intents and per-target uncertainty. Each actual send has a separate attempt record, including `409` retries; acknowledged or definitely rejected attempts cannot erase an earlier unknown result. Interrupted intents recover as unknown. A newer generation remains `uncertain` while its shared status domain contains an unknown attempt, even if a current read matches. Unknown records and the latest desired verdict survive retention, restart and backup. Missing legacy jobs remain explicit orphan uncertainty without an invented generation; incomplete legacy targets conservatively retain unknown scope.
 
 The publisher's bounded reconciliation checks exact project/SHA/ref/name/pipeline and bot identity, records remote-ID correspondence, and repairs only a clear latest-target mismatch after checking generation and snapshot again. Matching observations never authorize repeated POSTs or clear unknown attempts. Older GitLab releases and insufficient target identity use a conservative fallback that retains uncertainty without automatic repair; ordinary GitLab 14.6.1 operations remain supported.
 
