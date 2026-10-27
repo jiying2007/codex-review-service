@@ -177,6 +177,12 @@ Started and uncertain attempts are checked across implicit/explicit pipeline ali
 
 Every command result explicitly reports `mergeAuthorized: false` and `refTransactionBound: false`. The command deliberately has no successful approval exit status. Do not install it directly as an allowing `pre-receive` hook, required-CI success proxy or merge permission check. It supplies the deny-side evidence inspection for an operator/future trusted adapter; the server-side serialization/conditional-consumption protocol described above remains unimplemented. An error or exit `3` must never release an existing independent merge hold.
 
+#### Optional live GitLab ref observation (still not merge authority)
+
+`npm run admin -- publication-evidence-live PROJECT_ID MR_IID` begins with the same read-only local SQLite evidence, and only when the local snapshot reports `evidence_complete_unbound` does it use the configured GitLab API token for a single **GET** of the current merge request. It compares MR/project, source branch and head/start/base SHA identities. Missing fields, changed refs, a closed or draft MR, or a different configured API origin return `blocked` or a fixed error code. The tool never writes a GitLab status, resolves a discussion, or merges a ref; it returns only a minimal identity observation without tokens or finding bodies.
+
+Exit code 2 means blocked and 3 means `observed_current_unbound`. Both still carry `mergeAuthorized: false` and `refTransactionBound: false`. No result is an approval, lease, lock, or atomic observation at the final Git ref update. Never use exit 3 as a passing protected-branch required check: authoritative server-side merge fencing is still tracked separately.
+
 Before rollback from Schema 10, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 9 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 10, and an in-place schema downgrade is unsupported.
 
 ## Fatal runtime behavior
@@ -190,6 +196,7 @@ npm run admin -- status
 npm run admin -- jobs [limit]
 npm run admin -- publications [limit]
 npm run admin -- publication-evidence PROJECT_ID MR_IID
+npm run admin -- publication-evidence-live PROJECT_ID MR_IID
 npm run admin -- notifications [limit]
 npm run admin -- retry-publication <id>
 npm run admin -- retry-notification <id>
