@@ -28,7 +28,7 @@ class Publisher{
         ||typeof p.targetBranch!=='string'||!p.targetBranch||p.targetBranch.length>1024
         ||!Number.isSafeInteger(p.sourceProjectId)||p.sourceProjectId<=0
         ||!Number.isSafeInteger(p.targetProjectId)||p.targetProjectId<=0)return false;
-    }else if(!p.headSha||!p.startSha)return true; // Pre-Schema-11 persisted actions retain legacy semantics.
+    }else if(!p.headSha||!p.startSha)return false; // Missing legacy SHA identity cannot authorize a positive remote publication.
     const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid);
     const head=String(mr?.diff_refs?.head_sha||mr?.sha||''),start=String(mr?.diff_refs?.start_sha||'');
     if(mr?.state!=='opened'||!head||!start||head!==String(p.headSha)||start!==String(p.startSha))return false;

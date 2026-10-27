@@ -90,3 +90,12 @@ test('invalid outbox payload shape is rejected without contacting GitLab',async(
   assert.equal(f.reads(),0);
  }
 });
+
+test('legacy action without complete head and start SHAs cannot bypass MR verification',async()=>{
+ for(const payload of [{},{headSha:shaA},{startSha:shaB},{headSha:'',startSha:''}]){
+  const f=fixture();
+  f.item.payload=payload;
+  assert.equal(await f.publisher.currentSnapshot(f.item),false);
+  assert.equal(f.reads(),0,'identity-incomplete payload must not call GitLab');
+ }
+});
