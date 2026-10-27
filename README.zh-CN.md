@@ -11,7 +11,7 @@
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
 - Service：**7.6.2**
-- Database Schema：**10**
+- Database Schema：**11**
 - Config Schema：**8**
 - Policy Schema：**4**
 - Review Receipt：**5**
