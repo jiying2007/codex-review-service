@@ -43,18 +43,18 @@ class ReviewService{
     const manual=event.kind==='note';
     const dedupeKey=`${manual?'command':'event'}:${webhookId}`;
     const jobId=this.store.enqueue({projectId:event.projectId,mrIid:event.iid,baseSha:event.baseSha||'',startSha:event.startSha||'',headSha:event.headSha||'',sourceBranch:event.sourceBranch||'',trigger:manual?'command':event.action,dedupeKey,requestedByUserId:manual?event.userId:null,requestWebhookId:webhookId,maxQueueDepth:this.config.maxQueueDepth,delayMs:manual?0:this.config.reviewDebounceMs,traceId:this.traceId(String(webhookId))});
-    const active=this.active.get(this.key(event.projectId,event.iid)),changed=active&&((event.headSha&&active.headSha&&event.headSha!==active.headSha)||(event.startSha&&active.startSha&&event.startSha!==active.startSha));
+    const active=this.active.get(this.key(event.projectId,event.iid)),changed=active&&((event.headSha&&active.headSha&&event.headSha!==active.headSha)||(event.startSha&&active.startSha&&event.startSha!==active.startSha)||(event.targetBranch&&active.targetBranch&&event.targetBranch!==active.targetBranch));
     if(changed)active.controller.abort(abortError('ESUPERSEDED','A newer merge request snapshot arrived'));
     return{status:jobId?'queued':'duplicate',jobId};
   }
   enqueueHydratedMr(projectId,mr,trigger='reconcile'){
     if(isDraft(mr)&&!this.config.reviewDraftMergeRequests)return null;
     if(!assignmentMatch(currentAssignments(mr,mr),this.config.triggerAssignment))return null;
-    const headSha=String(mr.diff_refs?.head_sha||mr.sha||'').trim(),startSha=String(mr.diff_refs?.start_sha||'').trim();
+    const headSha=String(mr.diff_refs?.head_sha||mr.sha||'').trim(),startSha=String(mr.diff_refs?.start_sha||'').trim(),targetBranch=String(mr.target_branch||'');
     if(!headSha||!startSha)return null;
-    const jobId=this.store.enqueue({projectId,mrIid:Number(mr.iid),baseSha:String(mr.diff_refs?.base_sha||''),startSha,headSha,sourceBranch:String(mr.source_branch||''),trigger,dedupeKey:`reconcile:${startSha}:${headSha}`,maxQueueDepth:this.config.maxQueueDepth,delayMs:this.config.reviewDebounceMs,traceId:this.traceId(`${projectId}:${mr.iid}:${startSha}:${headSha}`)});
+    const jobId=this.store.enqueue({projectId,mrIid:Number(mr.iid),baseSha:String(mr.diff_refs?.base_sha||''),startSha,headSha,sourceBranch:String(mr.source_branch||''),trigger,dedupeKey:`reconcile:${startSha}:${headSha}:${crypto.createHash('sha256').update(targetBranch).digest('hex').slice(0,16)}`,maxQueueDepth:this.config.maxQueueDepth,delayMs:this.config.reviewDebounceMs,traceId:this.traceId(`${projectId}:${mr.iid}:${startSha}:${headSha}:${targetBranch}`)});
     const active=this.active.get(this.key(projectId,Number(mr.iid)));
-    if(active&&((active.headSha&&active.headSha!==headSha)||(active.startSha&&active.startSha!==startSha)))active.controller.abort(abortError('ESUPERSEDED','Reconciliation found a newer merge request snapshot'));
+    if(active&&((active.headSha&&active.headSha!==headSha)||(active.startSha&&active.startSha!==startSha)||(active.targetBranch&&targetBranch&&active.targetBranch!==targetBranch)))active.controller.abort(abortError('ESUPERSEDED','Reconciliation found a newer merge request snapshot'));
     return jobId;
   }
   async reconcile(){if(!this.config.gitlabProjectAllowlist||this.stopping)return{projects:0,enqueued:0};let enqueued=0;for(const projectId of this.config.gitlabProjectAllowlist){try{const result=await this.gitlab.listOpenMergeRequests(projectId);if(!result.complete)this.logger.warn?.({event:'reconcile_incomplete',projectId});for(const mr of result.items)if(this.enqueueHydratedMr(projectId,mr))enqueued++;}catch(error){this.logger.warn?.({event:'reconcile_failed',projectId,code:error.code||'EUNKNOWN',status:error.status||null});}}return{projects:this.config.gitlabProjectAllowlist.size,enqueued};}
@@ -72,7 +72,7 @@ class ReviewService{
     const statusJob={...job,head_sha:headSha,source_branch:sourceBranch},statusEvent=eventForReviewStarted(statusJob,mr),statusActions=planStatusCardActions(this.config,statusEvent,job.id);
     if(statusActions.length)this.store.enqueueReviewStatusCards(job.id,statusActions);
     const active=this.active.get(this.key(job.project_id,job.mr_iid));
-    if(active){active.headSha=headSha;active.startSha=startSha;active.statusProjectId=statusProjectId;active.pipelineId=pipelineId;active.sourceBranch=sourceBranch;}
+    if(active){active.headSha=headSha;active.startSha=startSha;active.statusProjectId=statusProjectId;active.pipelineId=pipelineId;active.sourceBranch=sourceBranch;active.targetBranch=targetBranch;}
     return{mr,terminal:null,statusProjectId,pipelineId};
   }
   checkProjectBudget(projectId){if(!this.config.projectDailyTokenBudget)return;const used=this.store.tokenUsageSince(projectId,utcDayStart()),reserved=this.tokenLedger.reservedForProject(projectId);if(used+reserved>=this.config.projectDailyTokenBudget){const error=new Error('Project daily Codex token budget exhausted');error.code='ETOKENBUDGET';throw error;}}
