@@ -82,7 +82,8 @@
     "release:check": "node scripts/release.js check",
     "release:push": "node scripts/release.js push",
     "docs:generate": "node scripts/generate-contract-docs.js",
-    "docs:verify": "npm run docs:generate && node scripts/sync-operational-docs.js --check"
+    "docs:verify": "npm run docs:generate && node scripts/sync-operational-docs.js --check",
+    "test:offline-safety": "node --test test/db-migrations.test.js test/db.test.js test/live-ref-observation.test.js test/publication-target-identity.test.js test/publication-evidence.test.js test/publication.test.js test/service.test.js test/webhook.test.js"
   },
   "repository": {
     "type": "git",
