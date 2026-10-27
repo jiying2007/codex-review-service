@@ -99,3 +99,24 @@ test('legacy action without complete head and start SHAs cannot bypass MR verifi
   assert.equal(f.reads(),0,'identity-incomplete payload must not call GitLab');
  }
 });
+
+test('discussion resolution rechecks MR after fetching the discussion and rejects a retarget',async()=>{
+ const changed={...base};
+ let reads=0,writes=0;
+ const finding={claimState:'known',claimFingerprint:'c'.repeat(64),fingerprint:'d'.repeat(64)};
+ const client={
+  getMergeRequest:async()=>{reads++;return {...changed};},
+  getDiscussion:async()=>{
+   changed.target_branch='release';
+   return {id:'discussion',notes:[{id:11,resolvable:true,resolved:false,
+      author:{username:'bot'},body:'<!-- codex-review-service:finding:'+finding.fingerprint+' -->'}]};
+  },
+  setDiscussionResolved:async()=>{writes++;}
+ };
+ const publisher=new Publisher({config:{reviewDraftMergeRequests:false,botUsername:'bot'},store:{},gitlab:client,logger:{}});
+ const result=await publisher.resolveDiscussion({project_id:7,mr_iid:9,payload:{...frozen,discussionId:'discussion',finding}});
+ assert.equal(result.cancelled,true);
+ assert.equal(result.reason,'stale_snapshot');
+ assert.equal(reads,2);
+ assert.equal(writes,0,'retargeted MR must not have its discussion resolved');
+});
