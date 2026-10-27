@@ -8,3 +8,11 @@ test('target branch update without oldrev requires a fresh review',()=>{
  assert.equal(current.shouldReview,true);
  assert.equal(normalizeEvent(base,{},c).shouldReview,false);
 });
+
+test('source branch change without oldrev is a review-triggering identity update',()=>{
+ const c=config({triggerOnPush:false}),event={object_kind:'merge_request',project:{id:7},object_attributes:{iid:9,action:'update',source_branch:'branch-b',target_branch:'main'}};
+ const normalized=normalizeEvent({...event,changes:{source_branch:{previous:'branch-a',current:'branch-b'}}},{},c);
+ assert.equal(normalized.shouldReview,true);
+ assert.equal(normalized.sourceUpdate,true);
+ assert.equal(normalized.sourceBranch,'branch-b');
+});
