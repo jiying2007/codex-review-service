@@ -4,7 +4,7 @@
 
 Codex Review Service **7.6.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 10
+- Database Schema 11
 - Config Schema 8
 - Model Routing Contract 1
 - Policy Schema 4
@@ -16,7 +16,7 @@ Codex Review Service **7.6.2** is the current production-operations baseline. Ma
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 10, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 11, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
