@@ -177,6 +177,12 @@ Started and uncertain attempts are checked across implicit/explicit pipeline ali
 
 Every command result explicitly reports `mergeAuthorized: false` and `refTransactionBound: false`. The command deliberately has no successful approval exit status. Do not install it directly as an allowing `pre-receive` hook, required-CI success proxy or merge permission check. It supplies the deny-side evidence inspection for an operator/future trusted adapter; the server-side serialization/conditional-consumption protocol described above remains unimplemented. An error or exit `3` must never release an existing independent merge hold.
 
+### Local credential-free safety regression when GitHub Actions cannot start
+
+From an existing clone with the exact-pinned Safe Core submodule already present, use Node 22.22.2 or 24.19.0 and run `npm run test:offline-safety`. This runs the database migration, publication ownership, retarget identity, review queue and webhook regression tests using Node's built-in test runner and temporary SQLite fixtures. It **does not** launch Codex, invoke a paid model, dispatch GitHub Actions, or require live GitLab credentials. It does not modify the live database.
+
+Treat this as a diagnostic fallback only: it cannot prove the full CI Gate, CodeQL SARIF, cross-platform runner matrix, GitLab provider E2E, release receipts or independent review. Never use it as a replacement required check. Restore actual GitHub Actions execution and re-verify the exact candidate SHA before publication.
+
 #### Optional live GitLab ref observation (still not merge authority)
 
 `npm run admin -- publication-evidence-live PROJECT_ID MR_IID` begins with the same read-only local SQLite evidence, and only when the local snapshot reports `evidence_complete_unbound` does it use the configured GitLab API token for a single **GET** of the current merge request. It compares MR/project, source branch and head/start/base SHA identities. Missing fields, changed refs, a closed or draft MR, or a different configured API origin return `blocked` or a fixed error code. **Schema 11 persists `review_jobs.target_branch` for newly hydrated reviews. Historical Schema 10 records migrated to 11 retain an empty target branch and remain `target_branch_unbound` / blocked until a fresh review creates a new complete generation.** The probe never backfills old evidence from the latest GET. The tool never writes a GitLab status, resolves a discussion, or merges a ref; it returns only a minimal identity observation without tokens or finding bodies.
