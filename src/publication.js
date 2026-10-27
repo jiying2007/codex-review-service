@@ -13,7 +13,27 @@ function findingReconciliationKey(item,botUsername){const p=item.payload||{},f=p
 class Publisher{
   constructor({config,store,gitlab,logger=console}){this.config=config;this.store=store;this.gitlab=gitlab;this.logger=logger;this.stopping=false;this.workers=[];this.discussionScans=new Map();this.findingPublications=new Map();this.statusPublications=new Map();}
   projectAllowed(item){return !this.config.gitlabProjectAllowlist||this.config.gitlabProjectAllowlist.has(Number(item.project_id));}
-  async currentSnapshot(item){const p=item.payload||{};if(!p.headSha||!p.startSha)return true;const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid),head=String(mr.diff_refs?.head_sha||mr.sha||''),start=String(mr.diff_refs?.start_sha||'');return mr.state==='opened'&&head===String(p.headSha)&&start===String(p.startSha);}
+  async currentSnapshot(item){
+    const p=item.payload||{},strict=p.snapshotIdentityVersion===1;
+    // A newly emitted Schema-11 action is bound to the original review
+    // target. A HEAD-only check cannot detect GitLab MR retargets.
+    if(strict){
+      if(!p.headSha||!p.startSha||!p.baseSha||!p.sourceBranch||!p.targetBranch
+        ||!Number.isSafeInteger(Number(p.sourceProjectId))||Number(p.sourceProjectId)<=0
+        ||!Number.isSafeInteger(Number(p.targetProjectId))||Number(p.targetProjectId)<=0)return false;
+    }else if(!p.headSha||!p.startSha)return true; // Pre-Schema-11 persisted actions retain legacy semantics.
+    const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid);
+    const head=String(mr?.diff_refs?.head_sha||mr?.sha||''),start=String(mr?.diff_refs?.start_sha||'');
+    if(mr?.state!=='opened'||!head||!start||head!==String(p.headSha)||start!==String(p.startSha))return false;
+    if(!strict)return true;
+    const sourceId=Number(mr?.source_project_id||mr?.project_id||0),targetId=Number(mr?.target_project_id||mr?.project_id||0);
+    const remoteHead=String(mr?.sha||'');
+    return Number(mr?.iid)===Number(item.mr_iid)
+      &&sourceId===Number(p.sourceProjectId)&&targetId===Number(p.targetProjectId)
+      &&String(mr?.source_branch||'')===p.sourceBranch&&String(mr?.target_branch||'')===p.targetBranch
+      &&String(mr?.diff_refs?.base_sha||'')===p.baseSha&&(!remoteHead||remoteHead===head)
+      &&(this.config.reviewDraftMergeRequests||!(mr.draft===true||mr.work_in_progress===true));
+  }
   async publishSummary(item){if(!(await this.currentSnapshot(item)))return{cancelled:true};const result=await this.gitlab.upsertSummary(item.project_id,item.mr_iid,item.payload.body);return{remoteId:String(result?.id||'')};}
   async findExistingDiscussion(item,finding,diffRefs){const projection=this.store.claimProjection?.(item.project_id,item.mr_iid,finding.claimFingerprint);if(projection?.discussion_id&&typeof this.gitlab.getDiscussion==='function'){const direct=await this.gitlab.getDiscussion(item.project_id,item.mr_iid,projection.discussion_id),note=serviceFindingNote(direct,finding,this.config.botUsername);if(direct&&discussionResolved(direct)===false&&note&&positionMatches(note,diffRefs))return direct;}if(typeof this.gitlab.listDiscussions!=='function')return this.gitlab.findDiscussionByFingerprint(item.project_id,item.mr_iid,finding.fingerprint,diffRefs);const key=`${item.project_id}:${item.mr_iid}:${diffRefs?.head_sha||item.payload?.headSha||''}`;let scan=this.discussionScans.get(key);if(!scan){scan=this.gitlab.listDiscussions(item.project_id,item.mr_iid);this.discussionScans.set(key,scan);if(this.discussionScans.size>128)this.discussionScans.delete(this.discussionScans.keys().next().value);}let result;try{result=await scan;}catch(error){this.discussionScans.delete(key);throw error;}if(!result.complete){this.discussionScans.delete(key);const error=new Error('Could not exhaustively scan MR discussions');error.code='EGITLABPAGINATION';throw error;}return selectDiscussionByFingerprint(result.items,finding.fingerprint,diffRefs);}
   invalidateDiscussionScans(item) {
