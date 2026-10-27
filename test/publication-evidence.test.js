@@ -284,3 +284,16 @@ test('strict identifier parser and shared config/storage identity preserve runti
     assert.equal(publicationIdentity(structured.value.gitlab).statusName, runtime.statusName);
   }
 });
+
+test('new target-bound generations qualify while migrated unbound generations stay blocked', t => {
+ const e=fixture(t),item=e.complete();
+ const complete=e.read();
+ assert.equal(complete.decision,'evidence_complete_unbound');
+ assert.equal(complete.source.targetBranch,'main');
+ e.store.db.prepare("UPDATE review_jobs SET target_branch='' WHERE id=?").run(item.jobId);
+ const historical=e.read();
+ assert.equal(historical.decision,'blocked');
+ assert.ok(historical.reasons.includes('source_identity_incomplete'));
+ assert.equal(historical.mergeAuthorized,false);
+ assert.equal(historical.refTransactionBound,false);
+});
