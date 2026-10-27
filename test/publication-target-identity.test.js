@@ -46,3 +46,16 @@ test('historical unversioned publication remains explicitly outside the new targ
  assert.equal(await f.publisher.currentSnapshot(item),true);
  assert.equal(item.payload.snapshotIdentityVersion,undefined);
 });
+
+test('unsupported or partial versioned snapshot identity cannot fall into legacy path',async()=>{
+ for(const mutate of [
+  p=>{p.snapshotIdentityVersion=2;},
+  p=>{p.snapshotIdentityVersion='1';},
+  p=>{delete p.snapshotIdentityVersion;}
+ ]){
+  const f=fixture();
+  mutate(f.item.payload);
+  assert.equal(await f.publisher.currentSnapshot(f.item),false);
+  assert.equal(f.reads(),0);
+ }
+});
