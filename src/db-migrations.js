@@ -5,7 +5,7 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { STATUS_WRITE_SCHEMA } = require('./status-write-store');
 
-const CURRENT_SCHEMA_VERSION = 10;
+const CURRENT_SCHEMA_VERSION = 11;
 const FINDING_RESOLUTIONS = Object.freeze(['fixed','false_positive','accepted_risk','duplicate','obsolete','not_applicable','policy_exception']);
 
 function sqlString(value) { return `'${String(value).replace(/'/g, "''")}'`; }
@@ -221,7 +221,30 @@ function migrate9To10(db, dbPath, hooks = {}) {
   return Object.freeze({ from: 9, to: 10, backupPath });
 }
 
-const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8],[8, migrate8To9],[9, migrate9To10]]));
+function migrate10To11(db, dbPath, hooks = {}) {
+  integrityCheck(db, 'pre-migration');
+  const backupPath = createBackup(db, dbPath, 10);
+  hooks.afterBackup?.({ backupPath, from: 10, to: 11 });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // Never backfill an old MR's target from its current remote state:
+    // historical reviews did not attest to the original target branch.
+    db.exec("ALTER TABLE review_jobs ADD COLUMN target_branch TEXT NOT NULL DEFAULT ''");
+    hooks.afterDdl?.({ backupPath, from: 10, to: 11 });
+    db.prepare('INSERT OR REPLACE INTO schema_migrations(version,applied_at,backup_path) VALUES(?,?,?)')
+      .run(11, new Date().toISOString(), backupPath);
+    db.exec('PRAGMA user_version=11');
+    hooks.beforeCommit?.({ backupPath, from: 10, to: 11 });
+    db.exec('COMMIT');
+  } catch (cause) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw Object.assign(new Error(`SQLite schema migration 10 -> 11 failed; original database remains authoritative and backup is ${backupPath}`), { code: 'EDBMIGRATION', backupPath, cause });
+  }
+  integrityCheck(db, 'post-migration');
+  return Object.freeze({ from: 10, to: 11, backupPath });
+}
+
+const MIGRATIONS = Object.freeze(new Map([[5, migrate5To6],[6, migrate6To7],[7, migrate7To8],[8, migrate8To9],[9, migrate9To10],[10, migrate10To11]]));
 function migrationPlan(fromVersion, toVersion = CURRENT_SCHEMA_VERSION) {
   const plan = [];
   let current = Number(fromVersion);
@@ -263,5 +286,6 @@ module.exports = Object.freeze({
   migrate6To7,
   migrate7To8,
   migrate8To9,
-  migrate9To10
+  migrate9To10,
+  migrate10To11
 });
