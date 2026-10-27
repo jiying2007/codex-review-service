@@ -89,3 +89,25 @@ test('publication transaction rejects cancelled and retargeted generations witho
   assert.equal(store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
  });
 });
+
+test('Schema11 status send guard rejects changed local target, base or cancelled job',()=>withStore(store=>{
+ const refs={baseSha:'c'.repeat(40),startSha:'b'.repeat(40),headSha:'a'.repeat(40)};
+ const id=store.enqueue({projectId:7,mrIid:9,...refs,sourceBranch:'feature',trigger:'command',dedupeKey:'send-identity',maxQueueDepth:10});
+ assert.equal(store.claimNext().id,id);
+ store.bindJobSnapshot(id,{...refs,sourceBranch:'feature',targetBranch:'main',statusProjectId:7,pipelineId:42});
+ const p={snapshotIdentityVersion:1,jobId:id,sourceProjectId:7,targetProjectId:7,
+   sourceBranch:'feature',targetBranch:'main',baseSha:refs.baseSha,startSha:refs.startSha,
+   headSha:refs.headSha,ref:'feature',statusProjectId:7,pipelineId:42,state:'success'};
+ const item={project_id:7,mr_iid:9,payload:p};
+ assert.equal(store.isCurrentStatusPublication(item),true);
+ for(const patch of [{targetBranch:'release'},{baseSha:'d'.repeat(40)},
+  {sourceProjectId:8},{targetProjectId:8},{sourceBranch:'different'},{snapshotIdentityVersion:2}]){
+  assert.equal(store.isCurrentStatusPublication({...item,payload:{...p,...patch}}),false,JSON.stringify(patch));
+ }
+ assert.equal(store.isCurrentStatusPublication({...item,payload:{...p,startSha:''}}),false);
+ store.db.prepare("UPDATE review_jobs SET target_branch='release' WHERE id=?").run(id);
+ assert.equal(store.isCurrentStatusPublication(item),false,'original target no longer matches durable job');
+ store.db.prepare("UPDATE review_jobs SET target_branch='main' WHERE id=?").run(id);
+ store.cancelMergeRequest(7,9);
+ assert.equal(store.isCurrentStatusPublication(item),false,'cancelled generation cannot emit final success');
+}));

@@ -80,6 +80,19 @@ class Store{
   isCurrentStatusPublication(item){
     const p=item.payload||{},job=this.statusPublicationJob(item);
     if(!job||Number(job.project_id)!==Number(item.project_id)||Number(job.mr_iid)!==Number(item.mr_iid))return false;
+    const strict=p.snapshotIdentityVersion===1;
+    if(p.snapshotIdentityVersion!==undefined&&!strict)return false;
+    if(strict){
+      const numeric=(value)=>Number.isSafeInteger(value)&&value>0;
+      if(!numeric(p.sourceProjectId)||!numeric(p.targetProjectId)
+         ||Number(p.targetProjectId)!==Number(job.project_id)
+         ||Number(p.sourceProjectId)!==Number(job.status_project_id||job.project_id)
+         ||typeof p.targetBranch!=='string'||!p.targetBranch||p.targetBranch!==String(job.target_branch||'')
+         ||typeof p.sourceBranch!=='string'||!p.sourceBranch||p.sourceBranch!==String(job.source_branch||'')
+         ||typeof p.baseSha!=='string'||!p.baseSha||p.baseSha!==String(job.base_sha||'')
+         ||typeof p.startSha!=='string'||!p.startSha
+         ||['cancelled','superseded','unauthorized','duplicate','skipped'].includes(job.status))return false;
+    }else if(['baseSha','sourceProjectId','targetProjectId','sourceBranch','targetBranch'].some(key=>Object.hasOwn(p,key)))return false;
     if(String(job.head_sha)!==String(p.headSha)||String(job.source_branch||'')!==String(p.ref||''))return false;
     if(p.startSha!==undefined&&String(p.startSha)!==String(job.start_sha||''))return false;
     if(Number(job.status_project_id||job.project_id)!==Number(p.statusProjectId)||Number(job.pipeline_id||0)!==Number(p.pipelineId||0))return false;
