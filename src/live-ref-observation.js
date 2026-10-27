@@ -10,6 +10,7 @@ function assessLiveMergeRequest(local,remote,{observedAt=new Date().toISOString(
   observed:{projectId:null,mrIid:null,state:null,sourceBranch:null,targetBranch:null,headSha:null,startSha:null,baseSha:null}};
  if(local?.decision!=='evidence_complete_unbound')reasons.add('local_publication_not_complete');
  if(!source||!SHA.test(String(source.headSha||''))||!SHA.test(String(source.startSha||''))||!SHA.test(String(source.baseSha||''))||typeof source.ref!=='string'||!source.ref)reasons.add('local_source_identity_missing');
+ if(typeof source?.targetBranch!=='string'||!source.targetBranch)reasons.add('target_branch_unbound');
  if(!remote||typeof remote!=='object'||Array.isArray(remote))reasons.add('remote_merge_request_missing');
  else{
   const validId=value=>Number.isSafeInteger(value)&&value>0;
@@ -22,8 +23,7 @@ function assessLiveMergeRequest(local,remote,{observedAt=new Date().toISOString(
   // This generation of local review_jobs stores the source branch but not the
   // reviewed target branch. Never treat a merely nonempty remote target as
   // evidence that the original merge target was unchanged.
-  if(typeof source?.targetBranch!=='string'||!source.targetBranch)reasons.add('target_branch_unbound');
-  else if(remote.target_branch!==source.targetBranch)reasons.add('target_branch_mismatch');
+  if(typeof source?.targetBranch==='string'&&source.targetBranch&&remote.target_branch!==source.targetBranch)reasons.add('target_branch_mismatch');
   if(!refs||typeof refs!=='object')reasons.add('current_diff_refs_missing');
   else{
    if(!SHA.test(String(refs.head_sha||''))||refs.head_sha!==source?.headSha)reasons.add('head_sha_changed');
