@@ -19,9 +19,13 @@ class Publisher{
     // A newly emitted Schema-11 action is bound to the original review
     // target. A HEAD-only check cannot detect GitLab MR retargets.
     if(strict){
-      if(!p.headSha||!p.startSha||!p.baseSha||!p.sourceBranch||!p.targetBranch
-        ||!Number.isSafeInteger(Number(p.sourceProjectId))||Number(p.sourceProjectId)<=0
-        ||!Number.isSafeInteger(Number(p.targetProjectId))||Number(p.targetProjectId)<=0)return false;
+      const sha=/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+      if(![p.headSha,p.startSha,p.baseSha].every(value=>typeof value==='string'&&sha.test(value))
+        ||p.headSha.length!==p.startSha.length||p.headSha.length!==p.baseSha.length
+        ||typeof p.sourceBranch!=='string'||!p.sourceBranch||p.sourceBranch.length>1024
+        ||typeof p.targetBranch!=='string'||!p.targetBranch||p.targetBranch.length>1024
+        ||!Number.isSafeInteger(p.sourceProjectId)||p.sourceProjectId<=0
+        ||!Number.isSafeInteger(p.targetProjectId)||p.targetProjectId<=0)return false;
     }else if(!p.headSha||!p.startSha)return true; // Pre-Schema-11 persisted actions retain legacy semantics.
     const mr=await this.gitlab.getMergeRequest(item.project_id,item.mr_iid);
     const head=String(mr?.diff_refs?.head_sha||mr?.sha||''),start=String(mr?.diff_refs?.start_sha||'');
