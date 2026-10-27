@@ -59,5 +59,5 @@ test('admin live-ref diagnostic uses GET only and cannot issue a merge',async()=
  await assert.rejects(()=>publicationEvidenceLive(7,9,{inspect:()=>local,config:{...config,gitlabApiUrl:'https://foreign.invalid/api/v4'},clientFactory}),error=>error.code==='ECONFIGFILE');
  const blocked=await publicationEvidenceLive(7,9,{inspect:()=>({...local,decision:'blocked'}),config,clientFactory});
  assert.equal(blocked.decision,'blocked');
- assert.deepEqual(calls,[['GET',7,9']],'blocked local evidence must not trigger another remote query');
+ assert.deepEqual(calls,[['GET',7,9]],'blocked local evidence must not trigger another remote query');
 });
