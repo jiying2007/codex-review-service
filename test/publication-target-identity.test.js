@@ -59,3 +59,18 @@ test('unsupported or partial versioned snapshot identity cannot fall into legacy
   assert.equal(f.reads(),0);
  }
 });
+
+test('new actions reject malformed SHA widths and stringified project identifiers',async()=>{
+ const invalid=[
+  ['headSha','a'.repeat(39)],['startSha','b'.repeat(64)],
+  ['baseSha','not-a-sha'],['sourceProjectId','7'],['targetProjectId','7'],
+  ['sourceProjectId',0],['targetProjectId',NaN],['sourceBranch',0],
+  ['targetBranch',null],['targetBranch','a'.repeat(1025)]
+ ];
+ for(const [key,value] of invalid){
+  const f=fixture();
+  f.item.payload[key]=value;
+  assert.equal(await f.publisher.currentSnapshot(f.item),false,key);
+  assert.equal(f.reads(),0,key);
+ }
+});
