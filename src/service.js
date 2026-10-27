@@ -66,8 +66,8 @@ class ReviewService{
     const headSha=String(mr.diff_refs?.head_sha||mr.sha||'').trim(),startSha=String(mr.diff_refs?.start_sha||'').trim(),baseSha=String(mr.diff_refs?.base_sha||'').trim();
     if(!headSha||!startSha||!baseSha){const error=new Error('Merge request diff refs are not ready');error.code='EDIFFREFS';throw error;}
     let statusProjectId=Number(mr.source_project_id||job.project_id);if(!Number.isInteger(statusProjectId)||statusProjectId<=0)statusProjectId=job.project_id;
-    const sourceBranch=String(mr.source_branch||''),pipelineId=await this.gitlab.resolveStatusPipeline(statusProjectId,job.project_id,job.mr_iid,headSha,sourceBranch,mr);
-    const bound=this.store.bindJobSnapshot(job.id,{baseSha,startSha,headSha,sourceBranch,statusProjectId,pipelineId});
+    const sourceBranch=String(mr.source_branch||''),targetBranch=String(mr.target_branch||''),pipelineId=await this.gitlab.resolveStatusPipeline(statusProjectId,job.project_id,job.mr_iid,headSha,sourceBranch,mr);
+    const bound=this.store.bindJobSnapshot(job.id,{baseSha,startSha,headSha,sourceBranch,targetBranch,statusProjectId,pipelineId});
     if(bound.status==='duplicate'&&job.trigger==='reconcile')return{mr,terminal:'duplicate'};
     const statusJob={...job,head_sha:headSha,source_branch:sourceBranch},statusEvent=eventForReviewStarted(statusJob,mr),statusActions=planStatusCardActions(this.config,statusEvent,job.id);
     if(statusActions.length)this.store.enqueueReviewStatusCards(job.id,statusActions);
