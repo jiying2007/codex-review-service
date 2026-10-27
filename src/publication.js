@@ -15,7 +15,7 @@ class Publisher{
   projectAllowed(item){return !this.config.gitlabProjectAllowlist||this.config.gitlabProjectAllowlist.has(Number(item.project_id));}
   async currentSnapshot(item){
     const p=item.payload||{},strict=p.snapshotIdentityVersion===1;
-    if((p.snapshotIdentityVersion!==undefined&&p.snapshotIdentityVersion!==1)||(!strict&&'targetBranch' in p))return false;
+    if((p.snapshotIdentityVersion!==undefined&&p.snapshotIdentityVersion!==1)||(!strict&&['baseSha','targetBranch','sourceBranch','targetProjectId','sourceProjectId'].some(key=>Object.hasOwn(p,key))))return false;
     // A newly emitted Schema-11 action is bound to the original review
     // target. A HEAD-only check cannot detect GitLab MR retargets.
     if(strict){
