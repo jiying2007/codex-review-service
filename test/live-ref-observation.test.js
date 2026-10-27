@@ -5,7 +5,7 @@ const {publicationEvidenceLive}=require('../src/admin');
 const headSha='a'.repeat(40),startSha='b'.repeat(40),baseSha='c'.repeat(40);
 const api='https://gitlab.example.invalid/api/v4';
 const local={schemaVersion:1,decision:'evidence_complete_unbound',projectId:7,mrIid:9,
- source:{gitlabApiUrl:api,statusProjectId:7,ref:'feature',headSha,startSha,baseSha,statusName:'codex-review',pipelineId:42}};
+ source:{gitlabApiUrl:api,statusProjectId:7,ref:'feature',targetBranch:'main',headSha,startSha,baseSha,statusName:'codex-review',pipelineId:42}};
 const remote={iid:9,source_project_id:7,target_project_id:7,state:'opened',draft:false,
  source_branch:'feature',target_branch:'main',sha:headSha,
  diff_refs:{head_sha:headSha,start_sha:startSha,base_sha:baseSha}};
@@ -32,6 +32,7 @@ test('each changed ref or MR project fails closed',()=>{
   [{state:'merged'},'mr_not_mergeable_state'],
   [{draft:true},'mr_not_mergeable_state'],
   [{target_branch:''},'target_branch_unavailable'],
+  [{target_branch:'release'},'target_branch_mismatch'],
   [{diff_refs:null},'current_diff_refs_missing']]){
   const result=assessLiveMergeRequest(local,{...remote,...patch});
   assert.equal(result.decision,'blocked',reason);
@@ -47,6 +48,15 @@ test('local missing or uncertain status history cannot be promoted by a matching
  const malformed=assessLiveMergeRequest({...local,source:null},remote);
  assert.equal(malformed.decision,'blocked');
  assert.ok(malformed.reasons.includes('local_source_identity_missing'));
+});
+test('schema 10 local evidence missing target branch cannot be promoted by live GET',()=>{
+  const unbound={...local,source:{...local.source}};
+  delete unbound.source.targetBranch;
+  const result=assessLiveMergeRequest(unbound,remote);
+  assert.equal(result.decision,'blocked');
+  assert.ok(result.reasons.includes('target_branch_unbound'));
+  assert.equal(result.mergeAuthorized,false);
+  assert.equal(result.refTransactionBound,false);
 });
 test('admin live-ref diagnostic uses GET only and cannot issue a merge',async()=>{
  const calls=[],config={gitlabApiUrl:api,gitlabToken:'synthetic',statusName:'codex-review'};
