@@ -3,7 +3,11 @@
 Schema 6 establishes the production migration framework. Schema 5 upgrades run `integrity_check`, create a mode-0600 SQLite `VACUUM INTO` backup, execute one `BEGIN IMMEDIATE` migration, set `user_version=6`, commit, then run another integrity check. Failure rolls the live DB transaction back and reports the verified backup path. Unsupported historical versions fail closed.
 
 SQLite WAL + FULL remains the only shipped backend. `src/storage.js` is the explicit replacement boundary. HA is recommended only after governed thresholds (over 100 repositories, over 20 Codex workers, over 100k reviews/day, cross-AZ requirement, or zero single-node downtime requirement). PostgreSQL/Redis/Kafka are intentionally not bundled before those requirements exist.
-## Schema 10
+## Schema 11
+
+Schema 11 adds a durable `review_jobs.target_branch` binding for newly hydrated GitLab merge-request review generations. Migration 10 -> 11 uses an integrity-checked, mode-0600 verified Schema 10 backup and one transaction. Existing rows are **not** backfilled from a later GET: their target remains empty and publication evidence reports `source_identity_incomplete` until a new review generation binds the original target. Live MR target retargets cause `target_branch_mismatch`; this observation remains explicitly non-authorizing and does not replace a provider-side ref transaction fence.
+
+## Schema 10 (historical)
 
 Schema 10 adds `status_write_attempts` and `status_publication_targets`. Each network send records a durable intent before transport and later records acknowledgement, definite rejection or uncertainty. A target keeps its latest durable job/outbox identity, remote acknowledgement ID, last readback, next check and bounded repair count. No credentials are stored in these tables. Ordinary successful writes retain existing behavior; the status outbox adds `uncertain` for outcomes that cannot be safely called published.
 
