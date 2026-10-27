@@ -93,7 +93,7 @@ test('no-inference receipt exception is narrow and actual model evidence require
 test('new same-SHA review and new run cannot reuse a previous completed generation', t => {
   const f = fixture(t), first = f.complete();
   const newer = f.store.enqueue({ projectId: 7, mrIid: 9, trigger: 'command', dedupeKey: 'new-same-head', headSha, startSha });
-  f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', statusProjectId: 7, pipelineId: 123 });
+  f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', targetBranch: 'main', statusProjectId: 7, pipelineId: 123 });
   const result = f.read();
   assert.equal(result.generation.jobId, newer);
   assert.notEqual(result.generation.jobId, first.jobId);
@@ -124,7 +124,7 @@ test('a newer cross-MR shared-domain job blocks before a target has been registe
   const f = fixture(t);
   f.complete();
   const newer = f.store.enqueue({ projectId: 7, mrIid: 10, trigger: 'command', dedupeKey: 'shared-new', headSha, startSha });
-  f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', statusProjectId: 7, pipelineId: null });
+  f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', targetBranch: 'main', statusProjectId: 7, pipelineId: null });
   const result = f.read();
   assert.ok(result.reasons.includes('shared_status_generation_newer'));
   assert.equal(result.generation.latestSharedJobId, newer);
@@ -227,7 +227,7 @@ test('the readonly evidence snapshot stays coherent when a writer creates a newe
         if (!inserted) {
           inserted = true;
           newer = f.store.enqueue({ projectId: 7, mrIid: 9, trigger: 'command', dedupeKey: 'concurrent-generation', headSha, startSha });
-          f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', statusProjectId: 7, pipelineId: 123 });
+          f.store.bindJobSnapshot(newer, { baseSha, startSha, headSha, sourceBranch: 'feature', targetBranch: 'main', statusProjectId: 7, pipelineId: 123 });
         }
         return row;
       };
