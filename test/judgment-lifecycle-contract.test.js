@@ -22,6 +22,6 @@ test('Service 7 hard-cuts persistent judgment reuse from the product surface',()
 test('same-SHA webhook idempotency is delivery-scoped, not judgment-scoped',()=>{
   const service=fs.readFileSync(path.join(__dirname,'../src/service.js'),'utf8');
   assert.match(service,/dedupeKey=`\$\{manual\?'command':'event'\}:\$\{webhookId\}`/);
-  assert.match(service,/dedupeKey:`reconcile:\$\{startSha\}:\$\{headSha\}`/);
+  assert.match(service,/dedupeKey:`reconcile:\$\{startSha\}:\$\{headSha\}:\$\{crypto\.createHash\('sha256'\)\.update\(targetBranch\)/);
   assert.doesNotMatch(service,/dedupeKey:`snapshot:/);
 });
