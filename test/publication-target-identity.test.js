@@ -82,3 +82,11 @@ test('stripping protocol version and target branch cannot downgrade a new action
  assert.equal(await f.publisher.currentSnapshot(f.item),false);
  assert.equal(f.reads(),0);
 });
+
+test('invalid outbox payload shape is rejected without contacting GitLab',async()=>{
+ for(const value of [null,'text',42,[],true]){
+  const f=fixture();f.item.payload=value;
+  assert.equal(await f.publisher.currentSnapshot(f.item),false);
+  assert.equal(f.reads(),0);
+ }
+});
