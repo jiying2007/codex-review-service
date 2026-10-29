@@ -32,7 +32,7 @@ test('read-only multi preflight probes each project/group with the correct serve
   try{
     const mock=async(url,options)=>{
       calls.push({url:String(url),options});
-      return {ok:true,status:200,json:async()=>({version:'17.11.7'})};
+      return {ok:true,status:200,json:async()=>url.endsWith('/user')?{id:101}:{version:'17.11.7'}};
     };
     const r=await runPreflight({manifestFile:f.file,fetchImpl:mock});
     assert.equal(r.ok,true);
@@ -40,7 +40,9 @@ test('read-only multi preflight probes each project/group with the correct serve
     assert.equal(r.mode,'read-only');
     assert.deepEqual(r.results.map(x=>[x.id,x.checkedProjects,x.checkedGroups]),
       [['legacy',1,1],['sensor',1,0]]);
-    assert.equal(calls.length,5);
+    assert.equal(calls.length,7);
+    assert.equal(calls.filter(c=>c.url.endsWith('/api/v4/user')).length,2);
+    assert.ok(r.results.every(x=>x.authenticated===true));
     assert.equal(calls.filter(c=>c.url.includes('/projects/113')).length,2);
     assert.equal(calls.filter(c=>c.url.includes('/groups/48')).length,1);
     for(const call of calls){
@@ -56,7 +58,7 @@ test('one GitLab API permission failure does not conceal the other server state'
   const f=fixture();
   try{
     const mock=async(url)=>url.includes('192.168.2.50') && url.includes('/projects/113')?
-      {ok:false,status:403}:{ok:true,status:200,json:async()=>({version:'17.11.7'})};
+      {ok:false,status:403}:{ok:true,status:200,json:async()=>url.endsWith('/user')?{id:101}:{version:'17.11.7'}};
     const r=await runPreflight({manifestFile:f.file,fetchImpl:mock});
     assert.equal(r.ok,false);
     assert.equal(r.results[0].apiReadable,true);
@@ -67,9 +69,23 @@ test('one GitLab API permission failure does not conceal the other server state'
 test('unsupported old GitLab API fails closed before any webhook or model calls',async()=>{
   const f=fixture();
   try{
-    const mock=async()=>({ok:true,status:200,json:async()=>({version:'14.6.0'})});
+    const mock=async(url)=>({ok:true,status:200,json:async()=>url.endsWith('/user')?{id:101}:{version:'14.6.0'}});
     const r=await runPreflight({manifestFile:f.file,fetchImpl:mock});
     assert.equal(r.ok,false);
     assert.deepEqual(r.results.map(item=>item.code),['EGITLABVERSION','EGITLABVERSION']);
+  }finally{f.close();}
+});
+
+test('public GitLab project HTTP 200 cannot disguise missing token identity',async()=>{
+  const f=fixture(),calls=[];
+  try{
+    const mock=async(url)=>{
+      calls.push(url);
+      return{ok:true,status:200,json:async()=>url.endsWith('/user')?{}:{version:'17.11.7'}};
+    };
+    const result=await runPreflight({manifestFile:f.file,fetchImpl:mock});
+    assert.equal(result.ok,false);
+    assert.deepEqual(result.results.map(item=>item.code),['EGITLABAUTH','EGITLABAUTH']);
+    assert.ok(calls.every(url=>url.endsWith('/user')),'unverified PAT cannot use public project reads as proof');
   }finally{f.close();}
 });
