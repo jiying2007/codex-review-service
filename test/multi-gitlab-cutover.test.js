@@ -108,3 +108,16 @@ test('startup cutover checks use the same frozen manifest, not a second mutable 
     assert.deepEqual(result.results.map(x=>x.code),['EDBMISSING','EDBMISSING']);
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('cutover fails closed when Schema 11 status evidence tables were deleted',()=>{
+  for(const removed of ['status_write_attempts','status_publication_targets']){
+    const f=dbFixture();
+    try{
+      f.db.exec('DROP TABLE '+removed);
+      const result=inspectDatabase(f.file);
+      assert.equal(result.ok,false,removed);
+      assert.equal(result.code,'EDBTABLES',removed);
+      assert.equal(result.drained,false,removed);
+    }finally{f.close();}
+  }
+});
