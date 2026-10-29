@@ -137,3 +137,18 @@ test('cutover fails closed when Schema 11 status evidence tables were deleted',(
     assert.equal(inspectDatabase(f.file).code,'READY');
   }finally{f.close();}
 });
+
+(process.platform==='win32'?test.skip:test)('SQLite WAL/SHM/rollback sidecars cannot alias another GitLab database',()=>{
+  for(const suffix of ['-wal','-shm','-journal']){
+    const f=dbFixture();
+    try{
+      const sibling=path.join(f.dir,'foreign-state');
+      fs.writeFileSync(sibling,'foreign-private-data');
+      fs.symlinkSync(sibling,f.file+suffix);
+      assert.equal(inspectDatabase(f.file).code,'EDBSIDECAR',suffix+' symlink');
+      fs.unlinkSync(f.file+suffix);
+      fs.linkSync(sibling,f.file+suffix);
+      assert.equal(inspectDatabase(f.file).code,'EDBSIDECAR',suffix+' hardlink');
+    }finally{f.close();}
+  }
+});
