@@ -8,8 +8,9 @@ The private Service currently has no effective native GitHub branch protection; 
 
 - Development: genuine syntax and offline-unit logs signed by a trusted independent CI principal; reviewer signature optional.
 - Production: genuine syntax, offline-unit, security, migration, provider, and image suites **plus** an independent current-HEAD reviewer signature over the exact signed CI receipt. This is mandatory for auth, Webhook, SQLite, credential, release and production changes.
+- Native multi-GitLab production uses the stricter production-multi mode, additionally requiring the actual multi-offline suite. Unlike development, both production modes require the fixed root-owned trust file and separate reviewer signature.
 - Missing/failed/duplicate suites, altered or missing logs, expired evidence, wrong 40-hex SHA, untrusted keys, old approval, same author/reviewer or self-selected trust root fail closed.
-- The included no-model test collector can produce ONLY syntax, offline-unit and migration. It **does not** produce genuine security/CodeQL, GitLab provider integration or image/OCI proof. Those require actual independent tests on a separate trusted CI system, with raw logs and SHA binding. Never append fake entries to a receipt. **No current production candidate is qualified by this script alone.**
+- The included no-model test collector can produce ONLY syntax, offline-unit, migration and the multi-offline suite when #116 test files exist. It **does not** produce genuine security/CodeQL, GitLab provider integration or image/OCI proof. Those require actual independent tests on a separate trusted CI system, with raw logs and SHA binding. Never append fake entries to a receipt. **No current production candidate is qualified by this script alone.**
 
 The offline suite is not GitHub branch protection. A free private repository can still merge without a server-enforced Ruleset; the publisher must separately refuse an unauthorized commit/artifact. Existing Core six-repository Ruleset and trusted-release controls remain unchanged unless reviewed and approved in a separate Core governance proposal.
 
