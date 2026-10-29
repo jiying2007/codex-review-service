@@ -3,7 +3,7 @@
 const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
-const {signedMessage,digest}=require('./offline-evidence');
+const {signedMessage,digest,readRegularBytes,verifyEnvelope,validateCi,validateTrust}=require('./offline-evidence');
 function args(argv){const out={};for(let i=0;i<argv.length;i+=2){
  if(!argv[i]?.startsWith('--')||argv[i+1]===undefined||out[argv[i]])throw Error('Invalid signer flags');
  out[argv[i].slice(2)]=argv[i+1];
@@ -40,17 +40,29 @@ function signReview({ciFile,author,reviewer,sha,privateKeyFile,keyId}){
  return sign(payload,keyId,privateKeyFile);
 }
 function main(){const a=args(process.argv.slice(2));
- if(!path.isAbsolute(a.output||''))throw Error('Absolute output path required');
+ if(!path.isAbsolute(a.output||'')||!path.isAbsolute(a.trust||'')||!path.isAbsolute(a.logs||''))
+   throw Error('Absolute output, trust and log directory required');
+ if(!['development','production','production-multi'].includes(a.mode))throw Error('Explicit mode required');
+ const trust=validateTrust(JSON.parse(readRegularBytes(a.trust).toString('utf8')));
+ const identity=a.type==='ci'?'ci':a.type==='review'?'review':null;
+ if(!identity)throw Error('Must choose ci or review signer identity');
+ if(a['key-id']!==trust[identity].keyId)throw Error('Signer key is not trusted');
+ const authorized=crypto.createPublicKey(trust[identity].publicKeyPem).export({type:'spki',format:'der'});
+ const actual=crypto.createPublicKey(safeSecret(a.key)).export({type:'spki',format:'der'});
+ if(!actual.equals(authorized))throw Error('Private key does not match admin-trusted signing principal');
  let result;
  if(a.type==='ci'){
-   const payload=JSON.parse(fs.readFileSync(a.input,'utf8'));
-   if(payload?.kind!=='ci'||!Array.isArray(payload.suites)||
-     payload.suites.some(x=>x.exitCode!==0))throw Error('Cannot sign a failing or incomplete CI record');
+   const payload=JSON.parse(readRegularBytes(a.input).toString('utf8'));
+   validateCi(payload,{sha:a.sha,author:a.author,mode:a.mode,trust,logsDir:a.logs,now:Date.now()});
    result=sign(payload,a['key-id'],a.key);
- }else if(a.type==='review'){
+ }else{
+   if(a.mode==='development')throw Error('Reviewer signing only applies to production');
+   const envelope=JSON.parse(readRegularBytes(a.ci).toString('utf8'));
+   const payload=verifyEnvelope(envelope,trust.ci.keyId,trust.ci.publicKeyPem);
+   validateCi(payload,{sha:a.sha,author:a.author,mode:a.mode,trust,logsDir:a.logs,now:Date.now()});
    result=signReview({ciFile:a.ci,author:a.author,reviewer:a.reviewer,sha:a.sha,
      privateKeyFile:a.key,keyId:a['key-id']});
- }else throw Error('Must choose ci or review signer identity');
+ }
  fs.writeFileSync(a.output,JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
  process.stdout.write(JSON.stringify({ok:true,kind:result.payload.kind,sha:result.payload.sha})+'\n');
 }
