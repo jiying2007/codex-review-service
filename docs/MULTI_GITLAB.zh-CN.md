@@ -33,6 +33,25 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
        docker compose -f compose.multi.yaml config --quiet
        ss -ltnp | grep -E ':(8787|8788)' || true
 
+**只读预检（允许在 10 月执行，不启动服务/模型、不调用 Codex）：**
+
+       CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-preflight.js
+
+预检通过实际认证的 GitLab /api/v4/version、显式 /api/v4/projects/:id 与 /api/v4/groups/:id 只读 GET；输出只包含实例 ID、版本和已验证项目/组数量，不输出 Token。返回 ok=true 仍**不能证明** GitLab 写入权限、Webhook 反向访问、真实 MR 审查成功，也不能代替正式 CI 与发布资格。运行命令的系统必须具备与部署相同的配置/Secret 文件挂载。
+
+**隔离管理（选择唯一实例，不能跨实例查询 DB）：**
+
+       CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-admin.js legacy status
+       CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-admin.js sensor db-check
+
+备份、drain、notifications、reconcile 等仍使用已有 admin 命令，但必须显式指定实例；正式上线时用现有配置的受控路径操作。禁止用同一个数据目录执行双实例 admin 写操作，且 10 月不触发任何可能运行 Codex 的 reconcile/Review。
+
+**镜像能力预检：** IMAGE 必须是通过验签的真实 digest，并在不启动应用的前提下，确认镜像包含本功能：
+
+       docker run --rm --entrypoint node "$CODEX_REVIEW_IMAGE" -e "require('./src/multi-gitlab-config');require('./src/multi-gitlab-gateway');require('./src/multi-gitlab')"
+
+旧 v7.6.1 镜像会因缺少模块而非零退出；即使能力检查通过，也不能替代受保护 CI、SBOM、GitLab 真机与独立审核。
+
 容器内部单个 HTTP 端口继续为 8787；主机若使用 8788 进行其他隔离验证，只修改 CODEX_REVIEW_PORT 映射，不必修改每个实例 Config Schema 的 server.port。默认 Compose 只绑定本机 127.0.0.1；反向代理需要接收 GitLab 外部回调，推荐可信 HTTPS 入口及源地址限制。网页登录 200 不证明 API Token 有权限，也不证明新 GitLab 能反向访问 Webhook。
 
 ## 正式切换步骤（需要主机管理员与维护窗口）
