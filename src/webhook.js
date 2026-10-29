@@ -9,7 +9,15 @@ function verifySignedWebhook(headers,rawBody,config,webhookId,nowMs){const times
 function classicWebhookId(headers,rawBody){const event=String(headers['x-gitlab-event']||'unknown').trim().slice(0,128);return`classic:${event}:${crypto.createHash('sha256').update(String(rawBody)).digest('hex')}`;}
 function verifyClassicWebhook(headers,rawBody,config){const token=String(headers['x-gitlab-token']||'').trim();if(!token)return{ok:false,reason:'missing_classic_token'};if(!safeEqual(token,config.webhookSigningToken))return{ok:false,reason:'bad_classic_token'};return{ok:true,webhookId:classicWebhookId(headers,rawBody),mode:'classic-token'};}
 function verifyWebhook(headers,rawBody,config,nowMs=Date.now()){
-  if(config.webhookAuthMode==='classic-token')return verifyClassicWebhook(headers,rawBody,config);
+  if(config.webhookAuthMode==='classic-token'){
+    // Older GitLab releases may not send an instance header. A header that is
+    // present must never identify another tenant, even with a valid token.
+    if(headers['x-gitlab-instance']){
+      const instance=verifyInstance(headers,config);
+      if(!instance.ok)return instance;
+    }
+    return verifyClassicWebhook(headers,rawBody,config);
+  }
   const webhookId=String(headers['webhook-id']||headers['idempotency-key']||headers['x-gitlab-event-uuid']||'').trim();if(!webhookId)return{ok:false,reason:'missing_webhook_id'};if(webhookId.length>255||/[\r\n\0]/.test(webhookId))return{ok:false,reason:'invalid_webhook_id'};const instance=verifyInstance(headers,config);if(!instance.ok)return instance;return verifySignedWebhook(headers,rawBody,config,webhookId,nowMs);
 }
 function normalizeEvent(payload,headers,config){
