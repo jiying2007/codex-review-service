@@ -121,3 +121,19 @@ test('cutover fails closed when Schema 11 status evidence tables were deleted',(
     }finally{f.close();}
   }
 });
+
+(process.platform==='win32'?test.skip:test)('cutover rejects linked SQLite database files before any worker can open them',()=>{
+  const f=dbFixture();
+  try{
+    const symlink=path.join(f.dir,'alias-symlink.sqlite');
+    fs.symlinkSync(f.file,symlink);
+    assert.equal(inspectDatabase(symlink).code,'EDBSYMLINK');
+    fs.unlinkSync(symlink);
+    const hardlink=path.join(f.dir,'alias-hardlink.sqlite');
+    fs.linkSync(f.file,hardlink);
+    assert.equal(inspectDatabase(f.file).code,'EDBMULTILINK');
+    assert.equal(inspectDatabase(hardlink).code,'EDBMULTILINK');
+    fs.unlinkSync(hardlink);
+    assert.equal(inspectDatabase(f.file).code,'READY');
+  }finally{f.close();}
+});
