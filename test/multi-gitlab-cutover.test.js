@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {DatabaseSync}=require('node:sqlite');
-const {inspectDatabase}=require('../src/multi-gitlab-cutover-check');
+const {inspectDatabase,inspectTenantDatabases}=require('../src/multi-gitlab-cutover-check');
 const {contract}=require('../src/product-contract');
 
 function dbFixture({schema=contract.databaseSchemaVersion}={}){
@@ -89,5 +89,22 @@ test('cutover rejects absent and structurally incomplete files without creating 
     db.exec('PRAGMA user_version='+contract.databaseSchemaVersion);
     db.close();
     assert.equal(inspectDatabase(filename).code,'EDBTABLES');
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('startup cutover checks use the same frozen manifest, not a second mutable config read',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'multi-cutover-manifest-'));
+  try{
+    const locked={instances:[
+      {id:'legacy',dataDir:path.join(dir,'legacy')},
+      {id:'sensor',dataDir:path.join(dir,'sensor')}
+    ]};
+    const result=inspectTenantDatabases({
+      manifestFile:path.join(dir,'absent-and-not-to-be-loaded.json'),
+      manifest:locked
+    });
+    assert.equal(result.ok,false);
+    assert.deepEqual(result.results.map(x=>x.id),['legacy','sensor']);
+    assert.deepEqual(result.results.map(x=>x.code),['EDBMISSING','EDBMISSING']);
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
