@@ -41,6 +41,22 @@ function separate(a, b) {
     !rel.startsWith('..' + path.sep) &&
     !path.isAbsolute(rel);
 }
+function physicalLocation(value) {
+  // Realpath the nearest existing ancestor so aliases such as /var -> /private/var
+  // and symlinked Docker state parents cannot defeat per-instance DB isolation.
+  const suffix=[];
+  let base=path.resolve(value);
+  while (!fs.existsSync(base)) {
+    const parent=path.dirname(base);
+    if (parent===base) fail('Cannot resolve the physical state directory');
+    suffix.unshift(path.basename(base));
+    base=parent;
+  }
+  let physical;
+  try { physical=fs.realpathSync(base); }
+  catch { fail('Cannot resolve the physical state directory'); }
+  return path.join(physical,...suffix);
+}
 function overlaps(a, b) {
   return path.resolve(a) === path.resolve(b) || separate(a, b) || separate(b, a);
 }
@@ -58,7 +74,8 @@ function normalizedUrl(raw, label) {
 function fileJson(file, label) {
   let parsed;
   try {
-    if (!fs.statSync(file).isFile()) fail(label + ' must be a file');
+    const stat=fs.lstatSync(file);
+    if(stat.isSymbolicLink() || !stat.isFile())fail(label + ' must be a regular non-symlink file');
     parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (cause) {
     if (cause.code === 'EMULTIGITLABCONFIG') throw cause;
@@ -105,6 +122,9 @@ function validateInstance(raw, allFiles, identities) {
     const file = absolute(rawPath, id + '.' + name);
     if (allFiles.has(file)) fail('two instances share a configuration or secret file');
     allFiles.add(file);
+    let stat;
+    try { stat=fs.lstatSync(file); }catch { fail(id + ' secret file is missing'); }
+    if(stat.isSymbolicLink() || !stat.isFile())fail(id + ' secret must be a regular non-symlink file');
     const value = readSecretFile(file, name.slice(0, -5));
     // Compare hashes, never keep the credentials in the manifest or logs.
     if (name === 'GITLAB_API_TOKEN_FILE' || name === 'GITLAB_WEBHOOK_SIGNING_TOKEN_FILE') {
@@ -145,9 +165,20 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
     fail('server.defaultInstance must name an existing legacy-compatible instance');
   for (let i=0;i<instances.length;i++) for (let j=i+1;j<instances.length;j++) {
     const left = instances[i], right = instances[j];
-    if (overlaps(left.dataDir, right.dataDir)) fail('SQLite state directories overlap between instances');
-    if (overlaps(left.homeDir, right.homeDir)) fail('Codex homes overlap between instances');
+    if (overlaps(physicalLocation(left.dataDir), physicalLocation(right.dataDir)))
+      fail('SQLite state directories overlap between instances');
+    if (overlaps(physicalLocation(left.homeDir), physicalLocation(right.homeDir)))
+      fail('Codex homes overlap between instances');
+    if (overlaps(physicalLocation(left.dataDir), physicalLocation(right.homeDir)) ||
+        overlaps(physicalLocation(right.dataDir), physicalLocation(left.homeDir)))
+      fail('SQLite state and other instance Codex home directories overlap');
     if (left.origin === right.origin) fail('duplicate GitLab origin across instances');
+  }
+  const reserved=instances.flatMap(instance=>[physicalLocation(instance.dataDir),physicalLocation(instance.homeDir)]);
+  for(const file of allFiles){
+    const physical=physicalLocation(file);
+    if(reserved.some(dir=>overlaps(physical,dir)))
+      fail('Configuration or secret file must not live inside a writable tenant state/home directory');
   }
   return Object.freeze({
     server: Object.freeze({host,port,defaultInstance:server.defaultInstance,sharedProcessTrustAcknowledged:true}),
@@ -164,4 +195,4 @@ function buildWorkerEnv(instance, parentEnv=process.env) {
   for (const [name,file] of Object.entries(instance.secretFiles)) env[name] = file;
   return env;
 }
-module.exports={loadMultiManifest,buildWorkerEnv,overlaps,normalizedUrl,INSTANCE_ID};
+module.exports={loadMultiManifest,buildWorkerEnv,physicalLocation,overlaps,normalizedUrl,INSTANCE_ID};
