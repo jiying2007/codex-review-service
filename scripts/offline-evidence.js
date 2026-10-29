@@ -12,7 +12,8 @@ const ID=/^[a-z][a-z0-9-]{0,63}$/;
 const PRODUCTION_TRUST='/etc/codex-review/release-trust.json';
 const REQUIRED=Object.freeze({
   development:['syntax','offline-unit'],
-  production:['syntax','offline-unit','security','migration','provider','image']
+  production:['syntax','offline-unit','security','migration','provider','image'],
+  'production-multi':['syntax','offline-unit','multi-offline','security','migration','provider','image']
 });
 function reject(code,message){const e=new Error(message);e.code=code;throw e;}
 function readRegularBytes(filename){
@@ -117,7 +118,7 @@ function validateReview(payload,{sha,author,trust,ciFileBytes,ciTime,now}){
     reject('EREVIEW','Independent latest-head review or CI binding is invalid');
 }
 function verifyEvidence({trustFile,ciFile,reviewFile,logsDir,sha,author,mode='production',now=Date.now()}){
-  if(!['development','production'].includes(mode)||!SHA.test(sha||'')||!ID.test(author||''))
+  if(!Object.hasOwn(REQUIRED,mode)||!SHA.test(sha||'')||!ID.test(author||''))
     reject('EINPUT','An exact sha, PR author and recognized mode are required');
   for(const [label,file] of Object.entries({trustFile,ciFile,logsDir}))
     if(typeof file!=='string'||!path.isAbsolute(file))reject('EINPUT',label+' requires an absolute path');
@@ -130,24 +131,24 @@ function verifyEvidence({trustFile,ciFile,reviewFile,logsDir,sha,author,mode='pr
   const ciFileBytes=readRegularBytes(ciFile);
   const ci=verifyEnvelope(JSON.parse(ciFileBytes.toString('utf8')),trust.ci.keyId,trust.ci.publicKeyPem);
   validateCi(ci,{sha,author,mode,trust,logsDir,now});
-  if(mode==='production'){
+  if(mode!=='development'){
     if(typeof reviewFile!=='string'||!path.isAbsolute(reviewFile))
       reject('EREVIEW','Production requires an independent review file');
     const reviewed=verifyEnvelope(fileJSON(reviewFile),trust.review.keyId,trust.review.publicKeyPem);
     validateReview(reviewed,{sha,author,trust,ciFileBytes,ciTime:ci.issuedAt,now});
   }
   return{ok:true,mode,repository:REPOSITORY,sha,suites:ci.suites.map(s=>s.id),
-    independentlyReviewed:mode==='production',ciEnvelopeSha256:digest(ciFileBytes)};
+    independentlyReviewed:mode!=='development',ciEnvelopeSha256:digest(ciFileBytes)};
 }
 function main(args=process.argv.slice(2)){
-  if(args[0]!=='verify')reject('EUSAGE','Usage: verify --trust ABS --ci ABS --logs ABS --sha SHA --author ID --mode development|production [--review ABS]');
+  if(args[0]!=='verify')reject('EUSAGE','Usage: verify --trust ABS --ci ABS --logs ABS --sha SHA --author ID --mode development|production|production-multi [--review ABS]');
   const kv={};
   for(let i=1;i<args.length;i+=2){
     if(!args[i]?.startsWith('--')||args[i+1]===undefined||kv[args[i]])reject('EUSAGE','Malformed arguments');
     kv[args[i]]=args[i+1];
   }
   for(const k of Object.keys(kv))if(!['--trust','--ci','--review','--logs','--sha','--author','--mode'].includes(k))reject('EUSAGE','Unknown flag');
-  if(kv['--mode']==='production'){
+  if(kv['--mode']!=='development'){
     if(kv['--trust']!==PRODUCTION_TRUST)reject('ETRUSTPATH','Production trust root is fixed outside the checkout');
     if(process.platform!=='win32'&&fs.lstatSync(PRODUCTION_TRUST).uid!==0)
       reject('ETRUSTOWNER','Production trust root must be root-owned');
