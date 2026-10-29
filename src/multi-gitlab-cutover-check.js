@@ -60,9 +60,9 @@ function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:tr
     return{ok:false,code:String(error?.code||'EDBREAD').slice(0,72),drained:false};
   }finally{try{db?.close();}catch{}}
 }
-function inspectTenantDatabases({manifestFile,open}={}){
-  const manifest=loadMultiManifest(manifestFile);
-  const results=manifest.instances.map(tenant=>{
+function inspectTenantDatabases({manifestFile,manifest,open}={}){
+  const lockedManifest=manifest||loadMultiManifest(manifestFile);
+  const results=lockedManifest.instances.map(tenant=>{
     const file=path.join(tenant.dataDir,'review-service.sqlite');
     return{id:tenant.id,...inspectDatabase(file,{open})};
   });
