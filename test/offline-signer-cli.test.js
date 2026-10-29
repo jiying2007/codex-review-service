@@ -20,7 +20,7 @@ function fixture(){
  const ciKey=key('ci',ci),reviewKey=key('review',review);
  const trustFile=path.join(dir,'trust.json');
  const trust={schemaVersion:1,repository:'jiying2007/codex-review-service',maxAgeHours:72,
-   ci:{keyId:'ci-key',allowedIdentities:['ci-operator'],publicKeyPem:ci.publicKey.export({type:'spki',format:'pem'})},
+   ci:{keyId:'ci-key',allowedIdentities:['ci-operator'],allowedRunners:['isolated-linux'],publicKeyPem:ci.publicKey.export({type:'spki',format:'pem'})},
    review:{keyId:'review-key',allowedIdentities:['code-reviewer'],publicKeyPem:review.publicKey.export({type:'spki',format:'pem'})}};
  fs.writeFileSync(trustFile,JSON.stringify(trust),{mode:0o600});
  const logs=path.join(dir,'logs');fs.mkdirSync(logs);
