@@ -89,6 +89,8 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
     f=>{f.manifest.instances[1].homeDir=f.manifest.instances[0].homeDir;},
     f=>{f.manifest.instances[1].configFile=f.manifest.instances[0].configFile;},
     f=>{f.sensor.webhook.expectedInstance='http://192.168.1.4';},
+    f=>{f.sensor.gitlab.deprecatedCredential='inline-credential';},
+    f=>{f.sensor.unsupportedSection={enabled:true};},
     f=>{f.manifest.server.port=65536;},
     f=>{f.manifest.instances[1].id='../sensor';}
   ]){
