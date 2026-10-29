@@ -107,7 +107,7 @@ function workerStatus(port,path,timeout=4000) {
     r.on('error',()=>done({available:false,status:'unavailable'}));
   });
 }
-function createMultiGateway({manifest, lookupPort}) {
+function createMultiGateway({manifest, lookupPort,lookupRestartCount=()=>0}) {
   const ids=new Set(manifest.instances.map(item=>item.id));
   const server=http.createServer({maxHeaderSize:16*1024},async(req,res)=>{
     try {
@@ -127,7 +127,12 @@ function createMultiGateway({manifest, lookupPort}) {
           const available=Boolean(lookupPort(item.id));
           return 'codex_review_instance_up{instance="' + item.id + '"} ' + (available?'1':'0');
         });
-        const body='# TYPE codex_review_instance_up gauge\n' + values.join('\n') + '\n';
+        const restarts=manifest.instances.map(item=>
+          'codex_review_instance_restarts_total{instance="' + item.id + '"} ' +
+          Number(lookupRestartCount(item.id)||0));
+        const body='# TYPE codex_review_instance_up gauge\n' + values.join('\n') + '\n' +
+          '# TYPE codex_review_instance_restarts_total counter\n' +
+          restarts.join('\n') + '\n';
         res.writeHead(200,{'Content-Type':'text/plain; version=0.0.4; charset=utf-8',
           'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
         return res.end(body);
