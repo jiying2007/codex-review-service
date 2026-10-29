@@ -17,7 +17,7 @@ function audit(event, fields={}) {
 function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__dirname,'index.js'),
   retryBaseMs=1000,retryMaxMs=120000,startTimeoutMs=180000}={}) {
   const states=new Map(manifest.instances.map(item=>[item.id,{
-    instance:item,worker:null,port:0,attempt:0,timer:null,startupTimer:null,ready:false
+    instance:item,worker:null,port:0,attempt:0,restartCount:0,timer:null,startupTimer:null,ready:false
   }]));
   let closing=false;
   function spawn(id) {
@@ -65,6 +65,7 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
         state.port=0;
         state.ready=false;
         if (closing) return;
+        state.restartCount+=1;
         state.attempt+=1;
         const delay=Math.min(retryMaxMs,retryBaseMs*Math.pow(2,Math.min(7,state.attempt-1)));
         audit('gitlab_instance_unavailable',{instance:id,exitCode:Number(code)||0,restartDelayMs:delay});
@@ -74,6 +75,7 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
     } catch(error) {
       state.port=0;
       state.ready=false;
+      state.restartCount+=1;
       state.attempt+=1;
       audit('gitlab_instance_spawn_failed',{instance:id,code:String(error.code||'ESPAWN').slice(0,80)});
       const delay=Math.min(retryMaxMs,retryBaseMs*Math.pow(2,Math.min(7,state.attempt-1)));
@@ -109,7 +111,8 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
   return {
     start:()=>{for(const instance of manifest.instances)spawn(instance.id);},
     lookupPort:id=>states.get(id)?.port||0,
-    status:()=>[...states.values()].map(x=>({instance:x.instance.id,ready:x.ready,restarts:x.attempt})),
+    restartCount:id=>states.get(id)?.restartCount||0,
+    status:()=>[...states.values()].map(x=>({instance:x.instance.id,ready:x.ready,restarts:x.restartCount,backoffAttempt:x.attempt})),
     close
   };
 }
@@ -138,7 +141,7 @@ async function startMultiGitLab() {
   const manifest=loadMultiManifest();
   assertPreparedDatabases(inspectTenantDatabases({manifest}));
   const supervisor=superviseWorkers(manifest);
-  const gateway=createMultiGateway({manifest,lookupPort:supervisor.lookupPort});
+  const gateway=createMultiGateway({manifest,lookupPort:supervisor.lookupPort,lookupRestartCount:supervisor.restartCount});
   await listen(gateway,manifest.server.port,manifest.server.host);
   supervisor.start();
   audit('multi_gitlab_gateway_started',{
