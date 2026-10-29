@@ -35,17 +35,20 @@ function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:tr
     const schemaVersion=Number(db.prepare('PRAGMA user_version').get().user_version);
     const tables=new Set(db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
-    const required=['review_jobs','publication_outbox','notification_outbox'];
+    // Schema 11's durable uncertainty ledger is an authoritative cutover
+    // dependency. Never silently treat missing evidence tables as empty.
+    const required=['review_jobs','publication_outbox','notification_outbox',
+      'status_write_attempts','status_publication_targets'];
     if(required.some(name=>!tables.has(name)))
       return{ok:false,code:'EDBTABLES',schemaVersion,drained:false};
     const active={
       reviewJobs:countActive(db,'review_jobs',TERMINAL_JOBS),
       publications:countActive(db,'publication_outbox',TERMINAL_PUBLICATIONS),
       notifications:countActive(db,'notification_outbox',TERMINAL_NOTIFICATIONS),
-      uncertainStatusWrites:tables.has('status_write_attempts')?
-        Number(db.prepare("SELECT COUNT(*) AS count FROM status_write_attempts WHERE outcome IN ('started','uncertain')").get().count):0,
-      uncertainStatusTargets:tables.has('status_publication_targets')?
-        Number(db.prepare("SELECT COUNT(*) AS count FROM status_publication_targets WHERE projection_state='uncertain'").get().count):0
+      uncertainStatusWrites:Number(db.prepare(
+        "SELECT COUNT(*) AS count FROM status_write_attempts WHERE outcome IN ('started','uncertain')").get().count),
+      uncertainStatusTargets:Number(db.prepare(
+        "SELECT COUNT(*) AS count FROM status_publication_targets WHERE projection_state='uncertain'").get().count)
     };
     const drained=Object.values(active).every(value=>value===0);
     const schemaCompatible=schemaVersion===expectedSchema;
