@@ -24,7 +24,7 @@ function fixture(){
   const sensor=make('sensor','http://192.168.2.50','new-only-read-token',8);
   const file=path.join(dir,'multi.json');
   fs.writeFileSync(file,JSON.stringify({schemaVersion:1,
-    server:{host:'127.0.0.1',port:8787,defaultInstance:'legacy'},instances:[legacy,sensor]}));
+    server:{host:'127.0.0.1',port:8787,defaultInstance:'legacy',sharedProcessTrustAcknowledged:true},instances:[legacy,sensor]}));
   return {file,close:()=>fs.rmSync(dir,{recursive:true,force:true})};
 }
 test('read-only multi preflight probes each project/group with the correct server credential',async()=>{
