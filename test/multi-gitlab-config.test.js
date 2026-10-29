@@ -125,7 +125,7 @@ test('explicit multi manifest prevents silent single-instance configuration fall
   }finally{f.close();}
 });
 
-test('physical symlinks cannot alias tenant DB, Codex home or secret files',()=>{
+(process.platform==='win32'?test.skip:test)('physical symlinks cannot alias tenant DB, Codex home or secret files',()=>{
   const cases=[
     f=>{
       fs.mkdirSync(f.legacy.server.dataDir);
