@@ -60,7 +60,11 @@
     "src/codex-safe-core/family-non-goals.json",
     "src/codex-safe-core/family-error-taxonomy.json",
     "src/codex-safe-core/scripts/family-diagnostics.js",
-    "src/codex-safe-core/scripts/verify-release-artifact.js"
+    "src/codex-safe-core/scripts/verify-release-artifact.js",
+    "deploy/docker/compose.multi.yaml",
+    "deploy/docker/multi-instance.example.json",
+    "deploy/docker/sensor.config.example.json",
+    "docs/MULTI_GITLAB.zh-CN.md"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",
