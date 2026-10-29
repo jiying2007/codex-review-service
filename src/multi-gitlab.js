@@ -124,7 +124,7 @@ function assertPreparedDatabases(report,expectedSchema=contract.databaseSchemaVe
 }
 async function startMultiGitLab() {
   const manifest=loadMultiManifest();
-  assertPreparedDatabases(inspectTenantDatabases());
+  assertPreparedDatabases(inspectTenantDatabases({manifest}));
   const supervisor=superviseWorkers(manifest);
   const gateway=createMultiGateway({manifest,lookupPort:supervisor.lookupPort});
   await listen(gateway,manifest.server.port,manifest.server.host);
