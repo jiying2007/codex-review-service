@@ -5,6 +5,8 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const { loadMultiManifest, buildWorkerEnv } = require('./multi-gitlab-config');
 const { createMultiGateway } = require('./multi-gitlab-gateway');
+const { inspectTenantDatabases } = require('./multi-gitlab-cutover-check');
+const { contract } = require('./product-contract');
 
 function audit(event, fields={}) {
   // Do not log manifest contents, credential paths, webhook bodies or tokens.
@@ -108,8 +110,21 @@ function listen(server,port,host) {
     server.listen(port,host);
   });
 }
+function assertPreparedDatabases(report,expectedSchema=contract.databaseSchemaVersion){
+  const results=Array.isArray(report?.results)?report.results:[];
+  if(!results.length || results.some(item=>
+    !item || item.integrity!==true || item.schemaVersion!==expectedSchema)){
+    const error=new Error('Multi-GitLab requires prepared, intact current-schema databases before any Worker starts');
+    error.code='EMULTIDBPREP';
+    throw error;
+  }
+  // Durable queues can be nonempty after an ordinary restart. Only the
+  // one-time operator cutover must be drained; worker recovery owns retries.
+  return true;
+}
 async function startMultiGitLab() {
   const manifest=loadMultiManifest();
+  assertPreparedDatabases(inspectTenantDatabases());
   const supervisor=superviseWorkers(manifest);
   const gateway=createMultiGateway({manifest,lookupPort:supervisor.lookupPort});
   await listen(gateway,manifest.server.port,manifest.server.host);
@@ -151,4 +166,4 @@ async function startMultiGitLab() {
   });
   return {manifest,gateway,supervisor,close};
 }
-module.exports={startMultiGitLab,superviseWorkers,listen};
+module.exports={startMultiGitLab,superviseWorkers,listen,assertPreparedDatabases};
