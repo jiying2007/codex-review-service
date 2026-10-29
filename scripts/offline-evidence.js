@@ -15,11 +15,18 @@ const REQUIRED=Object.freeze({
   production:['syntax','offline-unit','security','migration','provider','image']
 });
 function reject(code,message){const e=new Error(message);e.code=code;throw e;}
-function fileJSON(filename){
-  const stat=fs.lstatSync(filename);
-  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>1024*1024)reject('EFILE','Invalid or symlinked evidence file');
-  return JSON.parse(fs.readFileSync(filename,'utf8'));
+function readRegularBytes(filename){
+  const flags=fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0);
+  let fd;
+  try{fd=fs.openSync(filename,flags);}
+  catch(error){if(error.code==='ELOOP')reject('EFILE','Invalid or symlinked evidence file');throw error;}
+  try{
+    const stat=fs.fstatSync(fd);
+    if(!stat.isFile()||stat.size>1024*1024)reject('EFILE','Invalid or symlinked evidence file');
+    return fs.readFileSync(fd);
+  }finally{fs.closeSync(fd);}
 }
+function fileJSON(filename){return JSON.parse(readRegularBytes(filename).toString('utf8'));}
 function digest(buf){return crypto.createHash('sha256').update(buf).digest('hex');}
 function keys(obj,allowed,label){
   if(!obj||typeof obj!=='object'||Array.isArray(obj))reject('ESCHEMA',label+' must be an object');
@@ -31,7 +38,9 @@ function isTimestamp(t,now,maxAgeHours){
     Number.isFinite(ms)&&ms<=now+5*60*1000&&ms>=now-maxAgeHours*3600*1000;
 }
 function exactBase(payload,kind){
-  keys(payload,['schemaVersion','kind','repository','sha','author','issuer','issuedAt','runner','suites','ciSha256','reviewer','decision'],kind+' payload');
+  const specific=kind==='ci'?['issuer','runner','issuedAt','suites']:
+    ['reviewer','decision','issuedAt','ciSha256'];
+  keys(payload,['schemaVersion','kind','repository','sha','author',...specific],kind+' payload');
   if(payload.schemaVersion!==1||payload.kind!==kind||payload.repository!==REPOSITORY||
       typeof payload.sha!=='string'||!SHA.test(payload.sha))reject('ESCHEMA','Evidence identity is invalid');
   if(typeof payload.author!=='string'||!ID.test(payload.author))reject('ESCHEMA','Missing immutable author identity');
@@ -62,7 +71,11 @@ function validateTrust(trust){
       trust[kind].allowedIdentities.some(id=>typeof id!=='string'||!ID.test(id)))
       reject('ETRUST','Trusted signer identity is invalid');
   }
-  if(trust.ci.publicKeyPem===trust.review.publicKeyPem||trust.ci.keyId===trust.review.keyId)
+  const ciKey=crypto.createPublicKey(trust.ci.publicKeyPem);
+  const reviewerKey=crypto.createPublicKey(trust.review.publicKeyPem);
+  if(ciKey.asymmetricKeyType!=='ed25519'||reviewerKey.asymmetricKeyType!=='ed25519'||
+    ciKey.export({type:'spki',format:'der'}).equals(reviewerKey.export({type:'spki',format:'der'}))||
+    trust.ci.keyId===trust.review.keyId)
     reject('ETRUST','CI and reviewer must use independent signing keys');
   if(!Number.isInteger(trust.maxAgeHours)||trust.maxAgeHours<1||trust.maxAgeHours>168)
     reject('ETRUST','Maximum receipt age must be 1-168 hours');
@@ -114,8 +127,8 @@ function verifyEvidence({trustFile,ciFile,reviewFile,logsDir,sha,author,mode='pr
   // For production admission the trust file must be administered outside the
   // source checkout; a self-submitted PR key is never sufficient.
   const trust=validateTrust(fileJSON(trustFile));
-  const ciFileBytes=fs.readFileSync(ciFile);
-  const ci=verifyEnvelope(fileJSON(ciFile),trust.ci.keyId,trust.ci.publicKeyPem);
+  const ciFileBytes=readRegularBytes(ciFile);
+  const ci=verifyEnvelope(JSON.parse(ciFileBytes.toString('utf8')),trust.ci.keyId,trust.ci.publicKeyPem);
   validateCi(ci,{sha,author,mode,trust,logsDir,now});
   if(mode==='production'){
     if(typeof reviewFile!=='string'||!path.isAbsolute(reviewFile))
@@ -146,4 +159,4 @@ if(require.main===module){
   try{process.stdout.write(JSON.stringify(main())+'\n');}
   catch(e){process.stderr.write(JSON.stringify({ok:false,code:e.code||'EADMISSION'})+'\n');process.exitCode=2;}
 }
-module.exports={REPOSITORY,PRODUCTION_TRUST,REQUIRED,digest,signedMessage,verifyEnvelope,validateTrust,verifyEvidence,main};
+module.exports={REPOSITORY,PRODUCTION_TRUST,REQUIRED,readRegularBytes,digest,signedMessage,verifyEnvelope,validateTrust,verifyEvidence,main};
