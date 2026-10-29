@@ -130,7 +130,7 @@ test('classic GitLab webhook checks an available instance header without requiri
   assert.equal(verifyWebhook({...old,'x-gitlab-token':'not-the-secret'},body,config).ok,false);
 });
 
-test('oversized HTTP body retains a complete 413 and cannot enter a tenant worker',async()=>{
+test('chunked oversized HTTP body retains a complete 413 without an upfront length',async()=>{
   let accepted=0;
   const backend=http.createServer((req,res)=>{
     req.on('data',()=>accepted++);
@@ -146,7 +146,7 @@ test('oversized HTTP body retains a complete 413 and cannot enter a tenant worke
     // rather than the upfront Content-Length fast path.
     const payload=Buffer.alloc(MAX_REQUEST_BYTES+1,'x');
     const result=await call(port,'/webhooks/gitlab',{
-      method:'POST',body:payload,headers:{'content-type':'application/octet-stream'}
+      method:'POST',body:payload,headers:{'content-type':'application/octet-stream','transfer-encoding':'chunked'}
     });
     assert.equal(result.status,413);
     assert.deepEqual(result.body,{error:'payload_too_large'});
