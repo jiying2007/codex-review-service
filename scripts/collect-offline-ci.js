@@ -11,7 +11,11 @@ const SUITES=Object.freeze({
   syntax:['scripts/check-syntax.js'],
   'offline-unit':['--test','test/db-migrations.test.js','test/db.test.js','test/http.test.js',
     'test/webhook.test.js','test/assignment-policy.test.js','test/project-scope.test.js'],
-  migration:['--test','test/db-migrations.test.js','test/db.test.js']
+  migration:['--test','test/db-migrations.test.js','test/db.test.js'],
+  'multi-offline':['--test','test/multi-gitlab-admin.test.js','test/multi-gitlab-config.test.js',
+    'test/multi-gitlab-cutover.test.js','test/multi-gitlab-deployment.test.js',
+    'test/multi-gitlab-gateway.test.js','test/multi-gitlab-preflight.test.js',
+    'test/multi-gitlab-real-worker-env.test.js','test/multi-gitlab-runtime.test.js']
 });
 function noSecrets(parent=process.env){
   const result={};
