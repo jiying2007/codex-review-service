@@ -65,3 +65,42 @@ test('a first multi-GitLab start cannot mount old/missing DB, but restart can re
    assert.throws(()=>assertPreparedDatabases(bad),error=>error?.code==='EMULTIDBPREP');
  }
 });
+
+test('stalled tenant initialization is terminated without disabling healthy legacy worker',async()=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'multi-worker-timeout-'));
+  const created=[];
+  class MockWorker extends EventEmitter {
+    constructor(file,options){
+      super();
+      this.options=options;
+      created.push(this);
+      if(options.workerData.codexReviewInstanceId==='legacy'||
+          created.filter(x=>x.options.workerData.codexReviewInstanceId==='sensor').length>1){
+        queueMicrotask(()=>this.emit('message',{
+          type:'ready',
+          port:options.workerData.codexReviewInstanceId==='legacy'?48101:48102
+        }));
+      }
+    }
+    postMessage(message){if(message?.type==='shutdown')this.emit('exit',0);}
+    terminate(){this.emit('exit',1);return Promise.resolve(1);}
+  }
+  const make=id=>({id,configFile:path.join(directory,id+'.json'),
+    homeDir:path.join(directory,id+'-home'),dataDir:path.join(directory,id+'-state'),
+    secretFiles:{GITLAB_API_TOKEN_FILE:path.join(directory,id+'.token')}});
+  const supervisor=superviseWorkers({instances:[make('legacy'),make('sensor')]},{
+    WorkerClass:MockWorker,workerFile:path.join(directory,'worker.js'),
+    startTimeoutMs:12,retryBaseMs:12,retryMaxMs:25
+  });
+  try{
+    supervisor.start();
+    await sleep(100);
+    assert.equal(supervisor.lookupPort('legacy'),48101);
+    assert.equal(supervisor.lookupPort('sensor'),48102);
+    assert.ok(created.length>=3,'timed out sensor worker must be restarted');
+    assert.equal(created.filter(x=>x.options.workerData.codexReviewInstanceId==='legacy').length,1);
+  }finally{
+    await supervisor.close();
+    fs.rmSync(directory,{recursive:true,force:true});
+  }
+});
