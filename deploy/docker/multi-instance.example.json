@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8787,
+    "defaultInstance": "legacy"
+  },
+  "instances": [
+    {
+      "id": "legacy",
+      "configFile": "/etc/codex-review/legacy.json",
+      "homeDir": "/home/codex-review/legacy",
+      "secretFiles": {
+        "GITLAB_API_TOKEN_FILE": "/run/secrets/gitlab_legacy_api",
+        "GITLAB_WEBHOOK_SIGNING_TOKEN_FILE": "/run/secrets/gitlab_legacy_webhook"
+      }
+    },
+    {
+      "id": "sensor",
+      "configFile": "/etc/codex-review/sensor.json",
+      "homeDir": "/home/codex-review/sensor",
+      "secretFiles": {
+        "GITLAB_API_TOKEN_FILE": "/run/secrets/gitlab_sensor_api",
+        "GITLAB_WEBHOOK_SIGNING_TOKEN_FILE": "/run/secrets/gitlab_sensor_webhook"
+      }
+    }
+  ]
+}
