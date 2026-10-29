@@ -2,7 +2,7 @@
 # Do not use the old v7.6.1 image: it does not include multi-GitLab.
 services:
   codex-review-multi:
-    image: ${CODEX_REVIEW_IMAGE:?Provide_a_verified_multi_GitLab_GHCR_image_at_sha256_digest}
+    image: ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST:?Provide_the_verified_64_hex_multi_GitLab_image_digest}
     restart: unless-stopped
     read_only: true
     tmpfs:
