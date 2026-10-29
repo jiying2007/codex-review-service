@@ -39,7 +39,11 @@ test('worker crash isolates the affected GitLab, restarts with bounded backoff a
    assert.equal(workers.length,3,'sensor worker should restart automatically');
    workers[2].emit('message',{type:'ready',port:48003});
    assert.equal(supervisor.lookupPort('sensor'),48003);
-   assert.equal(supervisor.status().find(s=>s.instance==='sensor').restarts,0);
+   assert.equal(supervisor.status().find(s=>s.instance==='sensor').restarts,1,
+     'a recovered Worker still contributes to cumulative restart monitoring');
+   assert.equal(supervisor.status().find(s=>s.instance==='sensor').backoffAttempt,0);
+   assert.equal(supervisor.restartCount('legacy'),0);
+   assert.equal(supervisor.restartCount('sensor'),1);
    await supervisor.close();
    assert.equal(supervisor.lookupPort('legacy'),0);
    assert.equal(supervisor.lookupPort('sensor'),0);
