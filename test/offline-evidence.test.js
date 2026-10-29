@@ -17,7 +17,7 @@ function fixtures(){
   const ciFile=path.join(root,'ci.signed.json');
   const reviewFile=path.join(root,'review.signed.json');
   const trust={schemaVersion:1,repository:'jiying2007/codex-review-service',maxAgeHours:72,
-    ci:{keyId:'ci-key',allowedIdentities:['ci-operator'],publicKeyPem:ciKeys.publicKey.export({type:'spki',format:'pem'})},
+    ci:{keyId:'ci-key',allowedIdentities:['ci-operator'],allowedRunners:['isolated-linux'],publicKeyPem:ciKeys.publicKey.export({type:'spki',format:'pem'})},
     review:{keyId:'review-key',allowedIdentities:['independent-reviewer'],publicKeyPem:reviewKeys.publicKey.export({type:'spki',format:'pem'})}};
   const suiteResults=REQUIRED.production.map(id=>{
     const content=Buffer.from('Real measured '+id+' success log\n');
