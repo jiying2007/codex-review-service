@@ -128,3 +128,9 @@ test('production CLI cannot select a PR-supplied trust root',()=>{
     e=>e.code==='ETRUSTPATH');
  }finally{f.close();}
 });
+
+test('multi-GitLab production additionally requires the real multi-offline suite',()=>{
+ const f=fixtures();try{
+  assert.throws(()=>verifyEvidence({...f.opts,mode:'production-multi'}),/Required suite missing: multi-offline/);
+ }finally{f.close();}
+});
