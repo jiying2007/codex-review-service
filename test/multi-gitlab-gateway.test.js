@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const http=require('node:http');
 const crypto=require('node:crypto');
 const {verifyWebhook}=require('../src/webhook');
-const {createMultiGateway,targetFor}=require('../src/multi-gitlab-gateway');
+const {createMultiGateway,targetFor,MAX_REQUEST_BYTES}=require('../src/multi-gitlab-gateway');
 
 function listen(server){return new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server.address().port)));}
 function close(server){return new Promise(resolve=>server.close(resolve));}
@@ -128,4 +128,30 @@ test('classic GitLab webhook checks an available instance header without requiri
   assert.equal(verifyWebhook({...old,'x-gitlab-instance':'http://192.168.2.50'},body,config).reason,'wrong_instance');
   assert.equal(verifyWebhook({...old,'x-gitlab-instance':'http://192.168.1.4'},body,config).ok,true);
   assert.equal(verifyWebhook({...old,'x-gitlab-token':'not-the-secret'},body,config).ok,false);
+});
+
+test('oversized HTTP body retains a complete 413 and cannot enter a tenant worker',async()=>{
+  let accepted=0;
+  const backend=http.createServer((req,res)=>{
+    req.on('data',()=>accepted++);
+    req.on('end',()=>{res.writeHead(202);res.end();});
+    req.on('aborted',()=>{});
+  });
+  const backendPort=await listen(backend);
+  const manifest={server:{defaultInstance:'legacy'},instances:[{id:'legacy'}]};
+  const gateway=createMultiGateway({manifest,lookupPort:()=>backendPort});
+  const port=await listen(gateway);
+  try{
+    // The request uses chunked encoding, exercising the STREAMING limit
+    // rather than the upfront Content-Length fast path.
+    const payload=Buffer.alloc(MAX_REQUEST_BYTES+1,'x');
+    const result=await call(port,'/webhooks/gitlab',{
+      method:'POST',body:payload,headers:{'content-type':'application/octet-stream'}
+    });
+    assert.equal(result.status,413);
+    assert.deepEqual(result.body,{error:'payload_too_large'});
+  }finally{
+    await close(gateway);
+    await close(backend);
+  }
 });
