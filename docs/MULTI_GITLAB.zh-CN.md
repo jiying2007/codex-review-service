@@ -6,6 +6,8 @@
 
 一个 Node.js 主进程 + 一条 HTTP 入口 + 多个 Worker Threads；每台 GitLab 各自保留独立的 GitLab Client、项目/Group Scope、限流/断路器、审查/Publication/Notification Outbox、SQLite DB、API Token、Webhook Secret 与 Codex Home。
 
+**强隔离边界**：Worker Threads 属于同一个 OS 进程、用户与文件系统，提供的是应用逻辑、配置和持久状态隔离，不能防止进程级入侵后访问其他实例的文件/内存。多实例配置必须显式设置 server.sharedProcessTrustAcknowledged=true，并且只能将同一管理方、相同数据使用与保密政策的 GitLab 合入此进程；不同保密级别/法律或模型数据政策必须使用独立容器/进程和 Unix 身份。
+
 - legacy: GitLab 192.168.1.4；保留原 /webhooks/gitlab 路径；项目包括原 78 个显式/Group 项目。旧 GitLab 的 Project ID 113 为 vosen/toolchain/ssc305，旧 sensor 是 139。
 - sensor: GitLab 192.168.2.50；新 /webhooks/gitlab/sensor 路径；只允许 Project ID 113，对应 airobot/modules/sensor。
 - 持久身份逻辑上是 (instanceId, 独立 SQLite DB, project_id, mr_iid, commit_sha)。两台 GitLab 的 Project ID、User ID、状态、回写凭证、通知路由不得相互复用。避免侵入式改动全部 SQLite 表/迁移所有线上数据，使用物理数据库命名空间实现隔离。
@@ -13,7 +15,7 @@
 
 ## 凭据与安全
 
-多实例清单使用 deploy/docker/multi-instance.example.json。每个实例都明确声明 configFile、homeDir、GitLab API Token 与 Webhook Secret 的 *_FILE 文件绝对路径，API 与 Webhook Secret 都不允许两实例共享文件或相同实际内容。配置检查读取受控凭据进行内存摘要比较，不打印凭据值。Worker Thread 仅接收所属实例的文件路径及有限环境变量，不继承宿主旧 API Token、OpenAI API Key 或另一实例的明文。
+多实例清单使用 deploy/docker/multi-instance.example.json。 必须人工确认共享进程信任边界后开启该选项，不能把它当成 OS 安全沙箱。每个实例都明确声明 configFile、homeDir、GitLab API Token 与 Webhook Secret 的 *_FILE 文件绝对路径，API 与 Webhook Secret 都不允许两实例共享文件或相同实际内容。配置检查读取受控凭据进行内存摘要比较，不打印凭据值。Worker Thread 仅接收所属实例的文件路径及有限环境变量，不继承宿主旧 API Token、OpenAI API Key 或另一实例的明文。
 
 HTTP 路由只决定内部 Worker，不能代替安全认证。每个 Worker 独立进行原始请求 Webhook 签名、GitLab Instance、项目 allowlist、重放与配额校验。错误实例、错误签名、未知路径按实际校验拒绝。旧 GitLab Classic Token 模式仍兼容缺少 X-Gitlab-Instance 的老版本；如果传了实例头则必须匹配。Standard Webhooks HMAC 必须携带合法实例头和签名。
 
