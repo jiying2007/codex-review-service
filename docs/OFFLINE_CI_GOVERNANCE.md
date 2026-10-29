@@ -60,6 +60,6 @@ The trusted publisher must authenticate the PR author and SHA independently from
 
 ## Offline verifier self-tests
 
-    node --test test/offline-evidence.test.js test/offline-collector.test.js
+    node --test test/offline-evidence.test.js test/offline-collector.test.js test/offline-signer-cli.test.js
 
 The tests use temporary synthetic keys and logs to verify the validator only, never as real product CI evidence. They reject wrong SHA/signatures, altered logs, missing/failed suites, old receipts, untrusted reviewer/self-approval, insecure private keys and changing the production trust root. Rotated keys need a new key ID and preserved immutable historical receipts. October 2026 restriction on Codex Cloud/CLI and ChatGPT Work shared quota remains active.
