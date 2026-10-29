@@ -10,6 +10,10 @@ function args(argv){const out={};for(let i=0;i<argv.length;i+=2){
 }return out;}
 function safeSecret(file){
  if(!path.isAbsolute(file))throw Error('Private key must be outside checkout');
+ const checkout=path.resolve(__dirname,'..');
+ const relative=path.relative(checkout,file);
+ if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))
+   throw Error('Private signer key must not be stored inside the source checkout');
  const stat=fs.lstatSync(file);
  if(stat.isSymbolicLink()||!stat.isFile()||(stat.mode&0o077)!==0)
    throw Error('Private key must be a regular 0600 non-symlink file');
