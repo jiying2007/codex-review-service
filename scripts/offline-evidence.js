@@ -66,12 +66,17 @@ function validateTrust(trust){
   keys(trust,['schemaVersion','repository','ci','review','maxAgeHours'],'trust root');
   if(trust.schemaVersion!==1||trust.repository!==REPOSITORY)reject('ETRUST','Trust repository mismatch');
   for(const kind of ['ci','review']){
-    keys(trust[kind],['keyId','publicKeyPem','allowedIdentities'],kind+' trust');
+    keys(trust[kind],kind==='ci'?['keyId','publicKeyPem','allowedIdentities','allowedRunners']:
+      ['keyId','publicKeyPem','allowedIdentities'],kind+' trust');
     if(!ID.test(trust[kind].keyId)||typeof trust[kind].publicKeyPem!=='string'||
       !Array.isArray(trust[kind].allowedIdentities)||!trust[kind].allowedIdentities.length||
       trust[kind].allowedIdentities.some(id=>typeof id!=='string'||!ID.test(id)))
       reject('ETRUST','Trusted signer identity is invalid');
   }
+  if(!Array.isArray(trust.ci.allowedRunners)||!trust.ci.allowedRunners.length||
+      trust.ci.allowedRunners.some(x=>typeof x!=='string'||!ID.test(x))||
+      trust.ci.allowedIdentities.some(x=>trust.review.allowedIdentities.includes(x)))
+    reject('ETRUST','CI runners and reviewer identities must be separately trusted');
   const ciKey=crypto.createPublicKey(trust.ci.publicKeyPem);
   const reviewerKey=crypto.createPublicKey(trust.review.publicKeyPem);
   if(ciKey.asymmetricKeyType!=='ed25519'||reviewerKey.asymmetricKeyType!=='ed25519'||
@@ -85,8 +90,8 @@ function validateTrust(trust){
 function validateCi(payload,{sha,author,mode,trust,logsDir,now}){
   exactBase(payload,'ci');
   if(payload.sha!==sha||payload.author!==author||
-    !trust.ci.allowedIdentities.includes(payload.issuer)||
-    typeof payload.runner!=='string'||!ID.test(payload.runner)||
+    !trust.ci.allowedIdentities.includes(payload.issuer)||payload.issuer===author||
+    typeof payload.runner!=='string'||!trust.ci.allowedRunners.includes(payload.runner)||
     !isTimestamp(payload.issuedAt,now,trust.maxAgeHours))reject('EIDENTITY','CI identity/commit/age mismatch');
   if(!Array.isArray(payload.suites)||payload.suites.length<1||payload.suites.length>20)
     reject('ESUITE','CI suite collection is invalid');
@@ -107,11 +112,11 @@ function validateCi(payload,{sha,author,mode,trust,logsDir,now}){
   }
   for(const id of REQUIRED[mode])if(!seen.has(id))reject('ESUITE','Required suite missing: '+id);
 }
-function validateReview(payload,{sha,author,trust,ciFileBytes,ciTime,now}){
+function validateReview(payload,{sha,author,ciIssuer,trust,ciFileBytes,ciTime,now}){
   exactBase(payload,'review');
   if(payload.sha!==sha||payload.author!==author||
       typeof payload.reviewer!=='string'||!trust.review.allowedIdentities.includes(payload.reviewer)||
-      payload.reviewer===author||payload.decision!=='approved'||
+      payload.reviewer===author||payload.reviewer===ciIssuer||payload.decision!=='approved'||
       typeof payload.ciSha256!=='string'||payload.ciSha256!==digest(ciFileBytes)||
       !isTimestamp(payload.issuedAt,now,trust.maxAgeHours)||
       Date.parse(payload.issuedAt)<Date.parse(ciTime))
@@ -135,7 +140,7 @@ function verifyEvidence({trustFile,ciFile,reviewFile,logsDir,sha,author,mode='pr
     if(typeof reviewFile!=='string'||!path.isAbsolute(reviewFile))
       reject('EREVIEW','Production requires an independent review file');
     const reviewed=verifyEnvelope(fileJSON(reviewFile),trust.review.keyId,trust.review.publicKeyPem);
-    validateReview(reviewed,{sha,author,trust,ciFileBytes,ciTime:ci.issuedAt,now});
+    validateReview(reviewed,{sha,author,ciIssuer:ci.issuer,trust,ciFileBytes,ciTime:ci.issuedAt,now});
   }
   return{ok:true,mode,repository:REPOSITORY,sha,suites:ci.suites.map(s=>s.id),
     independentlyReviewed:mode!=='development',ciEnvelopeSha256:digest(ciFileBytes)};
