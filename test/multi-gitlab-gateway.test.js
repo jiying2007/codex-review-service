@@ -73,7 +73,7 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
   const sensor=mockWorker('sensor','http://192.168.2.50',12,newEvents);
   const [oldPort,newPort]=await Promise.all([listen(legacy.server),listen(sensor.server)]);
   const manifest={
-    server:{defaultInstance:'legacy'},
+    server:{defaultInstance:'legacy',sharedProcessTrustAcknowledged:true},
     instances:[{id:'legacy'},{id:'sensor'}]
   };
   const ports={legacy:oldPort,sensor:newPort};
