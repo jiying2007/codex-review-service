@@ -130,11 +130,11 @@ async function startMultiGitLab() {
   process.on('SIGINT',()=>close('SIGINT').catch(()=>{process.exitCode=1;}));
   process.on('unhandledRejection',error=>{
     audit('multi_gitlab_fatal',{code:String(error?.code||'EUNHANDLED').slice(0,80)});
-    close('unhandledRejection').finally(()=>{process.exitCode=1;});
+    close('unhandledRejection').then(()=>{process.exitCode=1;},()=>{process.exitCode=1;});
   });
   process.on('uncaughtException',error=>{
     audit('multi_gitlab_fatal',{code:String(error?.code||'EUNCAUGHT').slice(0,80)});
-    close('uncaughtException').finally(()=>{process.exitCode=1;});
+    close('uncaughtException').then(()=>{process.exitCode=1;},()=>{process.exitCode=1;});
   });
   return {manifest,gateway,supervisor,close};
 }
