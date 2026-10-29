@@ -19,7 +19,7 @@ test('multi deployment package contains runtime, closed templates and a rollback
 });
 test('multi Compose never recreates the old DB volume or embeds credentials or an unverified tag',()=>{
  const text=fs.readFileSync('deploy/docker/compose.multi.yaml','utf8');
- assert.match(text,/CODEX_REVIEW_IMAGE:\?/);
+ assert.match(text,/ghcr\.io\/jiying2007\/codex-review-service@sha256:\$\{CODEX_REVIEW_IMAGE_DIGEST:\?/);
  assert.match(text,/CODEX_REVIEW_LEGACY_STATE_VOLUME:\?/);
  assert.match(text,/CODEX_REVIEW_LEGACY_HOME_VOLUME:\?/);
  assert.match(text,/external: true/);
