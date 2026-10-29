@@ -48,9 +48,12 @@ function normalizedUrl(raw, label) {
   let url;
   try { url = new URL(raw); } catch { fail(label + ' must be a valid GitLab http(s) URL'); }
   if (!['http:','https:'].includes(url.protocol) || url.username || url.password ||
-      url.search || url.hash || url.pathname !== '/')
-    fail(label + ' must be an origin URL without credentials, path, query or fragment');
-  return url.origin.toLowerCase();
+      url.search || url.hash)
+    fail(label + ' must be a GitLab base URL without credentials, query or fragment');
+  const prefix=url.pathname.replace(/\/+$/,'');
+  if(prefix && (!/^\/[A-Za-z0-9._/-]+$/.test(prefix) || prefix.split('/').includes('..')))
+    fail(label + ' contains an unsafe GitLab relative path');
+  return url.origin.toLowerCase()+prefix;
 }
 function fileJson(file, label) {
   let parsed;
