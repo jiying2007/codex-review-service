@@ -26,6 +26,15 @@ async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
   const token=readSecretFile(instance.secretFiles.GITLAB_API_TOKEN_FILE,'GITLAB_API_TOKEN');
   const base=instance.origin+'/api/v4';
   const context={fetchImpl,timeoutMs};
+  // Public projects and /version can return HTTP 200 even if a supplied PAT
+  // is invalid. /user requires a real authenticated GitLab identity.
+  const identityResponse=await checkResponse(base+'/user',token,context);
+  const identity=await identityResponse.json();
+  if(!Number.isSafeInteger(identity?.id)||identity.id<=0){
+    const error=new Error('GitLab API token did not resolve an authenticated user');
+    error.code='EGITLABAUTH';
+    throw error;
+  }
   const versionResponse=await checkResponse(base+'/version',token,context);
   const version=await versionResponse.json();
   const value=String(version?.version||'');
@@ -45,7 +54,7 @@ async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
   for(const id of projects)await checkResponse(base+'/projects/'+encodeURIComponent(id),token,context);
   const groups=cfg.gitlab.groups||[];
   for(const group of groups)await checkResponse(base+'/groups/'+encodeURIComponent(group.id),token,context);
-  return {id:instance.id,apiReadable:true,version:value,
+  return {id:instance.id,apiReadable:true,authenticated:true,version:value,
     checkedProjects:projects.length,checkedGroups:groups.length,
     // API GETs cannot prove write permissions or webhook direction.
     writePermissionsVerified:false,webhookDeliveryVerified:false};
