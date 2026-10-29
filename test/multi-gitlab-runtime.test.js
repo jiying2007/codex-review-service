@@ -8,6 +8,14 @@ const {EventEmitter}=require('node:events');
 const {superviseWorkers,assertPreparedDatabases}=require('../src/multi-gitlab');
 const {contract}=require('../src/product-contract');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function waitFor(predicate,{timeoutMs=1500,pollMs=15}={}){
+ const start=Date.now();
+ while(Date.now()-start<timeoutMs){
+   if(predicate())return;
+   await sleep(pollMs);
+ }
+ assert.fail('timed out while awaiting expected Worker state');
+}
 test('worker crash isolates the affected GitLab, restarts with bounded backoff and drains cleanly',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'multi-workers-')),workers=[];
  class MockWorker extends EventEmitter {
@@ -35,7 +43,7 @@ test('worker crash isolates the affected GitLab, restarts with bounded backoff a
    workers[1].emit('exit',7);
    assert.equal(supervisor.lookupPort('sensor'),0);
    assert.equal(supervisor.lookupPort('legacy'),48001,'other GitLab remains available');
-   await sleep(40);
+   await waitFor(()=>workers.length===3);
    assert.equal(workers.length,3,'sensor worker should restart automatically');
    workers[2].emit('message',{type:'ready',port:48003});
    assert.equal(supervisor.lookupPort('sensor'),48003);
@@ -98,7 +106,7 @@ test('stalled tenant initialization is terminated without disabling healthy lega
   });
   try{
     supervisor.start();
-    await sleep(100);
+    await waitFor(()=>supervisor.lookupPort('sensor')===48102);
     assert.equal(supervisor.lookupPort('legacy'),48101);
     assert.equal(supervisor.lookupPort('sensor'),48102);
     assert.ok(created.length>=3,'timed out sensor worker must be restarted');
