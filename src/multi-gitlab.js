@@ -123,7 +123,20 @@ async function startMultiGitLab() {
     if(closing)return;
     closing=true;
     audit('multi_gitlab_shutdown',{signal});
-    await new Promise(resolve=>gateway.close(resolve));
+    await new Promise(resolve=>{
+      let finished=false;
+      const done=()=>{
+        if(finished)return;
+        finished=true;
+        clearTimeout(timer);
+        resolve();
+      };
+      // Accept no new events, then bound the drain of existing connections.
+      gateway.close(done);
+      gateway.closeIdleConnections?.();
+      const timer=setTimeout(()=>gateway.closeAllConnections?.(),10000);
+      timer.unref?.();
+    });
     await supervisor.close();
   };
   process.on('SIGTERM',()=>close('SIGTERM').catch(()=>{process.exitCode=1;}));
