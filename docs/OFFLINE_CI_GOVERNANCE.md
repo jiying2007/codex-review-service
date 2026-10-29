@@ -22,11 +22,11 @@ The protected publisher installs /etc/codex-review/release-trust.json with mode 
       "schemaVersion": 1,
       "repository": "jiying2007/codex-review-service",
       "maxAgeHours": 72,
-      "ci": {"keyId":"ci-key", "allowedIdentities":["ci-operator"], "publicKeyPem":"<public Ed25519 SPKI PEM>"},
+      "ci": {"keyId":"ci-key", "allowedIdentities":["ci-operator"], "allowedRunners":["isolated-linux"], "publicKeyPem":"<public Ed25519 SPKI PEM>"},
       "review": {"keyId":"review-key", "allowedIdentities":["independent-reviewer"], "publicKeyPem":"<different public Ed25519 SPKI PEM>"}
     }
 
-These are PUBLIC keys only. Keep the separate CI and reviewer PRIVATE Ed25519 keys in different protected users/machines, mode 0600, inaccessible to test jobs. A reviewer must not equal the PR author. The production verifier CLI accepts ONLY the fixed /etc/codex-review/release-trust.json path, so it cannot select a public key introduced by the PR itself. Key changes need a separately reviewed administrator action.
+These are PUBLIC keys only. The CI runner ID must be explicitly allowlisted and cannot equal the PR author; trusted CI and reviewer identity sets must be disjoint. Keep the separate CI and reviewer PRIVATE Ed25519 keys in different protected users/machines, mode 0600, inaccessible to test jobs. A reviewer must not equal the PR author. The production verifier CLI accepts ONLY the fixed /etc/codex-review/release-trust.json path, so it cannot select a public key introduced by the PR itself. Key changes need a separately reviewed administrator action.
 
 ## Run real offline tests, no Codex/Work/model usage
 
