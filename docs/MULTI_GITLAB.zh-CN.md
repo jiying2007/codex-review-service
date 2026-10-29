@@ -13,6 +13,14 @@
 - 持久身份逻辑上是 (instanceId, 独立 SQLite DB, project_id, mr_iid, commit_sha)。两台 GitLab 的 Project ID、User ID、状态、回写凭证、通知路由不得相互复用。避免侵入式改动全部 SQLite 表/迁移所有线上数据，使用物理数据库命名空间实现隔离。
 - 单 GitLab 原入口、直接 CODEX_REVIEW_CONFIG_FILE 配置和旧 Schema 8 保持不变。只有显式设置 CODEX_REVIEW_MULTI_CONFIG_FILE 时才启动多实例入口。
 
+## 免费离线代码验证（不调用 Codex/Work）
+
+新增显式测试入口：
+
+    npm run test:multi-offline
+
+此命令只运行 8 组原生多实例单元/本地 HTTP/SQLite/Worker 模拟与实际 Worker Thread 测试，所有 GitLab API 调用使用 mock，禁止与生产中的旧 GitLab 共享数据库；不启动 Codex CLI、不请求 OpenAI API、不访问真实 GitLab。支持的正式测试运行时仍为 Node 22.22.2 或 Node 24.19.0。正式发布还必须完成 Service 全部 CI、CodeQL、GitLab CE Provider 与故障注入验收；离线通过不替代这些证据。
+
 ## 凭据与安全
 
 多实例清单使用 deploy/docker/multi-instance.example.json。 必须人工确认共享进程信任边界后开启该选项，不能把它当成 OS 安全沙箱。每个实例都明确声明 configFile、homeDir、GitLab API Token 与 Webhook Secret 的 *_FILE 文件绝对路径，API 与 Webhook Secret 都不允许两实例共享文件或相同实际内容。配置检查读取受控凭据进行内存摘要比较，不打印凭据值。Worker Thread 仅接收所属实例的文件路径及有限环境变量，不继承宿主旧 API Token、OpenAI API Key 或另一实例的明文。
