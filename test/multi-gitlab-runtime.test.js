@@ -5,7 +5,8 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {EventEmitter}=require('node:events');
-const {superviseWorkers}=require('../src/multi-gitlab');
+const {superviseWorkers,assertPreparedDatabases}=require('../src/multi-gitlab');
+const {contract}=require('../src/product-contract');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 test('worker crash isolates the affected GitLab, restarts with bounded backoff and drains cleanly',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'multi-workers-')),workers=[];
@@ -46,4 +47,21 @@ test('worker crash isolates the affected GitLab, restarts with bounded backoff a
    await sleep(40);
    assert.equal(workers.length,count,'closing the gateway must prevent worker resurrection');
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('a first multi-GitLab start cannot mount old/missing DB, but restart can recover queued jobs',()=>{
+ const schema=contract.databaseSchemaVersion;
+ const healthy={id:'legacy',schemaVersion:schema,integrity:true,drained:true};
+ assert.equal(assertPreparedDatabases({results:[healthy,{...healthy,id:'sensor'}]}),true);
+ assert.equal(assertPreparedDatabases({results:[{...healthy,drained:false,code:'EDBNOTDRAINED'}]}),true,
+   'ordinary crash recovery must not discard queued durable jobs');
+ for(const bad of [
+   {results:[]},
+   {results:[{...healthy,schemaVersion:9}]},
+   {results:[{...healthy,integrity:false}]},
+   {results:[{id:'missing',drained:false,code:'EDBMISSING'}]},
+   {results:[healthy,{...healthy,id:'sensor',schemaVersion:9}]}
+ ]){
+   assert.throws(()=>assertPreparedDatabases(bad),error=>error?.code==='EMULTIDBPREP');
+ }
 });
