@@ -8,7 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { readSecretFile, allowedSecretName } = require('./secrets');
 const { CONFIG_SCHEMA_VERSION } = require('./product-contract');
-const { loadStructuredConfig } = require('./config');
+const { loadStructuredConfig, positiveIds, parseGroups } = require('./config');
 
 const INSTANCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const ENV_ALLOWLIST = Object.freeze([
@@ -111,10 +111,16 @@ function validateInstance(raw, allFiles, identities) {
   if (overlaps(homeDir, dataDir)) fail(id + ' homeDir must not overlap SQLite state');
   if (codex.home && path.resolve(codex.home) !== homeDir)
     fail(id + ' codex.home must match the dedicated homeDir');
-  const projects=gitlab.projects===undefined?[]:gitlab.projects;
-  const groups=gitlab.groups===undefined?[]:gitlab.groups;
-  if (!Array.isArray(projects) || !Array.isArray(groups) ||
-      (!projects.length && !groups.length))
+  // Validate the *same* numeric scope semantics as the existing Service
+  // before any Worker can probe a foreign GitLab using the wrong allowlist.
+  let projects,groups;
+  try{
+    projects=positiveIds(gitlab.projects,id + '.gitlab.projects');
+    groups=parseGroups(gitlab.groups);
+  }catch{
+    fail(id + ' contains invalid GitLab project/group scope');
+  }
+  if(!projects.length && !groups.length)
     fail(id + ' must explicitly scope at least one GitLab project or group');
   const origin = normalizedUrl(gitlab.baseUrl, id + '.gitlab.baseUrl');
   const expected = normalizedUrl(webhook.expectedInstance, id + '.webhook.expectedInstance');
