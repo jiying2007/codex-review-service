@@ -3,8 +3,10 @@
 const path=require('node:path');
 const {spawnSync}=require('node:child_process');
 const {loadMultiManifest,buildWorkerEnv}=require('./multi-gitlab-config');
+const {inspectDatabase}=require('./multi-gitlab-cutover-check');
+const {contract}=require('./product-contract');
 
-function runAdmin({manifestFile,id,args,spawnImpl=spawnSync}){
+function runAdmin({manifestFile,id,args,spawnImpl=spawnSync,inspectImpl=inspectDatabase}){
   const manifest=loadMultiManifest(manifestFile);
   const tenant=manifest.instances.find(item=>item.id===id);
   if(!tenant){
@@ -21,6 +23,15 @@ function runAdmin({manifestFile,id,args,spawnImpl=spawnSync}){
   if(!/^[a-z][a-z-]{0,63}$/.test(command)){
     const error=new Error('Invalid admin command');
     error.code='EADMINARGS';
+    throw error;
+  }
+  // The legacy admin CLI opens Store() before choosing a subcommand, which
+  // may auto-migrate Schema 9 or create a fresh database. For multi tenants,
+  // refuse that side effect until a reviewed offline cutover prepared Schema 11.
+  const inspected=inspectImpl(path.join(tenant.dataDir,'review-service.sqlite'));
+  if(inspected.schemaVersion!==contract.databaseSchemaVersion || inspected.integrity!==true){
+    const error=new Error('Selected GitLab database must be pre-migrated and verified before admin access');
+    error.code='EMULTIDBPREP';
     throw error;
   }
   const result=spawnImpl(process.execPath,
