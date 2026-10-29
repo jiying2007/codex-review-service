@@ -45,11 +45,13 @@ function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSy
   if(git('status','--porcelain','--untracked-files=normal'))throw Error('Evidence cannot be collected from a dirty checkout');
   fs.mkdirSync(outDir,{recursive:true,mode:0o700});
   const logsDir=path.join(outDir,'logs');fs.mkdirSync(logsDir,{mode:0o700});
+  const workerHome=path.join(outDir,'worker-home');fs.mkdirSync(workerHome,{mode:0o700});
+  const runnerEnv={...noSecrets(),HOME:workerHome};
   const results=[];
   for(const id of suiteIds){
     const started=Date.now();
     const r=spawn(process.execPath,SUITES[id],{cwd:repoDir,encoding:'utf8',
-      timeout:300000,maxBuffer:16*1024*1024,shell:false,env:noSecrets()});
+      timeout:300000,maxBuffer:16*1024*1024,shell:false,env:runnerEnv});
     const exitCode=Number.isInteger(r.status)?r.status:124;
     const durationMs=Math.max(0,Date.now()-started);
     const log=Buffer.from('suite='+id+'\nexitCode='+exitCode+'\n'+
