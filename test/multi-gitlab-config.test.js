@@ -57,6 +57,20 @@ test('two GitLab servers may have identical project 113 but never share durable 
     assert.equal(overlaps(config.instances[0].dataDir,config.instances[1].dataDir),false);
   }finally{f.close();}
 });
+
+test('legacy Config Schema 8 may omit either optional scope array without changing project identity',()=>{
+  const f=fixture();try{
+    delete f.legacy.gitlab.groups;
+    f.sensor.gitlab.projects=undefined;
+    f.sensor.gitlab.groups=[{id:48,includeSubgroups:false}];
+    f.flush();
+    const loaded=loadMultiManifest(f.manifestFile);
+    assert.equal(loaded.instances.length,2);
+    assert.equal(loaded.instances[0].origin,'http://192.168.1.4');
+    assert.equal(loaded.instances[1].origin,'http://192.168.2.50');
+  }finally{f.close();}
+});
+
 test('worker environments retain only their own secret file paths and runtime homes',()=>{
   const f=fixture();try{
     const c=loadMultiManifest(f.manifestFile);
