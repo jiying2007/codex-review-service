@@ -77,7 +77,7 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
     instances:[{id:'legacy'},{id:'sensor'}]
   };
   const ports={legacy:oldPort,sensor:newPort};
-  const gateway=createMultiGateway({manifest,lookupPort:id=>ports[id]||0});
+  const gateway=createMultiGateway({manifest,lookupPort:id=>ports[id]||0,lookupRestartCount:id=>id==='sensor'?3:0});
   const port=await listen(gateway);
   const body=JSON.stringify({object_kind:'merge_request',project:{id:113},object_attributes:{iid:1}});
   try{
@@ -103,6 +103,8 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
     assert.equal(selected.status,200);assert.equal(selected.body.id,'sensor');
     const metrics=await call(port,'/metrics');
     assert.match(metrics.body,/codex_review_instance_up\{instance="sensor"\} 1/);
+    assert.match(metrics.body,/codex_review_instance_restarts_total\{instance="sensor"\} 3/);
+    assert.match(metrics.body,/codex_review_instance_restarts_total\{instance="legacy"\} 0/);
     await close(sensor.server);
     const degraded=await call(port,'/health/dependencies');
     assert.equal(degraded.status,503);
