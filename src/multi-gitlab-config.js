@@ -111,8 +111,10 @@ function validateInstance(raw, allFiles, identities) {
   if (overlaps(homeDir, dataDir)) fail(id + ' homeDir must not overlap SQLite state');
   if (codex.home && path.resolve(codex.home) !== homeDir)
     fail(id + ' codex.home must match the dedicated homeDir');
-  if (!Array.isArray(gitlab.projects) || !Array.isArray(gitlab.groups) ||
-      !gitlab.projects.length && !gitlab.groups.length)
+  const projects=gitlab.projects===undefined?[]:gitlab.projects;
+  const groups=gitlab.groups===undefined?[]:gitlab.groups;
+  if (!Array.isArray(projects) || !Array.isArray(groups) ||
+      (!projects.length && !groups.length))
     fail(id + ' must explicitly scope at least one GitLab project or group');
   const origin = normalizedUrl(gitlab.baseUrl, id + '.gitlab.baseUrl');
   const expected = normalizedUrl(webhook.expectedInstance, id + '.webhook.expectedInstance');
