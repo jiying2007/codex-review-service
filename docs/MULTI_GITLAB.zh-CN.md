@@ -28,7 +28,7 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 3. 将真正的 /opt/codex-review-service/config.json 另存为候选 legacy.json，保留所有旧 Project、Group 48、触发规则、企业微信/飞书、Codex 模型策略等有效设置；只按新容器内部的真实路径设置 server.dataDir 为 /var/lib/codex-review/legacy、codex.home 为 /home/codex-review/legacy。不要用模板覆盖原配置。
 4. 根据 deploy/docker/sensor.config.example.json 创建 sensor.json（Config Schema 8），指向 http://192.168.2.50、projects [113]、独立数据目录 /var/lib/codex-review/sensor 与 Home。Webhook expectedInstance 与该 GitLab 的真实 origin 相同。通知先禁用。
 5. 将 multi-instance.example.json 复制为 multi-instance.json。配置四个分离的受控 GitLab API/Webhook 文件。Compose 只接收秘密文件的路径环境变量，禁止任何 Secret 明文进入 git、配置仓库、Shell 历史、命令参数或聊天。按最小权限配置 API Token，必须能读新项目并在真实 MR 写入 Note/Discussion/Commit Status。
-6. 按 deploy/docker/compose.multi.yaml 准备 Docker 环境。CODEX_REVIEW_IMAGE 必须是已发行且证明可核验的完整 @sha256 digest；CODEX_REVIEW_LEGACY_STATE_VOLUME 与 CODEX_REVIEW_LEGACY_HOME_VOLUME 必须指向已经存在的旧命名卷，Compose 标为 external，不允许自动创建一个空卷替代。其他两个 sensor 卷新建。先运行以下只读校验，不启动重复旧 Writer：
+6. 按 deploy/docker/compose.multi.yaml 准备 Docker 环境。CODEX_REVIEW_IMAGE_DIGEST 必须是已发行且验证可追溯的完整 64 位十六进制 digest 值（不含 sha256: 前缀）；Compose 镜像硬绑定 ghcr.io/jiying2007/codex-review-service@sha256:<该摘要>，不接受可变 tag；CODEX_REVIEW_LEGACY_STATE_VOLUME 与 CODEX_REVIEW_LEGACY_HOME_VOLUME 必须指向已经存在的旧命名卷，Compose 标为 external，不允许自动创建一个空卷替代。其他两个 sensor 卷新建。先运行以下只读校验，不启动重复旧 Writer：
 
        docker compose -f compose.multi.yaml config --quiet
        ss -ltnp | grep -E ':(8787|8788)' || true
@@ -48,7 +48,7 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 
 **镜像能力预检：** IMAGE 必须是通过验签的真实 digest，并在不启动应用的前提下，确认镜像包含本功能：
 
-       docker run --rm --entrypoint node "$CODEX_REVIEW_IMAGE" -e "require('./src/multi-gitlab-config');require('./src/multi-gitlab-gateway');require('./src/multi-gitlab')"
+       docker run --rm --entrypoint node "ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST}" -e "require('./src/multi-gitlab-config');require('./src/multi-gitlab-gateway');require('./src/multi-gitlab')"
 
 旧 v7.6.1 镜像会因缺少模块而非零退出；即使能力检查通过，也不能替代受保护 CI、SBOM、GitLab 真机与独立审核。
 
