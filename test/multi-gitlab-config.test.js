@@ -81,6 +81,8 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
   for(const mutate of [
     f=>{f.manifest.instances[1].id='legacy';},
     f=>{f.manifest.server.defaultInstance='missing';},
+    f=>{delete f.manifest.server.sharedProcessTrustAcknowledged;},
+    f=>{f.manifest.server.sharedProcessTrustAcknowledged=false;},
     f=>{f.sensor.gitlab.baseUrl=f.legacy.gitlab.baseUrl;f.sensor.webhook.expectedInstance=f.sensor.gitlab.baseUrl;},
     f=>{f.sensor.server.dataDir=f.legacy.server.dataDir;},
     f=>{f.sensor.server.dataDir=path.join(f.legacy.server.dataDir,'nested');},
@@ -90,7 +92,7 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
     f=>{f.manifest.server.port=65536;},
     f=>{f.manifest.instances[1].id='../sensor';}
   ]){
-    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential/i);}
+    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential|boundary/i);}
     finally{f.close();}
   }
 });
