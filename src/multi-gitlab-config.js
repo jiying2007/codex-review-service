@@ -123,7 +123,9 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
   exactKeys(root, ['schemaVersion','server','instances'], 'multi-instance manifest');
   if (root.schemaVersion !== 1) fail('unsupported multi-instance manifest schema');
   const server = record(root.server, 'server');
-  exactKeys(server, ['host','port','defaultInstance'], 'server');
+  exactKeys(server, ['host','port','defaultInstance','sharedProcessTrustAcknowledged'], 'server');
+  if(server.sharedProcessTrustAcknowledged!==true)
+    fail('server.sharedProcessTrustAcknowledged must explicitly acknowledge one OS process is not a hard security boundary');
   const host = server.host;
   const port = server.port;
   if (typeof host !== 'string' || !host || /[\s\/\\\0]/.test(host))
