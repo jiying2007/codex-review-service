@@ -8,6 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { readSecretFile, allowedSecretName } = require('./secrets');
 const { CONFIG_SCHEMA_VERSION } = require('./product-contract');
+const { loadStructuredConfig } = require('./config');
 
 const INSTANCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const ENV_ALLOWLIST = Object.freeze([
@@ -98,6 +99,10 @@ function validateInstance(raw, allFiles, identities) {
   const config = fileJson(configFile, id + '.configFile');
   if (config.schemaVersion !== CONFIG_SCHEMA_VERSION)
     fail(id + ' must use current standalone Config Schema ' + CONFIG_SCHEMA_VERSION);
+  // Perform strict closed-key Schema 8 admission before any tenant worker
+  // starts, so unknown/deprecated fields cannot partially start the gateway.
+  try { loadStructuredConfig(configFile); }
+  catch { fail(id + ' has invalid standalone Config Schema ' + CONFIG_SCHEMA_VERSION + ' fields'); }
   const server = record(config.server, id + '.server');
   const gitlab = record(config.gitlab, id + '.gitlab');
   const webhook = record(config.webhook, id + '.webhook');
