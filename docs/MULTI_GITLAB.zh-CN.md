@@ -54,6 +54,16 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 
 容器内部单个 HTTP 端口继续为 8787；主机若使用 8788 进行其他隔离验证，只修改 CODEX_REVIEW_PORT 映射，不必修改每个实例 Config Schema 的 server.port。默认 Compose 只绑定本机 127.0.0.1；反向代理需要接收 GitLab 外部回调，推荐可信 HTTPS 入口及源地址限制。网页登录 200 不证明 API Token 有权限，也不证明新 GitLab 能反向访问 Webhook。
 
+## 数据库切换只读门禁（候选新增）
+
+新 CLI `node src/multi-gitlab-cutover-check.js` 只读打开每台 GitLab 的 `review-service.sqlite`，不调用 `Store()`、不触发迁移、恢复、Webhook、Codex 或外部请求；检查当前 Service 的 DB Schema、SQLite quick_check/foreign_key_check、Review Job 非终态、Publication/Notification Outbox 未投递任务以及状态写入的 `started/uncertain`。任一实例有待处理任务或任何状态结果不确定，则整体返回非零并报告实例级阻断。
+
+    CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-cutover-check.js
+
+**这不是数据库锁或备份**：即使返回 READY，旧进程也可能继续收到 Webhook、reconcile 或 Outbox 写入。因此操作前必须实际排空、暂停入口、停止原 Writer 并完成 SQLite 在线一致性备份。对于 7.6.1 → 7.6.2（Schema 9 → 11），该检查会**明确返回 EDBSCHEMA**，不能用修改 JSON 或关闭检查强行放行。应在停旧实例并保存不可变备份后，用有版本资格的升级程序在**受控复制数据库**上完成正式迁移、`backup-verify` 与读写边界核验，再将经验证的数据放入新实例的独立卷，并重新执行只读门禁。新 sensor 的空库也必须由官方 7.6.2 `admin db-check` 在隔离维护步骤初始化与验证；任何缺失 DB 不代表已验收。
+
+如果修复 #114 的最终引用/发布事务栅栏尚未得到认可，`status_write_attempts` / `status_publication_targets` 的不确定远端效果仍必须由正式 Recovery 验收独立解决；本门禁只能拒绝**数据库显式记录**的不确定项，不能代替 GitLab 服务端原生原子 CAS 资格。
+
 ## 正式切换步骤（需要主机管理员与维护窗口）
 
 不可在旧单实例容器写旧 SQLite 的同时启动读取相同卷的新 Legacy Worker。即使旧 Webhook 暂停，旧进程的周期 reconcile / outbox 也可能写 DB，因此必须先 drain、备份并停止原容器。若 sensor 之前已经由独立 8788 服务运行，也需要先停、排空并备份其数据库卷。
