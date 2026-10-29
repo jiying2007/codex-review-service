@@ -15,9 +15,9 @@ function audit(event, fields={}) {
   }) + '\n');
 }
 function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__dirname,'index.js'),
-  retryBaseMs=1000,retryMaxMs=120000}={}) {
+  retryBaseMs=1000,retryMaxMs=120000,startTimeoutMs=180000}={}) {
   const states=new Map(manifest.instances.map(item=>[item.id,{
-    instance:item,worker:null,port:0,attempt:0,timer:null,ready:false
+    instance:item,worker:null,port:0,attempt:0,timer:null,startupTimer:null,ready:false
   }]));
   let closing=false;
   function spawn(id) {
@@ -33,6 +33,12 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
       state.worker=worker;
       state.ready=false;
       state.port=0;
+      state.startupTimer=setTimeout(()=>{
+        if(state.worker!==worker || state.ready || closing)return;
+        audit('gitlab_instance_startup_timeout',{instance:id});
+        worker.terminate().catch(()=>{});
+      },startTimeoutMs);
+      state.startupTimer.unref?.();
       worker.on('message',message=>{
         if (state.worker!==worker || closing) return;
         if (message && message.type==='ready' && Number.isInteger(message.port) &&
@@ -40,6 +46,8 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
           state.port=message.port;
           state.ready=true;
           state.attempt=0;
+          clearTimeout(state.startupTimer);
+          state.startupTimer=null;
           audit('gitlab_instance_ready',{instance:id});
         }else if (message && message.type==='startup_failed') {
           audit('gitlab_instance_startup_failed',{instance:id,code:String(message.code||'ESTART').slice(0,80)});
@@ -51,6 +59,8 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
       });
       worker.on('exit',code=>{
         if(state.worker!==worker)return;
+        clearTimeout(state.startupTimer);
+        state.startupTimer=null;
         state.worker=null;
         state.port=0;
         state.ready=false;
@@ -75,7 +85,9 @@ function superviseWorkers(manifest,{WorkerClass=Worker,workerFile=path.join(__di
     closing=true;
     for (const state of states.values()) {
       clearTimeout(state.timer);
+      clearTimeout(state.startupTimer);
       state.timer=null;
+      state.startupTimer=null;
       state.port=0;
     }
     const tasks=[...states.values()].map(async state=>{
