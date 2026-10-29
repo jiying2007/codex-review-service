@@ -150,7 +150,7 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
     if (left.origin === right.origin) fail('duplicate GitLab origin across instances');
   }
   return Object.freeze({
-    server: Object.freeze({host,port,defaultInstance:server.defaultInstance}),
+    server: Object.freeze({host,port,defaultInstance:server.defaultInstance,sharedProcessTrustAcknowledged:true}),
     instances: Object.freeze(instances)
   });
 }
