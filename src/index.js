@@ -1,6 +1,7 @@
 'use strict';
 
 const { loadConfig }=require('./config');
+const { isMainThread, parentPort, workerData }=require('node:worker_threads');
 const { createStorage }=require('./storage');
 const { installFairScheduling }=require('./fair-scheduler');
 const { GitLabClient }=require('./gitlab');
@@ -19,8 +20,13 @@ function log(level,value){const record=typeof value==='object'&&value?value:{mes
 async function listen(server,port,host){await new Promise((resolve,reject)=>{const onError=e=>{server.off('listening',onListening);reject(e);},onListening=()=>{server.off('error',onError);resolve();};server.once('error',onError);server.once('listening',onListening);server.listen(port,host);});}
 
 async function main(){
+  if (isMainThread && process.env.CODEX_REVIEW_MULTI_CONFIG_FILE)
+    return require('./multi-gitlab').startMultiGitLab();
+  const workerInstanceId=!isMainThread&&workerData?.codexReviewInstanceId||null;
   const startedAt=Date.now();let config=loadConfig();
-  const logger={info:v=>log('info',v),warn:v=>log('warn',v),error:v=>log('error',v)};
+  if(workerInstanceId) config=Object.freeze({...config,host:'127.0.0.1',port:0});
+  const scoped=value=>workerInstanceId?{instance:workerInstanceId,...(value&&typeof value==='object'?value:{message:String(value)})}:value;
+  const logger={info:v=>log('info',scoped(v)),warn:v=>log('warn',scoped(v)),error:v=>log('error',scoped(v))};
   const telemetry=new Telemetry({logger,endpoint:config.otelEndpoint,serviceName:config.otelServiceName,timeoutMs:config.otelExportTimeoutMs});
   const capability=await probeCodexCapabilities(config);logger.info({event:'codex_ready',mode:config.runnerMode,version:capability.version,versionMatched:capability.versionMatched,runnerCapability:capability.runnerCapability||null});if(capability.versionMatched===false)logger.warn({event:'codex_version_policy_warning',version:capability.version});
   const store=createStorage({dbPath:config.dbPath}),scheduler=installFairScheduling(store),recoveredJobs=store.recoverInterruptedJobs(),recoveredPublications=store.recoverPublications(),recoveredNotifications=store.recoverNotifications();
@@ -29,7 +35,7 @@ async function main(){
   logger.info({event:'gitlab_capabilities_ready',version:gitlabVersion.version,profile:gitlabCapabilities.profile,webhookAuth:gitlabCapabilities.webhookAuth,diffCompleteness:gitlabCapabilities.diffCompleteness});
   const scopeManager=new ProjectScopeManager(gitlab,config);await scopeManager.refresh();config=applyProjectScope(config,scopeManager);config=await prepareNotificationRoutes(gitlab,config);logger.info({event:'project_scope_ready',mode:scopeManager.mode,...scopeManager.stats,notificationRoutes:config.notificationRoutesResolved.length});
   const service=new ReviewService({config,store,gitlab,logger,telemetry}),flowTracker=new FlowTracker({config,store,planNotificationActions,logger}),publisher=new Publisher({config,store,gitlab,logger}),notifier=new Notifier({config,store,logger,telemetry});service.startWorkers();publisher.start();notifier.start();
-  const server=createHttpServer({config,store,service,flowTracker,publisher,notifier,gitlab,telemetry,logger,startedAt});await listen(server,config.port,config.host);logger.info({event:'service_started',serviceVersion:contract.serviceVersion,configSchemaVersion:contract.configSchemaVersion,databaseSchemaVersion:store.schemaVersion(),safeCoreCommit:contract.safeCoreCommit,gitlabVersion:gitlabCapabilities.version,gitlabProfile:gitlabCapabilities.profile,webhookAuth:gitlabCapabilities.webhookAuth,host:config.host,port:config.port,deployment:config.runnerMode==='isolated'?'hardened':'standard',workers:config.workerConcurrency,publishers:config.publisherConcurrency,notifiers:config.notificationEnabled?config.notificationConcurrency:0,flowTracking:config.flowTrackingEnabled,synchronous:store.synchronousMode(),scheduler:'project-fair'});
+  const server=createHttpServer({config,store,service,flowTracker,publisher,notifier,gitlab,telemetry,logger,startedAt});await listen(server,config.port,config.host);if(workerInstanceId)parentPort.postMessage({type:'ready',port:server.address().port});logger.info({event:'service_started',serviceVersion:contract.serviceVersion,configSchemaVersion:contract.configSchemaVersion,databaseSchemaVersion:store.schemaVersion(),safeCoreCommit:contract.safeCoreCommit,gitlabVersion:gitlabCapabilities.version,gitlabProfile:gitlabCapabilities.profile,webhookAuth:gitlabCapabilities.webhookAuth,host:config.host,port:config.port,deployment:config.runnerMode==='isolated'?'hardened':'standard',workers:config.workerConcurrency,publishers:config.publisherConcurrency,notifiers:config.notificationEnabled?config.notificationConcurrency:0,flowTracking:config.flowTrackingEnabled,synchronous:store.synchronousMode(),scheduler:'project-fair'});
   const maintenance=setInterval(()=>{try{const pruned=store.prune(config);store.checkpoint();if(Object.values(pruned).some(Boolean))logger.info({event:'data_pruned',...pruned});}catch(error){logger.warn({event:'maintenance_failed',code:error.code||'EMAINTENANCE'});}},config.maintenanceIntervalMs);maintenance.unref?.();
   const reconcileOnce=()=>service.reconcile().then(result=>{if(result.enqueued)logger.info({event:'reconcile_enqueued',...result});}).catch(error=>logger.warn({event:'reconcile_failed',code:error.code||'ERECONCILE'}));
   const enqueueSystem=event=>{for(const action of planNotificationActions(config,event,`system:${event.type}:${Date.now()}`))store.enqueueNotification(action);};let scopeWasHealthy=true;
@@ -37,6 +43,24 @@ async function main(){
   const reconcile=setInterval(periodic,config.reconcileIntervalMs);reconcile.unref?.();setTimeout(()=>reconcileOnce(),Math.min(5000,config.pollIntervalMs)).unref?.();
   let shuttingDown=false;const shutdown=async signal=>{if(shuttingDown)return;shuttingDown=true;logger.info({event:'shutdown',signal,scheduler:scheduler.snapshot()});clearInterval(maintenance);clearInterval(reconcile);await new Promise(resolve=>server.close(resolve));await service.stop();await publisher.stop();await notifier.stop();await telemetry.flush();store.checkpoint();store.close();};
   let fatalExitStarted=false;const fatal=async(kind,error)=>{if(fatalExitStarted)return;fatalExitStarted=true;logger.error({event:'fatal_runtime_error',kind,code:error?.code||'EUNHANDLED',message:String(error?.message||error||'unknown').slice(0,500)});try{await shutdown(kind);}catch(shutdownError){logger.error({event:'fatal_shutdown_failed',code:shutdownError?.code||'ESHUTDOWN'});}process.exit(1);};
-  process.on('SIGTERM',()=>{shutdown('SIGTERM').catch(()=>process.exit(1));});process.on('SIGINT',()=>{shutdown('SIGINT').catch(()=>process.exit(1));});process.on('unhandledRejection',error=>{fatal('unhandledRejection',error).catch(()=>process.exit(1));});process.on('uncaughtException',error=>{fatal('uncaughtException',error).catch(()=>process.exit(1));});
+  if(workerInstanceId){
+    parentPort.on('message',message=>{
+      if(message?.type==='shutdown')shutdown('parent_shutdown')
+        .then(()=>{parentPort.postMessage({type:'stopped'});parentPort.close();})
+        .catch(error=>fatal('shutdown_failure',error));
+    });
+  }else{
+    process.on('SIGTERM',()=>{shutdown('SIGTERM').catch(()=>process.exit(1));});
+    process.on('SIGINT',()=>{shutdown('SIGINT').catch(()=>process.exit(1));});
+  }
+  process.on('unhandledRejection',error=>{fatal('unhandledRejection',error).catch(()=>process.exit(1));});
+  process.on('uncaughtException',error=>{fatal('uncaughtException',error).catch(()=>process.exit(1));});
 }
-main().catch(error=>{log('error',{event:'startup_failed',code:error.code||'ESTART',message:error.message});process.exitCode=1;});
+main().catch(error=>{
+  const code=String(error?.code||'ESTART').slice(0,80);
+  // Avoid leaking credential paths or their values to parent process logs.
+  if(!isMainThread && workerData?.codexReviewInstanceId)
+    parentPort?.postMessage({type:'startup_failed',code});
+  log('error',{event:'startup_failed',code,instance:workerData?.codexReviewInstanceId||'single'});
+  process.exitCode=1;
+});
