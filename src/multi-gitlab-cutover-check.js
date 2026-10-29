@@ -33,6 +33,18 @@ function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:tr
     return{ok:false,code:'EDBNOTFILE',schemaVersion:null,drained:false};
   if(stat.nlink!==1)
     return{ok:false,code:'EDBMULTILINK',schemaVersion:null,drained:false};
+  // A DB file may be safe while its WAL/SHM/rollback sidecar is a symlink or
+  // hardlink into another GitLab's state. Check them *before* SQLite opens.
+  for(const suffix of ['-wal','-shm','-journal']){
+    let sidecar;
+    try{sidecar=fs.lstatSync(dbPath+suffix);}
+    catch(error){
+      if(error.code==='ENOENT')continue;
+      return{ok:false,code:'EDBSIDECAR',schemaVersion:null,drained:false};
+    }
+    if(!sidecar.isFile() || sidecar.isSymbolicLink() || sidecar.nlink!==1)
+      return{ok:false,code:'EDBSIDECAR',schemaVersion:null,drained:false};
+  }
   let db;
   try{
     db=open(dbPath);
