@@ -160,4 +160,4 @@ if(require.main===module){
   try{process.stdout.write(JSON.stringify(main())+'\n');}
   catch(e){process.stderr.write(JSON.stringify({ok:false,code:e.code||'EADMISSION'})+'\n');process.exitCode=2;}
 }
-module.exports={REPOSITORY,PRODUCTION_TRUST,REQUIRED,readRegularBytes,digest,signedMessage,verifyEnvelope,validateTrust,verifyEvidence,main};
+module.exports={REPOSITORY,PRODUCTION_TRUST,REQUIRED,readRegularBytes,digest,signedMessage,verifyEnvelope,validateTrust,validateCi,verifyEvidence,main};
