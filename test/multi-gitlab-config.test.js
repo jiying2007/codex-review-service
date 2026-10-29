@@ -122,3 +122,40 @@ test('explicit multi manifest prevents silent single-instance configuration fall
     assert.throws(()=>loadMultiManifest(f.manifestFile),/scope at least one/);
   }finally{f.close();}
 });
+
+test('physical symlinks cannot alias tenant DB, Codex home or secret files',()=>{
+  const cases=[
+    f=>{
+      fs.mkdirSync(f.legacy.server.dataDir);
+      fs.symlinkSync(f.legacy.server.dataDir,f.location('sensor-db-alias'));
+      f.sensor.server.dataDir=f.location('sensor-db-alias');
+    },
+    f=>{
+      fs.mkdirSync(f.manifest.instances[0].homeDir);
+      fs.symlinkSync(f.manifest.instances[0].homeDir,f.manifest.instances[1].homeDir);
+    },
+    f=>{
+      const link=f.location('sensor-secret-link');
+      fs.symlinkSync(f.tokens.sensorApi,link);
+      f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=link;
+    },
+    f=>{
+      fs.mkdirSync(f.legacy.server.dataDir);
+      const token=path.join(f.legacy.server.dataDir,'sensor-api-secret');
+      fs.writeFileSync(token,'sensor-api-alternate-value');
+      f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=token;
+    }
+  ];
+  for(const mutate of cases){
+    const f=fixture();try{
+      mutate(f);f.flush();
+      assert.throws(()=>loadMultiManifest(f.manifestFile),
+        /symlink|overlap|share|writable tenant|file must/i);
+    }finally{f.close();}
+  }
+  const f=fixture();try{
+    const link=f.location('manifest-link');
+    fs.symlinkSync(f.manifestFile,link);
+    assert.throws(()=>loadMultiManifest(link),/non-symlink file/);
+  }finally{f.close();}
+});
