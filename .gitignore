@@ -6,4 +6,9 @@ coverage/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+deploy/docker/secrets/
+deploy/docker/config.json
+deploy/docker/multi-instance.json
+deploy/docker/legacy.json
+deploy/docker/sensor.json
 .DS_Store
