@@ -1,0 +1,162 @@
+'use strict';
+
+// One OS process can host several isolated GitLab trust domains. Each domain
+// owns its own worker thread, configuration, secrets, SQLite and Codex home.
+// Do not turn a numeric GitLab project ID into a global primary key.
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { readSecretFile, allowedSecretName } = require('./secrets');
+const { CONFIG_SCHEMA_VERSION } = require('./product-contract');
+
+const INSTANCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
+const ENV_ALLOWLIST = Object.freeze([
+  'PATH','LANG','LC_ALL','TZ','TMPDIR','TEMP','TMP',
+  'SYSTEMROOT','WINDIR','NODE_EXTRA_CA_CERTS','SSL_CERT_FILE',
+  'HTTPS_PROXY','HTTP_PROXY','NO_PROXY','https_proxy','http_proxy','no_proxy'
+]);
+function fail(message) {
+  const error = new Error(message);
+  error.code = 'EMULTIGITLABCONFIG';
+  throw error;
+}
+function record(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    fail(label + ' must be an object');
+  return value;
+}
+function exactKeys(value, names, label) {
+  for (const key of Object.keys(value))
+    if (!names.includes(key)) fail(label + ' has unsupported field ' + key);
+}
+function absolute(value, label) {
+  if (typeof value !== 'string' || !path.isAbsolute(value) || value.includes('\0'))
+    fail(label + ' must be an absolute path');
+  return path.normalize(value);
+}
+function separate(a, b) {
+  const left = path.resolve(a), right = path.resolve(b);
+  const rel = path.relative(left, right);
+  return left !== right && rel !== '' && rel !== '..' &&
+    !rel.startsWith('..' + path.sep) &&
+    !path.isAbsolute(rel);
+}
+function overlaps(a, b) {
+  return path.resolve(a) === path.resolve(b) || separate(a, b) || separate(b, a);
+}
+function normalizedUrl(raw, label) {
+  let url;
+  try { url = new URL(raw); } catch { fail(label + ' must be a valid GitLab http(s) URL'); }
+  if (!['http:','https:'].includes(url.protocol) || url.username || url.password ||
+      url.search || url.hash || url.pathname !== '/')
+    fail(label + ' must be an origin URL without credentials, path, query or fragment');
+  return url.origin.toLowerCase();
+}
+function fileJson(file, label) {
+  let parsed;
+  try {
+    if (!fs.statSync(file).isFile()) fail(label + ' must be a file');
+    parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (cause) {
+    if (cause.code === 'EMULTIGITLABCONFIG') throw cause;
+    fail(label + ' is missing or invalid');
+  }
+  return record(parsed, label);
+}
+function validateInstance(raw, allFiles, identities) {
+  const item = record(raw, 'instances[]');
+  exactKeys(item, ['id','configFile','homeDir','secretFiles'], 'instances[]');
+  const id = item.id;
+  if (typeof id !== 'string' || !INSTANCE_ID.test(id))
+    fail('instances[].id must be a lowercase, bounded route segment');
+  const configFile = absolute(item.configFile, id + '.configFile');
+  const homeDir = absolute(item.homeDir, id + '.homeDir');
+  if (configFile === homeDir || overlaps(homeDir, configFile))
+    fail(id + ' configFile and homeDir must be separate');
+  if (allFiles.has(configFile)) fail('two instances share a config file');
+  allFiles.add(configFile);
+  const config = fileJson(configFile, id + '.configFile');
+  if (config.schemaVersion !== CONFIG_SCHEMA_VERSION)
+    fail(id + ' must use current standalone Config Schema ' + CONFIG_SCHEMA_VERSION);
+  const server = record(config.server, id + '.server');
+  const gitlab = record(config.gitlab, id + '.gitlab');
+  const webhook = record(config.webhook, id + '.webhook');
+  const codex = config.codex === undefined ? {} : record(config.codex, id + '.codex');
+  const dataDir = absolute(server.dataDir, id + '.server.dataDir');
+  if (overlaps(homeDir, dataDir)) fail(id + ' homeDir must not overlap SQLite state');
+  if (codex.home && path.resolve(codex.home) !== homeDir)
+    fail(id + ' codex.home must match the dedicated homeDir');
+  if (!Array.isArray(gitlab.projects) || !Array.isArray(gitlab.groups) ||
+      !gitlab.projects.length && !gitlab.groups.length)
+    fail(id + ' must explicitly scope at least one GitLab project or group');
+  const origin = normalizedUrl(gitlab.baseUrl, id + '.gitlab.baseUrl');
+  const expected = normalizedUrl(webhook.expectedInstance, id + '.webhook.expectedInstance');
+  if (origin !== expected) fail(id + ' webhook instance must match its GitLab origin');
+  const secrets = record(item.secretFiles, id + '.secretFiles');
+  exactKeys(secrets, Object.keys(secrets).filter(key =>
+    key.endsWith('_FILE') && allowedSecretName(key.slice(0, -5))), id + '.secretFiles');
+  for (const name of ['GITLAB_API_TOKEN_FILE','GITLAB_WEBHOOK_SIGNING_TOKEN_FILE'])
+    if (!secrets[name]) fail(id + ' requires a separate file-backed ' + name);
+  const secretFiles = {};
+  for (const [name, rawPath] of Object.entries(secrets)) {
+    const file = absolute(rawPath, id + '.' + name);
+    if (allFiles.has(file)) fail('two instances share a configuration or secret file');
+    allFiles.add(file);
+    const value = readSecretFile(file, name.slice(0, -5));
+    // Compare hashes, never keep the credentials in the manifest or logs.
+    if (name === 'GITLAB_API_TOKEN_FILE' || name === 'GITLAB_WEBHOOK_SIGNING_TOKEN_FILE') {
+      const fingerprint = crypto.createHash('sha256').update(value).digest('hex');
+      const label = name + ':' + fingerprint;
+      if (identities.has(label)) fail('GitLab API or webhook credentials are shared between trust domains');
+      identities.add(label);
+    }
+    secretFiles[name] = file;
+  }
+  return Object.freeze({id, configFile, homeDir, dataDir, origin, secretFiles:Object.freeze(secretFiles)});
+}
+function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
+  const pathname = absolute(file, 'CODEX_REVIEW_MULTI_CONFIG_FILE');
+  const root = fileJson(pathname, 'multi-instance manifest');
+  exactKeys(root, ['schemaVersion','server','instances'], 'multi-instance manifest');
+  if (root.schemaVersion !== 1) fail('unsupported multi-instance manifest schema');
+  const server = record(root.server, 'server');
+  exactKeys(server, ['host','port','defaultInstance'], 'server');
+  const host = server.host;
+  const port = server.port;
+  if (typeof host !== 'string' || !host || /[\s\/\\\0]/.test(host))
+    fail('server.host must be a safe bind address');
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    fail('server.port must be an integer from 1 to 65535');
+  if (!Array.isArray(root.instances) || root.instances.length < 1 || root.instances.length > 16)
+    fail('instances must contain 1-16 isolated GitLab tenants');
+  const ids = new Set(), allFiles = new Set([pathname]), identities = new Set();
+  const instances = root.instances.map(item => {
+    const instance = validateInstance(item, allFiles, identities);
+    if (ids.has(instance.id)) fail('duplicate GitLab instance ID: ' + instance.id);
+    ids.add(instance.id);
+    return instance;
+  });
+  if (!ids.has(server.defaultInstance))
+    fail('server.defaultInstance must name an existing legacy-compatible instance');
+  for (let i=0;i<instances.length;i++) for (let j=i+1;j<instances.length;j++) {
+    const left = instances[i], right = instances[j];
+    if (overlaps(left.dataDir, right.dataDir)) fail('SQLite state directories overlap between instances');
+    if (overlaps(left.homeDir, right.homeDir)) fail('Codex homes overlap between instances');
+    if (left.origin === right.origin) fail('duplicate GitLab origin across instances');
+  }
+  return Object.freeze({
+    server: Object.freeze({host,port,defaultInstance:server.defaultInstance}),
+    instances: Object.freeze(instances)
+  });
+}
+function buildWorkerEnv(instance, parentEnv=process.env) {
+  const env={};
+  for (const name of ENV_ALLOWLIST)
+    if (typeof parentEnv[name] === 'string') env[name] = parentEnv[name];
+  env.HOME = instance.homeDir;
+  env.CODEX_HOME = instance.homeDir;
+  env.CODEX_REVIEW_CONFIG_FILE = instance.configFile;
+  for (const [name,file] of Object.entries(instance.secretFiles)) env[name] = file;
+  return env;
+}
+module.exports={loadMultiManifest,buildWorkerEnv,overlaps,normalizedUrl,INSTANCE_ID};
