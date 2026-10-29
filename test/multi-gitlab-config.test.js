@@ -25,7 +25,7 @@ function fixture(){
   const legacy=makeConfig('legacy','http://192.168.1.4',[113,139]);
   const sensor=makeConfig('sensor','http://192.168.2.50',[113]);
   const manifest={
-    schemaVersion:1,server:{host:'127.0.0.1',port:8788,defaultInstance:'legacy'},
+    schemaVersion:1,server:{host:'127.0.0.1',port:8788,defaultInstance:'legacy',sharedProcessTrustAcknowledged:true},
     instances:[
       {id:'legacy',configFile:location('legacy.json'),homeDir:location('legacy-home'),
         secretFiles:{GITLAB_API_TOKEN_FILE:tokens.legacyApi,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:tokens.legacyWebhook}},
