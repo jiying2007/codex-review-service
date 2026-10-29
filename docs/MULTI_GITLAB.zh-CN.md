@@ -45,7 +45,7 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 
        CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-preflight.js
 
-预检通过实际认证的 GitLab /api/v4/version、显式 /api/v4/projects/:id 与 /api/v4/groups/:id 只读 GET；输出只包含实例 ID、版本和已验证项目/组数量，不输出 Token。返回 ok=true 仍**不能证明** GitLab 写入权限、Webhook 反向访问、真实 MR 审查成功，也不能代替正式 CI 与发布资格。运行命令的系统必须具备与部署相同的配置/Secret 文件挂载。
+预检首先以每个实例的独立 Token 只读访问 GitLab /api/v4/user 并验证有效数值 User ID（**因为公开 /projects/:id 返回 200 并不能证明 Token 有效**），随后读取 /api/v4/version、显式 /api/v4/projects/:id 与 /api/v4/groups/:id；输出只包含实例 ID、版本、认证布尔值和已验证项目/组数量，不输出 Token、用户身份详情。返回 ok=true 仍**不能证明** GitLab 写入权限、Webhook 反向访问、真实 MR 审查成功，也不能代替正式 CI 与发布资格。运行命令的系统必须具备与部署相同的配置/Secret 文件挂载。
 
 **隔离管理（选择唯一实例，不能跨实例查询 DB）：**
 
