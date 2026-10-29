@@ -46,7 +46,7 @@ function proxyHeaders(source, port) {
 function proxyRequest(req,res,port,path) {
   if (!port) { req.resume(); return response(res,503,{error:'instance_unavailable'}); }
   const announced = Number(req.headers['content-length'] || 0);
-  if (announced > MAX_REQUEST_BYTES) {
+  if (!Number.isSafeInteger(announced) || announced < 0 || announced > MAX_REQUEST_BYTES) {
     req.resume();
     return response(res,413,{error:'payload_too_large'});
   }
@@ -64,14 +64,18 @@ function proxyRequest(req,res,port,path) {
   });
   proxy.setTimeout(PROXY_TIMEOUT_MS,()=>proxy.destroy(Object.assign(new Error('worker timeout'),{code:'ETIMEOUT'})));
   proxy.on('error',()=>{
-    if (finished || res.headersSent) { if (!res.writableEnded) res.destroy(); return; }
+    // A request rejected with 413 already owns the response; destroying the
+    // upstream connection must not destroy that response before it reaches GitLab.
+    if(finished)return;
+    if(res.headersSent){res.destroy();return;}
     finished=true;
-    if (!res.headersSent) response(res,503,{error:'instance_unavailable'});
+    response(res,503,{error:'instance_unavailable'});
   });
   req.on('data',chunk=>{
     bytes+=chunk.length;
     if (bytes>MAX_REQUEST_BYTES && !finished) {
       finished=true;
+      req.unpipe(proxy);
       proxy.destroy();
       if (!res.headersSent) response(res,413,{error:'payload_too_large'});
       req.resume();
@@ -84,15 +88,23 @@ function proxyRequest(req,res,port,path) {
 function workerStatus(port,path,timeout=4000) {
   return new Promise(resolve=>{
     if (!port) return resolve({available:false,status:'unavailable'});
+    let settled=false;
+    const done=value=>{
+      if(settled)return;
+      settled=true;
+      resolve(value);
+    };
     const r=http.get({host:'127.0.0.1',port,path,timeout},res=>{
       res.resume();
-      res.on('end',()=>resolve({
+      res.on('end',()=>done({
         available:res.statusCode===200,
         status:res.statusCode===200?'ready':'degraded'
       }));
+      res.on('aborted',()=>done({available:false,status:'unavailable'}));
+      res.on('error',()=>done({available:false,status:'unavailable'}));
     });
     r.on('timeout',()=>r.destroy());
-    r.on('error',()=>resolve({available:false,status:'unavailable'}));
+    r.on('error',()=>done({available:false,status:'unavailable'}));
   });
 }
 function createMultiGateway({manifest, lookupPort}) {
