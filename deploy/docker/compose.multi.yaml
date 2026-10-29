@@ -1,0 +1,61 @@
+# Production: use a fully verified, immutable multi-capable image DIGEST.
+# Do not use the old v7.6.1 image: it does not include multi-GitLab.
+services:
+  codex-review-multi:
+    image: ${CODEX_REVIEW_IMAGE:?Provide_a_verified_multi_GitLab_GHCR_image_at_sha256_digest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${CODEX_REVIEW_PORT:-8787}:8787"
+    volumes:
+      - ./multi-instance.json:/etc/codex-review/multi-instance.json:ro
+      - ./legacy.json:/etc/codex-review/legacy.json:ro
+      - ./sensor.json:/etc/codex-review/sensor.json:ro
+      # The existing legacy named volumes are external and NEVER automatically recreated.
+      - legacy-state:/var/lib/codex-review/legacy
+      - legacy-home:/home/codex-review/legacy
+      - sensor-state:/var/lib/codex-review/sensor
+      - sensor-home:/home/codex-review/sensor
+    environment:
+      CODEX_REVIEW_MULTI_CONFIG_FILE: /etc/codex-review/multi-instance.json
+    secrets:
+      - gitlab_legacy_api
+      - gitlab_legacy_webhook
+      - gitlab_sensor_api
+      - gitlab_sensor_webhook
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 6G
+
+secrets:
+  gitlab_legacy_api:
+    file: ${LEGACY_GITLAB_API_TOKEN_FILE:?Set_protected_legacy_API_secret_file}
+  gitlab_legacy_webhook:
+    file: ${LEGACY_GITLAB_WEBHOOK_TOKEN_FILE:?Set_protected_legacy_webhook_secret_file}
+  gitlab_sensor_api:
+    file: ${SENSOR_GITLAB_API_TOKEN_FILE:?Set_protected_sensor_API_secret_file}
+  gitlab_sensor_webhook:
+    file: ${SENSOR_GITLAB_WEBHOOK_TOKEN_FILE:?Set_protected_sensor_webhook_secret_file}
+
+volumes:
+  legacy-state:
+    external: true
+    name: ${CODEX_REVIEW_LEGACY_STATE_VOLUME:?Inspect_the_existing_volume_before_cutover}
+  legacy-home:
+    external: true
+    name: ${CODEX_REVIEW_LEGACY_HOME_VOLUME:?Inspect_the_existing_volume_before_cutover}
+  sensor-state:
+  sensor-home:
