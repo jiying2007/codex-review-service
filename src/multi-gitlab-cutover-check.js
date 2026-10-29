@@ -22,10 +22,17 @@ function countActive(db,table,terminal){
 function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:true}),
     expectedSchema=contract.databaseSchemaVersion}={}){
   let stat;
-  try{stat=fs.statSync(dbPath);}catch{
+  try{stat=fs.lstatSync(dbPath);}catch{
     return{ok:false,code:'EDBMISSING',schemaVersion:null,drained:false};
   }
-  if(!stat.isFile())return{ok:false,code:'EDBNOTFILE',schemaVersion:null,drained:false};
+  // The directory manifest checks realpath aliases, but an individual SQLite
+  // file may still be a symlink or hard link into another tenant's database.
+  if(stat.isSymbolicLink())
+    return{ok:false,code:'EDBSYMLINK',schemaVersion:null,drained:false};
+  if(!stat.isFile())
+    return{ok:false,code:'EDBNOTFILE',schemaVersion:null,drained:false};
+  if(stat.nlink!==1)
+    return{ok:false,code:'EDBMULTILINK',schemaVersion:null,drained:false};
   let db;
   try{
     db=open(dbPath);
