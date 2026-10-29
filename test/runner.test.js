@@ -7,7 +7,7 @@ const os=require('node:os');
 const path=require('node:path');
 const http=require('node:http');
 const {runCodex,probeCodexCapabilities,unixRequest}=require('../src/codex');
-const {runnerConfig}=require('../src/runner-server');
+const {runnerConfig,bindRunnerCancellation}=require('../src/runner-server');
 const {CONFIG_SCHEMA_VERSION}=require('../src/config');
 const {SAFE_CORE_VERSION,SAFE_CONTRACT_VERSION,REVIEW_RECEIPT_SCHEMA_VERSION,REVIEW_PROMPT_CONTRACT_VERSION}=require('../src/codex-safe-core/safe-contract');
 const posixTest=process.platform==='win32'?test.skip:test;
@@ -31,3 +31,36 @@ posixTest('runner HTTP errors preserve remote error code for controller policy',
 posixTest('aborting controller request tears down Unix runner request',async()=>withUnixServer((_req,_res)=>{},async socket=>{const controller=new AbortController(),pending=unixRequest(socket,'POST','/review',{prompt:'x'},30000,controller.signal);setTimeout(()=>controller.abort(Object.assign(new Error('superseded'),{code:'ESUPERSEDED'})),10);await assert.rejects(()=>pending,error=>error.code==='ESUPERSEDED');}));
 
 posixTest('runner response limit counts UTF-8 bytes rather than JavaScript characters',async()=>withUnixServer((_req,res)=>{res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({message:'界'.repeat(3*1024*1024)}));},async socket=>{await assert.rejects(()=>unixRequest(socket,'GET','/health',undefined,30000),error=>error.code==='ERUNNEROUTPUT');}));
+
+posixTest('an HTTP controller disconnect aborts a live isolated-runner operation', async()=>{
+ let ready,abortObserved;const started=new Promise(resolve=>ready=resolve);
+ const stopped=new Promise(resolve=>abortObserved=resolve);
+ await withUnixServer(async(req,res)=>{
+   await readJson(req);
+   const controller=new AbortController(),unbind=bindRunnerCancellation(req,res,controller);
+   controller.signal.addEventListener('abort',()=>{abortObserved(controller.signal.reason?.code);unbind();},{once:true});
+   ready();
+ },async socket=>{
+   const client=http.request({socketPath:socket,method:'POST',path:'/review'},()=>{});
+   client.on('error',()=>{});client.end(JSON.stringify({prompt:'test'}));
+   await started;client.destroy();
+   assert.equal(await Promise.race([stopped,new Promise((_,reject)=>setTimeout(()=>reject(Error('disconnect did not abort the runner')),1500))]),'ERUNNERDISCONNECT');
+ });
+});
+posixTest('normal runner response completion does not abort its work', async()=>{
+ let observed;
+ await withUnixServer(async(req,res)=>{
+   await readJson(req);
+   const controller=new AbortController(),unbind=bindRunnerCancellation(req,res,controller);
+   res.end('ok');
+   await new Promise(resolve=>res.once('close',resolve));
+   observed=controller.signal.aborted;
+   unbind();
+ },async socket=>{
+   const output=await new Promise((resolve,reject)=>{
+     const req=http.request({socketPath:socket,method:'POST',path:'/review'},res=>{let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve(body));});
+     req.on('error',reject);req.end('{}');
+   });assert.equal(output,'ok');
+ });
+ assert.equal(observed,false);
+});

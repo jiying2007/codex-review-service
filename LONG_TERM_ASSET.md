@@ -1,19 +1,19 @@
 # Long-term asset invariants
 
-Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.6.1** is the current production-operations baseline; shared review/safety/Judgment Lifecycle/Runtime/Provider/Model Routing semantics remain exact-pinned Safe Core Family v4.
+Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.6.2** is the current production-operations baseline; shared review/safety/Judgment Lifecycle/Runtime/Provider/Model Routing semantics remain exact-pinned Safe Core Family v4.
 
 ## Product identity
 
-`product-contract.json` is the machine-checked product fact source: Service 7.6.1, Database Schema 9, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `190651770a444b0693d82228afc66879dd57b0c0`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
+`product-contract.json` is the machine-checked product fact source: Service 7.6.2, Database Schema 11, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `190651770a444b0693d82228afc66879dd57b0c0`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
 
 ## Non-negotiable invariants
 
 1. A successful webhook acknowledgement is backed by a power-loss-durable local transaction (`WAL + synchronous=FULL`).
 2. Codex never receives GitLab credentials and never owns GitLab mutations.
 3. Review execution, GitLab publication and IM notification are separate durable failure domains; downstream retry never creates a new Review Run from persisted output.
-4. Every review binds target `start_sha` + source `head_sha`; stale results never publish.
+4. Every review binds target `start_sha` + source `head_sha`. The Controller rejects unsent stale publications; an already accepted remote request can still finish late. Unknown write outcomes remain durably uncertain and cannot be cleared by a matching read or a newer acknowledgement.
 5. Findings map to exact changed lines; Controller never repairs model line numbers.
-6. Merge gating is deterministic. Repository policy may narrow ceilings/add checks but cannot weaken Service-owned gate/security policy.
+6. Review and publication gating is deterministic. Repository policy may narrow ceilings/add checks but cannot weaken Service-owned gate/security policy. These decisions do not authorize a merge; a strict additional server-side veto must bind the latest durable generation and absence of uncertainty to the target-ref transaction while preserving GitLab's native approvals and branch protection.
 7. Genuine provider/local/token/model-evidence gaps fail closed; metadata/generated/known-binary cases remain explicitly classified.
 8. External status targets the correct source Project/ref and concrete pipeline when resolvable.
 9. Human-resolved discussions are never silently reopened.
@@ -47,7 +47,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 37. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
 38. Service-only GitLab/IM/Docker/Admin/deployment concerns must not be pushed into exact-pinned Safe Core shared protocol layers.
 39. Compatibility inputs removed in earlier releases must not be reintroduced without an explicit architecture/version decision.
-40. Current documentation must describe Service v7.6.1, Database Schema 9, Config Schema 8, Review Receipt 5, Runtime/Provider Contract v3, Model Routing Contract v1 and exact Safe Core 4.18.1 accurately; historical labels belong only in changelog/migration history.
+40. Current documentation must describe Service v7.6.2, Database Schema 11, Config Schema 8, Review Receipt 5, Runtime/Provider Contract v3, Model Routing Contract v1 and exact Safe Core 4.18.1 accurately; historical labels belong only in changelog/migration history.
 41. Flow Tracking is a deterministic GitLab event/state/notification domain. It never invokes Codex, retries/fixes pipelines, mutates code, or consumes model tokens.
 42. A Flow state transition and all notification actions derived from that transition are committed in the same SQLite transaction; serialization/outbox failure rolls the transition back for safe webhook replay.
 43. Flow event acquisition and IM delivery policy remain independent: `flowTracking` chooses what is tracked, while `notifications.routes[].events` chooses what is delivered.

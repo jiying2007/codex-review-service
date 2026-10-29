@@ -1,5 +1,18 @@
 # Changelog
 
+## 7.6.2 - 2026-10-25
+
+- Persist original GitLab target branch in Database Schema 11 for new review generations, with a verified transactional Schema 10 -> 11 backup migration. Preserve historical empty target identity and block unbound/mismatched remote targets; the read-only witness never authorizes merge.
+
+- Synchronize operational documents through the direct product-document generator so automated exact Core repins update the complete Service documentation before the drift check.
+- Add read-only `admin publication-evidence PROJECT_ID MR_IID` with one consistent SQLite snapshot of latest review/receipt/publication/attempt identity and shared/global uncertainty. Bound diagnostic output and explicit non-authorizing exit statuses preserve the server-side ref-transaction boundary; no credentials, remote calls, migration or uncertainty reset is involved.
+- Include current external analyzer findings in the final blocking decision before output truncation; required analyzer failures cannot produce a passing review. Optional context failures retain acquired required evidence.
+- Bind commit-status writes to the latest durable job generation and serialize status project/SHA/ref/name targets, including implicit and explicit pipeline aliases; recheck after throttling and before every HTTP retry.
+- Add Database Schema 10 with verified additive migration, durable status-write attempts, persistent uncertainty and bounded latest-target readback/repair. Preserve unknown outcomes through restarts, legacy adoption, retention and backups; expose uncertainty in drain, diagnostics, metrics and notifications without claiming server-side generation fencing.
+- Reconcile known finding publication after uncertain writes; persist identity-bound write intent for every create so local settlement failures, restarts, changed bot/claim identity and administrative retry counters cannot blindly create duplicates.
+- Follow bounded GitLab read redirects explicitly; signed artifact CDN requests become anonymous permanently after leaving the configured origin. Reject redirected writes and HTTPS downgrades.
+- Synchronize bilingual setup/backup contracts and provide least-privilege Actions read scopes for private-repository security jobs.
+
 ## 7.6.1
 
 - Fix the strict structured-output schema used for review findings: all declared properties are now required, while unknown semantic identity is represented by explicit empty strings.

@@ -2,15 +2,15 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.6.1** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 9、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.6.2** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 11、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `190651770a444b0693d82228afc66879dd57b0c0`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 
-## Config Schema 7 Provider Contract 硬切边界
+## Config Schema 8 + Model Routing Contract v1 边界
 
-Service 7.3.0 将 Config Schema 6 -> 7 硬切到 Core Provider Contract v2。Runtime 不翻译 Config Schema 6；升级前必须设置 `schemaVersion: 7`。`codex.credentialSource` 支持 `auto|env|auth-json`，`codex.allowInsecureHttp` 默认 `false`；非 loopback HTTP 只有显式授权可信中转站时才允许。Service 7.2.0 的 Config Schema 5 -> 6 责任人通知边界，以及已退役的 `review.incrementalReviewEnabled`，继续作为历史升级边界保留。
+Service 7.6.2 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。当前配置必须设置 `schemaVersion: 8`；Runtime 不翻译旧配置，`codex.model`/`codex.fastModel` 已退役。`codex.providerMode` 默认 `auto`，复用 Service/Runner 账号的机器级 Runtime；`codex.credentialSource` 支持 `auto|env|auth-json`，`codex.allowInsecureHttp` 默认 `false`，显式覆盖的非 loopback HTTP 必须由运维明确授权可信中转站。历史配置边界见下方 Upgrade / Rollback。
 
 新的质量入口：
 
@@ -95,7 +95,7 @@ GITLAB_WEBHOOK_SIGNING_TOKEN_FILE=/etc/codex-review/secrets/gitlab-webhook-signi
 OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 ```
 
-直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 7 JSON。使用 `credentialSource: "auth-json"` 时，Provider Key 也可以只保留在配置的 Codex Home `auth.json` 中，Key 值仍不得进入 Service JSON。
+直接值和 `_FILE` 互斥，Secret 不进入 Config Schema 8 JSON。使用 `credentialSource: "auth-json"` 时，Provider Key 也可以只保留在配置的 Codex Home `auth.json` 中，Key 值仍不得进入 Service JSON。
 
 ## Doctor Preflight
 
@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor 校验产品/配置身份、SQLite Schema 9/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
+Doctor 校验产品/配置身份、SQLite Schema 11/integrity、Codex Runtime、GitLab 版本/profile 与完整 Project/Group Scope。
 
 ## 启动与健康检查
 
@@ -173,9 +173,9 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。Service 7.3.0 引入当前 **Config Schema 6 -> 7** 硬切，用于 Provider Contract v2 凭据/传输控制；Service 7.2.0 的 **Config Schema 5 -> 6** 责任人身份映射，以及 Service 7.0.0 的 **Config Schema 4 -> 5** 与 `review.incrementalReviewEnabled` 退役继续作为历史边界。Runtime 不翻译这些配置版本。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。当前 Service 7.6.2 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。历史上，Service 7.5.5 引入 Config Schema 7 -> 8 并退役 `codex.model`/`codex.fastModel`；Service 7.3.0 引入 Config Schema 6 -> 7 Provider 边界，Service 7.2.0 引入 Config Schema 5 -> 6 责任人身份边界，Service 7.0.0 引入 Config Schema 4 -> 5 并退役 `review.incrementalReviewEnabled`。Runtime 不翻译这些历史配置版本。
 
-历史 Database Schema 9 -> 6、6 -> 7、7 -> 8 Startup Migration 继续保持显式和受测试。Schema 8 -> 9 会在增加 Finding Claim 投影与生命周期状态前创建并验证 Schema 8 备份。回滚必须恢复与目标版本匹配的备份；禁止直接对 Schema 9 做原地降级。
+历史 Database Schema 5 -> 6、6 -> 7、7 -> 8 与 8 -> 9 迁移保持显式和受测试；8 -> 9 引入 Finding Claim 投影与生命周期状态。Schema 9 -> 10 新增状态写入 attempt 与 uncertainty 账本，使用经过验证的备份和事务迁移。当前数据库版本为 11。回滚必须保留当前 uncertainty 账本、控制未完成的远端写入，并恢复与目标 Release 匹配的备份；不支持原地降级。详见 [Storage and migrations](STORAGE_AND_MIGRATIONS.md)。
 
 升级顺序：
 

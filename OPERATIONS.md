@@ -2,9 +2,9 @@
 
 ## Product baseline
 
-Codex Review Service **7.6.1** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.6.2** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
-- Database Schema 9
+- Database Schema 11
 - Config Schema 8
 - Model Routing Contract 1
 - Policy Schema 4
@@ -16,7 +16,7 @@ Codex Review Service **7.6.1** is the current production-operations baseline. Ma
 - GitLab Self-Managed compatibility floor: >=14.6.1
 - GitLab recommendation: vendor-supported release
 
-The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 9, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
+The service owns GitLab provider semantics, immutable `start_sha`/`head_sha` evidence, CI artifact acquisition/adapters, SQLite Schema 11, durable Review Queue, GitLab Publication Outbox, Notification Outbox, telemetry and deployment. Shared safety/profile/test-impact primitives remain in exact-pinned Safe Core.
 
 ## Deployment model
 
@@ -49,7 +49,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 8 is the current boundary. Service 7.5.2 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
+Config Schema 8 is the current boundary. Service 7.6.2 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -125,13 +125,71 @@ Review Run + Receipt
 Recovery invariants:
 
 - `running` jobs requeue after restart.
-- `publishing` GitLab actions return to pending.
+- `publishing` GitLab actions return to pending unless a commit-status transport may already have started. Those status attempts recover as `uncertain` and enter readback reconciliation.
 - `delivering` notifications return to pending.
 - publication/notification retry never reruns a persisted Codex review.
 - stale/out-of-scope publication is canceled.
 - same-MR work is serialized.
 
 Never delete queue/outbox rows as an incident workaround.
+
+### Commit-status uncertainty and merge enforcement
+
+The durable Review Job, Run and Receipt record the Service verdict. A GitLab commit status is a remote projection of that verdict. Status requests for one source project, SHA, ref and status name share one local publication order, including implicit and explicit pipeline targets. The publisher checks the latest durable generation immediately before each HTTP send.
+
+A timeout or lost response does not prove that the remote request stopped. An older accepted request can still finish after a newer status has been acknowledged. Database Schema 10 records each transport attempt in `status_write_attempts` before sending it, including each internal `409` retry. A definite HTTP rejection is recorded separately from an unknown result. A crash with an unfinished intent recovers as `uncertain`. The shared uncertainty domain includes the GitLab API URL, status project, SHA, ref and status name; it spans MR IDs and implicit/explicit pipeline aliases.
+
+`status_publication_targets` retains the latest durable generation, acknowledgement ID, next readback time, last observation and repair count. While any older request in this domain has an unknown result, the current outbox remains `uncertain`, even after a successful new POST or a matching GET. A matching read only describes the current remote projection. It does not clear an unknown attempt, and it does not issue another POST. Normal acknowledged writes with no known uncertainty retain the existing `published` behavior and do not add a readback loop.
+
+The publisher reconciles uncertain targets using its existing worker concurrency, rate limiter and bounded retry backoff. It repairs only a complete, unambiguous read showing the latest target is missing or mismatched, after rechecking the current generation and MR snapshot and checking generation again immediately before transport. A queued reconciliation claim cannot act on a different or already published generation after it acquires the shared status lock. Repair cycles are durably capped by `publication.maxAttempts` for each latest outbox item; internal `409` retries remain separately bounded. The `repaired` count and `repairAcknowledged` observation describe a repair response with a valid acknowledgement ID; they never resolve an older unknown request. Matched targets are only observed at `lifecycle.reconcileIntervalMs`. Stop requests prevent new repair writes. This process reuses persisted review output and never reruns Codex.
+
+Exact automatic readback currently requires an explicit pipeline ID and GitLab 17.9 or later, which added pipeline filtering to the status-list API. It validates project endpoint, SHA, ref, name, pipeline and the authenticated bot, and records whether the returned status ID matches the acknowledged ID. Missing identity, incomplete pagination, duplicate candidates, an implicit pipeline or an older provider remains uncertain without a repair POST. GitLab 14.6.1 remains supported for ordinary operation; this conservative recovery boundary does not raise the product compatibility floor. The existing 14.6.1 / 17.11.7 / 19.3.0 real Docker provider matrix includes acceptance checks for these paths. See the [GitLab commit-status API](https://docs.gitlab.com/api/commits/#list-commit-statuses).
+
+GitLab's native approvals and protected-branch rules remain the merge authority. If this status participates in merge enforcement, an independent trusted server-side veto must reject unresolved publication uncertainty and stale or incomplete review evidence. A result of `not_vetoed` means only that this additional check has no current objection; it does not approve a merge, bypass GitLab checks or perform a merge. This Service supplies the durable evidence ledger, but does not currently supply that veto adapter or a GitLab conditional-generation write capability.
+
+A strict veto integration must meet all of these requirements:
+
+- Bind the actual server-side operation to the configured GitLab instance, project/MR, source project/ref and exact head/start/base SHAs, the status project/ref/name, and the target ref's expected old and proposed new object IDs. Use trusted server context, not a caller-selected older job or a status label.
+- Read the latest applicable review job and publication generation together with the durable uncertainty ledger. A newer review of the same SHA must not be hidden by an earlier published target. Missing identity/evidence, an unfinished or blocking review, a pending publication, or any applicable `started`/`uncertain` attempt must veto. Include shared cross-MR/pipeline status domains and orphan/global uncertainty. A matching GET, an acknowledgement of a different attempt or elapsed time cannot resolve an unknown attempt.
+- Bind the decision to the ref update through a trusted serialization or conditional-consumption protocol. A generation change or new unknown write between checking and committing the ref must invalidate the decision. The protocol must cover every permitted merge/ref-write path and retain a veto after an indeterminate operation until authoritative server evidence resolves it; a time-limited response or client lock is insufficient.
+
+A one-time GET, a successful required pipeline, or a `pre-receive` check that releases its coordination before the ref update leaves a check-to-commit race. These can be preliminary checks, but cannot be presented as the strict fence above. In particular, the local `/health/ready` response is cached intake health, not an MR-specific veto decision. The GitHub `CI Gate` in this repository checks the Service build and is not a gate in a customer's GitLab project.
+
+GitLab 14.6.1 Self-Managed supports [server hooks without a paid tier](https://github.com/gitlabhq/gitlabhq/blob/v14.6.1/doc/administration/server_hooks.md); installing them is a separately authorized GitLab-server administration task. That version supports `pre-receive`, `update` and `post-receive` custom hooks, not an assumed `reference-transaction.d` integration. [Required pipelines](https://github.com/gitlabhq/gitlabhq/blob/v14.6.1/doc/user/project/merge_requests/merge_when_pipeline_succeeds.md) also do not supply Service-generation fencing, and merge-request pipelines can take precedence over branch pipelines. The existing 14.6.1 / 17.11.7 / 19.3.0 Docker matrix qualifies provider operations and readback, not a server-side veto adapter. A future adapter needs real-version acceptance for unknown-write rejection, same-SHA generation changes during the ref update, and fail-closed recovery before strict merge enforcement can be claimed. No deployment host, hook installation, credential or topology is inferred from this requirement.
+
+After overlapping generations and an uncertain HTTP outcome, hold automated merge for the affected source snapshot through an independent control. Retain job/outbox/attempt IDs, source SHA, start SHA, ref and pipeline IDs; inspect the two status tables in a verified database backup and investigate the outstanding request in provider-side records. Unknown attempts, their source jobs and the latest desired verdict survive ordinary retention, restart and backup/restore. Legacy rows with a missing job are retained as `ELEGACYSTATUSORPHAN` with a null job identity and cannot authorize a repair. If a legacy target itself is incomplete, its unknown scope conservatively prevents stable publication across the store. Previously discarded legacy history cannot be reconstructed.
+
+There is deliberately no command that converts a matching observation, elapsed timeout or reset retry counter into proof that an old handler stopped. Deleting an attempt, restoring an older DB or restarting is not a valid uncertainty-resolution procedure. `admin status` and `admin diagnostics` expose `statusWrites` counts; `admin drain` reports incomplete while unknown attempts or uncertain publications remain. Metrics expose `codex_review_status_unknown_writes` and `codex_review_status_uncertain_targets`. Final notifications show uncertainty after the existing publication barrier timeout. `admin reconcile` still discovers review work; the publisher workers own status readback. `/health/ready` includes `publicationUncertainty` while continuing to describe durable local intake, not merge authority.
+
+#### Read-only publication evidence
+
+Use `npm run admin -- publication-evidence PROJECT_ID MR_IID` to inspect the latest applicable local evidence for one MR without writing SQL. Both IDs must be positive safe integers. The command uses the configured instance/status name and the same database path parser as the controller, including rootless XDG defaults. It opens that existing database read-only and reads all evidence in one SQLite read transaction. It does not load API credentials, contact GitLab, migrate/recover the database, adopt legacy attempts, modify publication state or choose an older job on request. There is no HTTP authorization endpoint.
+
+The versioned JSON result binds the latest applicable MR job, source project/ref and head/start/base SHAs, latest run and Review Receipt, final outbox, retained target generation and the exact acknowledged attempt. A newer same-SHA review, a newer cross-MR job in the shared status domain, an unfinished review, incomplete/blocking coverage, an unsettled publication, a missing/mismatched acknowledgement or an applicable unknown attempt produces `decision: "blocked"`. Receipt omission is accepted only for a persisted zero-chunk, empty-model/version, zero-token no-inference run. A model run needs its valid, matching canonical receipt.
+
+Started and uncertain attempts are checked across implicit/explicit pipeline aliases and MR IDs, with orphan/global uncertainty retained. Unknown-scope or noncanonical recorded identities impose a store-wide hold. Old or unsupported-format outbox history that may have reached transport also imposes a hold until its scope is established; the read-only command never marks it adopted. Output includes counts and at most 20 attempt IDs and 20 unadopted outbox IDs, with explicit truncation flags. It excludes finding bodies, status descriptions, credentials and database paths. Re-run it for a fresh snapshot; a completed read has no validity period or lease.
+
+| Exit status | JSON decision | Meaning |
+| --- | --- | --- |
+| `1` | `error` | Invalid arguments/configuration, incompatible schema or evidence that could not be read consistently. |
+| `2` | `blocked` | The local evidence is missing, incomplete, stale, contradictory or uncertain. |
+| `3` | `evidence_complete_unbound` | This local snapshot is complete; no target-ref transaction or remote merge operation is bound to it. |
+
+Every command result explicitly reports `mergeAuthorized: false` and `refTransactionBound: false`. The command deliberately has no successful approval exit status. Do not install it directly as an allowing `pre-receive` hook, required-CI success proxy or merge permission check. It supplies the deny-side evidence inspection for an operator/future trusted adapter; the server-side serialization/conditional-consumption protocol described above remains unimplemented. An error or exit `3` must never release an existing independent merge hold.
+
+### Local credential-free safety regression when GitHub Actions cannot start
+
+From an existing clone with the exact-pinned Safe Core submodule already present, use Node 22.22.2 or 24.19.0 and run `npm run test:offline-safety`. This runs the database migration, publication ownership, retarget identity, review queue and webhook regression tests using Node's built-in test runner and temporary SQLite fixtures. It **does not** launch Codex, invoke a paid model, dispatch GitHub Actions, or require live GitLab credentials. It does not modify the live database.
+
+Treat this as a diagnostic fallback only: it cannot prove the full CI Gate, CodeQL SARIF, cross-platform runner matrix, GitLab provider E2E, release receipts or independent review. Never use it as a replacement required check. Restore actual GitHub Actions execution and re-verify the exact candidate SHA before publication.
+
+#### Optional live GitLab ref observation (still not merge authority)
+
+`npm run admin -- publication-evidence-live PROJECT_ID MR_IID` begins with the same read-only local SQLite evidence, and only when the local snapshot reports `evidence_complete_unbound` does it use the configured GitLab API token for a single **GET** of the current merge request. It compares MR/project, source branch and head/start/base SHA identities. Missing fields, changed refs, a closed or draft MR, or a different configured API origin return `blocked` or a fixed error code. **Schema 11 persists `review_jobs.target_branch` for newly hydrated reviews. Historical Schema 10 records migrated to 11 retain an empty target branch and remain `target_branch_unbound` / blocked until a fresh review creates a new complete generation.** The probe never backfills old evidence from the latest GET. The tool never writes a GitLab status, resolves a discussion, or merges a ref; it returns only a minimal identity observation without tokens or finding bodies.
+
+Exit code 2 means blocked and 3 means `observed_current_unbound`. Both still carry `mergeAuthorized: false` and `refTransactionBound: false`. No result is an approval, lease, lock, or atomic observation at the final Git ref update. Never use exit 3 as a passing protected-branch required check: authoritative server-side merge fencing is still tracked separately.
+
+Before rollback from Schema 11, stop the controller, retain the current DB and its attempt ledger, and establish an independent merge hold and provider-side quiescence/fencing for unknown requests. The verified Schema 10 migration backup is a data rollback boundary; it cannot revoke an already accepted HTTP request. Older binaries reject Schema 11, and an in-place schema downgrade is unsupported.
 
 ## Fatal runtime behavior
 
@@ -143,6 +201,8 @@ Never delete queue/outbox rows as an incident workaround.
 npm run admin -- status
 npm run admin -- jobs [limit]
 npm run admin -- publications [limit]
+npm run admin -- publication-evidence PROJECT_ID MR_IID
+npm run admin -- publication-evidence-live PROJECT_ID MR_IID
 npm run admin -- notifications [limit]
 npm run admin -- retry-publication <id>
 npm run admin -- retry-notification <id>
@@ -185,7 +245,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.1 uses Config Schema 8 and Database Schema 9 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.6.2 uses Config Schema 8 and Database Schema 11 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;

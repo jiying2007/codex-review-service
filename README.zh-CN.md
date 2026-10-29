@@ -10,8 +10,8 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**7.6.1**
-- Database Schema：**9**
+- Service：**7.6.2**
+- Database Schema：**11**
 - Config Schema：**8**
 - Policy Schema：**4**
 - Review Receipt：**5**
@@ -51,7 +51,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-7.6.1.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-7.6.2.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -70,7 +70,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key
 
 OpenAI-compatible 中转站默认由 Runtime v3 复用 Service 用户/容器的 Family/Codex Runtime 与凭据来源；显式 `codex.provider*` 仅作为高级覆盖。完整说明见 [Codex Provider 与中转站配置](docs/CODEX_PROVIDER.zh-CN.md)。
 
-直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 7`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
+直接值与 `_FILE` 二选一，同时存在会 fail closed。配置必须包含 `schemaVersion: 8`，并设置 `gitlab.baseUrl`、`gitlab.projects` 和/或 `gitlab.groups`。
 
 ```bash
 cd /opt/codex-review-service
@@ -158,7 +158,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 6 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
+备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 11 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
 
 ## Upgrade 契约
 
@@ -185,4 +185,4 @@ MIT
 
 ## GitLab 流程跟踪
 
-Config Schema 7 提供默认关闭的 GitLab Flow Tracking，可跟踪 Pipeline 终态、MR 生命周期、Tag 与 Branch 创建/删除，并复用现有 durable notification outbox。整个路径确定性执行且绝不调用 Codex。详见 `docs/FLOW_TRACKING.zh-CN.md`。
+Config Schema 8 提供默认关闭的 GitLab Flow Tracking，可跟踪 Pipeline 终态、MR 生命周期、Tag 与 Branch 创建/删除，并复用现有 durable notification outbox。整个路径确定性执行且绝不调用 Codex。详见 `docs/FLOW_TRACKING.zh-CN.md`。
