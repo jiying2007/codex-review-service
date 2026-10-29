@@ -104,11 +104,16 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
     f=>{f.manifest.instances[1].configFile=f.manifest.instances[0].configFile;},
     f=>{f.sensor.webhook.expectedInstance='http://192.168.1.4';},
     f=>{f.sensor.gitlab.deprecatedCredential='inline-credential';},
+    f=>{f.sensor.gitlab.projects=[0];},
+    f=>{f.sensor.gitlab.projects=['113'];},
+    f=>{f.sensor.gitlab.projects=[Number.MAX_SAFE_INTEGER+10];},
+    f=>{f.sensor.gitlab.groups=[{id:0,includeSubgroups:true}];},
+    f=>{f.sensor.gitlab.groups=[{id:48,includeSubgroups:'yes'}];},
     f=>{f.sensor.unsupportedSection={enabled:true};},
     f=>{f.manifest.server.port=65536;},
     f=>{f.manifest.instances[1].id='../sensor';}
   ]){
-    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential|boundary/i);}
+    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential|boundary|scope/i);}
     finally{f.close();}
   }
 });
