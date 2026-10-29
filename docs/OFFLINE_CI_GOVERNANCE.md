@@ -36,7 +36,9 @@ Use an independently fetched, clean checkout of the exact approved SHA on an iso
 
 An independent CI signer validates the checkout/real logs, then runs a trusted installed signer (never with a private signing key exposed to untrusted PR tests):
 
-    node scripts/sign-offline-evidence.js --type ci --input /work/evidence/ci.unsigned.json --key /protected/ci-private.pem --key-id ci-key --output /work/evidence/ci.signed.json
+The signer CLI independently checks the same raw logs, exact SHA/author/issuer and mandatory suites, and refuses a private key that does not match the administrator-pinned public key. An incomplete or corrupted unsigned receipt cannot be signed as a passing CI receipt.
+
+    node scripts/sign-offline-evidence.js --type ci --mode development --trust /etc/codex-review/release-trust.json --logs /work/evidence/logs --sha <exact-sha> --author <trusted-pr-author> --input /work/evidence/ci.unsigned.json --key /protected/ci-private.pem --key-id ci-key --output /work/evidence/ci.signed.json
 
 Development evidence can be verified immediately, even when GitHub-hosted Actions fail to schedule:
 
@@ -48,7 +50,7 @@ This is evidence for review, not a synthetic GitHub success receipt or auto-merg
 
 After genuine CodeQL/dependency, compatible GitLab provider, migration/recovery and OCI/image verification are completed, a separate reviewer actually reviews the current SHA and evidence and signs:
 
-    node scripts/sign-offline-evidence.js --type review --ci /work/evidence/ci.signed.json --sha <exact-sha> --author <trusted-pr-author> --reviewer independent-reviewer --key /protected/review-private.pem --key-id review-key --output /work/evidence/review.signed.json
+    node scripts/sign-offline-evidence.js --type review --mode production --trust /etc/codex-review/release-trust.json --logs /work/evidence/logs --ci /work/evidence/ci.signed.json --sha <exact-sha> --author <trusted-pr-author> --reviewer independent-reviewer --key /protected/review-private.pem --key-id review-key --output /work/evidence/review.signed.json
 
     node scripts/offline-evidence.js verify --mode production --trust /etc/codex-review/release-trust.json --ci /work/evidence/ci.signed.json --review /work/evidence/review.signed.json --logs /work/evidence/logs --sha <exact-sha> --author <trusted-pr-author>
 
