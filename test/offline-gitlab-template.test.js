@@ -56,6 +56,7 @@ test('manual OSS SAST validates with pinned Semgrep CE and local rules without c
   assert.match(job,/tags: \[isolated-ephemeral\]/);
   assert.match(job,/when: manual/);
   assert.match(job,/SEMGREP_CE_VERIFIED_IMAGE_DIGEST/);
+  assert.match(job,/entrypoint: \[""\]/);
   assert.match(job,/GIT_STRATEGY: none/);
   assert.match(job,/TRUSTED_SEMGREP_RULES:\?/);
   assert.match(job,/REVIEWED_SHA:\?/);
