@@ -122,6 +122,11 @@ function validateInstance(raw, allFiles, identities) {
   }
   if(!projects.length && !groups.length)
     fail(id + ' must explicitly scope at least one GitLab project or group');
+  // JS cannot represent GitLab identity integers past MAX_SAFE_INTEGER without
+  // rounding. Refuse those IDs *before* they become authorization scope keys.
+  if(projects.some(value=>!Number.isSafeInteger(value)) ||
+      groups.some(group=>!Number.isSafeInteger(group.id)))
+    fail(id + ' project/group scope contains an unsafe numeric ID');
   const origin = normalizedUrl(gitlab.baseUrl, id + '.gitlab.baseUrl');
   const expected = normalizedUrl(webhook.expectedInstance, id + '.webhook.expectedInstance');
   if (origin !== expected) fail(id + ' webhook instance must match its GitLab origin');
