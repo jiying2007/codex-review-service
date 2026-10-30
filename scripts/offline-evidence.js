@@ -16,14 +16,19 @@ const REQUIRED=Object.freeze({
   'production-multi':['syntax','offline-unit','multi-offline','security','migration','provider','image']
 });
 function reject(code,message){const e=new Error(message);e.code=code;throw e;}
-function readRegularBytes(filename){
+function readRegularBytes(filename,maxBytes=1024*1024){
+  // Check the file itself before opening (also on platforms without O_NOFOLLOW),
+  // then check the opened inode again. Never load unbounded attacker-controlled logs.
+  const initial=fs.lstatSync(filename);
+  if(!initial.isFile()||initial.isSymbolicLink()||initial.size>maxBytes)
+    reject('EFILE','Invalid or symlinked evidence file');
   const flags=fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0);
   let fd;
   try{fd=fs.openSync(filename,flags);}
   catch(error){if(error.code==='ELOOP')reject('EFILE','Invalid or symlinked evidence file');throw error;}
   try{
     const stat=fs.fstatSync(fd);
-    if(!stat.isFile()||stat.size>1024*1024)reject('EFILE','Invalid or symlinked evidence file');
+    if(!stat.isFile()||stat.size>maxBytes)reject('EFILE','Invalid or symlinked evidence file');
     return fs.readFileSync(fd);
   }finally{fs.closeSync(fd);}
 }
@@ -91,7 +96,7 @@ function validateCi(payload,{sha,author,mode,trust,logsDir,now}){
   exactBase(payload,'ci');
   if(payload.sha!==sha||payload.author!==author||
     !trust.ci.allowedIdentities.includes(payload.issuer)||payload.issuer===author||
-    typeof payload.runner!=='string'||!trust.ci.allowedRunners.includes(payload.runner)||
+    typeof payload.runner!=='string'||payload.runner===author||!trust.ci.allowedRunners.includes(payload.runner)||
     !isTimestamp(payload.issuedAt,now,trust.maxAgeHours))reject('EIDENTITY','CI identity/commit/age mismatch');
   if(!Array.isArray(payload.suites)||payload.suites.length<1||payload.suites.length>20)
     reject('ESUITE','CI suite collection is invalid');
@@ -107,7 +112,7 @@ function validateCi(payload,{sha,author,mode,trust,logsDir,now}){
     const stat=fs.lstatSync(log);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size===0||stat.size>16*1024*1024)
       reject('ELOG','Log must be present, regular and bounded');
-    if(digest(fs.readFileSync(log))!==suite.logSha256)
+    if(digest(readRegularBytes(log,16*1024*1024))!==suite.logSha256)
       reject('ELOG','Raw test log digest mismatch');
   }
   for(const id of REQUIRED[mode])if(!seen.has(id))reject('ESUITE','Required suite missing: '+id);
