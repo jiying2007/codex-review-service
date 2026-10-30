@@ -1,5 +1,6 @@
 'use strict';
 const test=require('node:test');
+const posixTest=process.platform==='win32'?test.skip:test;
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
@@ -35,7 +36,7 @@ test('real isolated process creates measured unsigned log; no signing key can be
   assert.equal(env.GH_TOKEN,undefined);assert.equal(env.CODEX_OFFLINE_EVIDENCE,'1');
  }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
 });
-test('operator can sign measured evidence with independent keys; self-signing and weak private-key modes fail',()=>{
+posixTest('operator can sign measured evidence with independent keys; self-signing and weak private-key modes fail',()=>{
  const base=fs.mkdtempSync(path.join(os.tmpdir(),'offline-sign-'));
  try{
   const ci=crypto.generateKeyPairSync('ed25519'),review=crypto.generateKeyPairSync('ed25519');
@@ -62,11 +63,13 @@ test('evidence output cannot overwrite an older receipt or follow an alias into 
   const original=fs.readFileSync(path.join(out,'ci.unsigned.json'),'utf8');
   assert.throws(()=>collect(opts),/fresh, empty/);
   assert.equal(fs.readFileSync(path.join(out,'ci.unsigned.json'),'utf8'),original);
-  const alias=path.join(path.dirname(out),'alias-'+path.basename(out));
-  try{
-    fs.symlinkSync(out,alias,'dir');
-    assert.throws(()=>collect({...opts,outDir:alias}),/real directory/);
-  }finally{fs.rmSync(alias,{force:true});}
+  if(process.platform!=='win32'){
+    const alias=path.join(path.dirname(out),'alias-'+path.basename(out));
+    try{
+      fs.symlinkSync(out,alias,'dir');
+      assert.throws(()=>collect({...opts,outDir:alias}),/real directory/);
+    }finally{fs.rmSync(alias,{force:true});}
+  }
  }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
 });
 test('an uninitialized Core submodule cannot be signed as a clean product checkout',()=>{
