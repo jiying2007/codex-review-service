@@ -1,5 +1,6 @@
 'use strict';
 const test=require('node:test');
+const posixTest=process.platform==='win32'?test.skip:test;
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
@@ -37,7 +38,7 @@ function fixture(){
  const base=['--mode','production','--trust',trustFile,'--logs',logs,'--sha',sha,'--author','change-author'];
  return{dir,logs,trustFile,ciKey,reviewKey,ciUnsigned,ciSigned,reviewSigned,run,base,close:()=>fs.rmSync(dir,{recursive:true,force:true})};
 }
-test('trusted CI signer and independent reviewer CLI produce verifiable production receipts',()=>{
+posixTest('trusted CI signer and independent reviewer CLI produce verifiable production receipts',()=>{
  const f=fixture();try{
    const c=f.run('--type','ci',...f.base,'--input',f.ciUnsigned,'--key',f.ciKey,'--key-id','ci-key','--output',f.ciSigned);
    assert.equal(c.status,0,c.stderr);
@@ -50,7 +51,7 @@ test('trusted CI signer and independent reviewer CLI produce verifiable producti
    assert.equal(result.independentlyReviewed,true);
  }finally{f.close();}
 });
-test('CI signer refuses tampered raw logs and unauthorized signer key',()=>{
+posixTest('CI signer refuses tampered raw logs and unauthorized signer key',()=>{
  const f=fixture();try{
    fs.appendFileSync(path.join(f.logs,'syntax.log'),'tampered');
    const bad=f.run('--type','ci',...f.base,'--input',f.ciUnsigned,'--key',f.ciKey,'--key-id','ci-key','--output',f.ciSigned);
