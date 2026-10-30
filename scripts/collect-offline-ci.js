@@ -36,14 +36,28 @@ function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSy
     throw Error('Exact git commit and bounded operator identities required');
   if(!Array.isArray(suiteIds)||!suiteIds.length||suiteIds.some(x=>!Object.hasOwn(SUITES,x))||
      new Set(suiteIds).size!==suiteIds.length)throw Error('Only unique hardcoded offline suites are permitted');
+  // Never replace an older receipt or permit a symlink to move evidence into
+  // a checkout, a signing-key directory or another operator's workspace.
+  const repoReal=fs.realpathSync(repoDir);
+  if(fs.existsSync(outDir)){
+    const stat=fs.lstatSync(outDir);
+    if(!stat.isDirectory()||stat.isSymbolicLink())throw Error('Evidence output must be a real directory');
+  }else fs.mkdirSync(outDir,{mode:0o700});
+  const evidenceReal=fs.realpathSync(outDir);
+  if(evidenceReal===repoReal||evidenceReal.startsWith(repoReal+path.sep))
+    throw Error('Physical evidence output must be outside the checkout');
+  if(fs.readdirSync(outDir).length!==0||(fs.statSync(outDir).mode&0o077)!==0)
+    throw Error('Evidence output must be fresh, empty and private');
   const git=(...args)=>{const r=spawn('git',['-C',repoDir,...args],{
     encoding:'utf8',timeout:20000,env:noSecrets(),shell:false});
     if(r.error||r.status!==0)throw Error('Git checkout integrity check failed');
     return r.stdout.trim();
   };
   if(git('rev-parse','HEAD')!==sha)throw Error('Requested SHA is not checked out');
-  if(git('status','--porcelain','--untracked-files=normal'))throw Error('Evidence cannot be collected from a dirty checkout');
-  fs.mkdirSync(outDir,{recursive:true,mode:0o700});
+  if(git('status','--porcelain','--untracked-files=all'))throw Error('Evidence cannot be collected from a dirty checkout');
+  const submodules=git('submodule','status','--recursive');
+  if(submodules.split('\n').some(line=>line && /^[-+U]/.test(line)))
+    throw Error('Evidence cannot be collected from an uninitialized or changed submodule');
   const logsDir=path.join(outDir,'logs');fs.mkdirSync(logsDir,{mode:0o700});
   const workerHome=path.join(outDir,'worker-home');fs.mkdirSync(workerHome,{mode:0o700});
   const runnerEnv={...noSecrets(),HOME:workerHome};
@@ -57,12 +71,12 @@ function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSy
     const log=Buffer.from('suite='+id+'\nexitCode='+exitCode+'\n'+
       (r.error?'errorCode='+String(r.error.code||'EEXEC')+'\n':'')+
       String(r.stdout||'')+'\n'+String(r.stderr||''));
-    const file=path.join(logsDir,id+'.log');fs.writeFileSync(file,log,{mode:0o600});
+    const file=path.join(logsDir,id+'.log');fs.writeFileSync(file,log,{flag:'wx',mode:0o600});
     results.push({id,exitCode,durationMs,logSha256:sha256(log)});
   }
   const payload={schemaVersion:1,kind:'ci',repository:REPO,sha,author,issuer,runner,
     issuedAt:new Date(now).toISOString(),suites:results};
-  fs.writeFileSync(path.join(outDir,'ci.unsigned.json'),JSON.stringify(payload,null,2)+'\n',{mode:0o600});
+  fs.writeFileSync(path.join(outDir,'ci.unsigned.json'),JSON.stringify(payload,null,2)+'\n',{flag:'wx',mode:0o600});
   return{ok:results.every(s=>s.exitCode===0),receipt:'ci.unsigned.json',results};
 }
 function main(){const a=argMap(process.argv.slice(2));
