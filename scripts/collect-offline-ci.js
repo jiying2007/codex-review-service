@@ -46,7 +46,8 @@ function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSy
   const evidenceReal=fs.realpathSync(outDir);
   if(evidenceReal===repoReal||evidenceReal.startsWith(repoReal+path.sep))
     throw Error('Physical evidence output must be outside the checkout');
-  if(fs.readdirSync(outDir).length!==0||(fs.statSync(outDir).mode&0o077)!==0)
+  if(fs.readdirSync(outDir).length!==0||
+    (process.platform!=='win32'&&(fs.statSync(outDir).mode&0o077)!==0))
     throw Error('Evidence output must be fresh, empty and private');
   const git=(...args)=>{const r=spawn('git',['-C',repoDir,...args],{
     encoding:'utf8',timeout:20000,env:noSecrets(),shell:false});
