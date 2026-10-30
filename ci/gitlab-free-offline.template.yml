@@ -67,7 +67,9 @@ oss-sast-dev:
   tags: [isolated-ephemeral]
   allow_failure: false
   when: manual
-  image: "$SEMGREP_CE_VERIFIED_IMAGE_DIGEST"
+  image:
+    name: "$SEMGREP_CE_VERIFIED_IMAGE_DIGEST"
+    entrypoint: [""]
   variables:
     GIT_STRATEGY: none
     SEMGREP_SEND_METRICS: "off"
