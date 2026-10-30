@@ -153,11 +153,13 @@ function main(args=process.argv.slice(2)){
     kv[args[i]]=args[i+1];
   }
   for(const k of Object.keys(kv))if(!['--trust','--ci','--review','--logs','--sha','--author','--mode'].includes(k))reject('EUSAGE','Unknown flag');
-  if(kv['--mode']!=='development'){
-    if(kv['--trust']!==PRODUCTION_TRUST)reject('ETRUSTPATH','Production trust root is fixed outside the checkout');
-    if(process.platform!=='win32'&&fs.lstatSync(PRODUCTION_TRUST).uid!==0)
-      reject('ETRUSTOWNER','Production trust root must be root-owned');
-  }
+  // All CLI verdicts, including development, require one independently
+  // installed trust root. Unit tests may call verifyEvidence() with fixtures,
+  // but an untrusted local public key must not emit a qualifying CLI receipt.
+  if(kv['--trust']!==PRODUCTION_TRUST)
+    reject('ETRUSTPATH','CI trust root is fixed outside the checkout');
+  if(process.platform!=='win32'&&fs.lstatSync(PRODUCTION_TRUST).uid!==0)
+    reject('ETRUSTOWNER','CI trust root must be root-owned');
   return verifyEvidence({trustFile:kv['--trust'],ciFile:kv['--ci'],reviewFile:kv['--review'],
     logsDir:kv['--logs'],sha:kv['--sha'],author:kv['--author'],mode:kv['--mode']});
 }
