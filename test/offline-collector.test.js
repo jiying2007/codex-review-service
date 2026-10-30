@@ -30,7 +30,11 @@ test('real isolated process creates measured unsigned log; no signing key can be
   assert.match(fs.readFileSync(path.join(out,'logs/syntax.log'),'utf8'),/offline syntax check executed/);
   assert.equal(unsigned.suites[0].logSha256,digest(fs.readFileSync(path.join(out,'logs/syntax.log'))));
   assert.throws(()=>collect({repoDir:f.dir,outDir:out,sha:f.sha,author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['codex-cloud']}),/hardcoded offline/);
-  assert.throws(()=>collect({repoDir:f.dir,outDir:out,sha:'f'.repeat(40),author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax']}),/not checked out/);
+  const wrongOut=fs.mkdtempSync(path.join(os.tmpdir(),'offline-ci-wrong-sha-'));
+  try{
+    assert.throws(()=>collect({repoDir:f.dir,outDir:wrongOut,sha:'f'.repeat(40),
+      author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax']}),/not checked out/);
+  }finally{fs.rmSync(wrongOut,{recursive:true,force:true});}
   const env=noSecrets({PATH:process.env.PATH,GITLAB_API_TOKEN:'no',OPENAI_API_KEY:'no',GH_TOKEN:'no'});
   assert.equal(env.OPENAI_API_KEY,undefined);assert.equal(env.GITLAB_API_TOKEN,undefined);
   assert.equal(env.GH_TOKEN,undefined);assert.equal(env.GIT_OPTIONAL_LOCKS,'0');assert.equal(env.CODEX_OFFLINE_EVIDENCE,'1');
@@ -85,4 +89,21 @@ test('an uninitialized Core submodule cannot be signed as a clean product checko
     author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax'],spawn:mock}),
     /uninitialized or changed submodule/);
  }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
+});
+
+test('a source-controlled test cannot mutate files and still receive an exact-SHA receipt',()=>{
+  const f=repo(),out=fs.mkdtempSync(path.join(os.tmpdir(),'offline-ci-source-drift-'));
+  try{
+    fs.writeFileSync(path.join(f.dir,'scripts/check-syntax.js'),
+      "require('node:fs').writeFileSync('scripts/check-syntax.js', 'modified by test\\n'); console.log('suite exited successfully');\n");
+    cmd(f.dir,'add','.');cmd(f.dir,'commit','-m','fixture that mutates source');
+    const sha=cmd(f.dir,'rev-parse','HEAD');
+    assert.throws(()=>collect({repoDir:f.dir,outDir:out,sha,
+      author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax']}),
+      /changed while executing offline suites/);
+    assert.equal(fs.existsSync(path.join(out,'ci.unsigned.json')),false,
+      'a successful test exit is not evidence for the old SHA after source mutation');
+    assert.match(fs.readFileSync(path.join(out,'logs/syntax.log'),'utf8'),
+      /suite exited successfully/);
+  }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
 });
