@@ -48,6 +48,16 @@ Development evidence can be verified immediately, even when GitHub-hosted Action
 
 This is evidence for review, not a synthetic GitHub success receipt or auto-merge authorization. Do not edit logs/receipt after signing. The CI signer must independently check that the unsigned results genuinely came from real subprocesses; a cryptographic signature cannot prove that a dishonest signer ran a test.
 
+## 可选：GitLab Free 两条开发测试作业（模板未启用）
+
+[ci/gitlab-free-offline.template.yml](../ci/gitlab-free-offline.template.yml) 可在一个**独立且由管理员保护**的 GitLab CI 控制项目安装。不要直接把 PR/MR 来源代码中的 pipeline YAML 当作可信控制策略：PR 作者可能修改 YAML、image、script 或 artifact，窃取 Runner 令牌或伪造日志。该模板**不是现有服务已部署的 CI**，也没有自动同步 GitHub 私有库。
+
+使用者需要给受保护 CI 项目配好：`NODE22_VERIFIED_IMAGE_DIGEST`、`NODE24_VERIFIED_IMAGE_DIGEST`（必须是经确认的不可变 `@sha256` 镜像）、`TRUSTED_COLLECTOR`（由可信管理员安装到 Runner 的源仓库之外、只读）、`REVIEWED_AUTHOR`（由 GitLab/GitHub API 独立核验的 PR 作者，不是代码自报值），并为作业配置真正隔离、每次丢弃、禁止访问生产主机/生产 Secret/模型服务的 `isolated-ephemeral` Runner。
+
+模板在 Node 22.22.2 / 24.19.0 最低版本条件下执行 `syntax,offline-unit,migration`。其 GitLab Artifact 仅为**原始、未签名的** `ci.unsigned.json` 和 raw logs，不能变成受信任的自动审批。受控签名方必须独立验证 Git commit、子模块、Runner 来源、真实退出码与日志，随后使用**不同身份和密钥**签署。离线开发通过不满足生产 `security`、`codeql`、`dependency-audit`、`gitlab-14/17/19`、`image`、`sbom`、`provenance` 门禁。
+
+GitLab 提供的 `CI_JOB_TOKEN` 等作业身份本身也可能被执行代码接触；脚本里取消环境变量并不构成安全沙箱。需要通过隔离 Executor、最小的作业令牌权限、可信的受保护 pipeline 配置、独立 Git checkout 和 Runner 生命周期控制真正减少攻击面。GitHub 官方也明确警告自托管 Runner 运行不可信 PR 的风险。选择既有 GitLab Free 是**运行工具的替代手段**，不是产品安全资格自动放宽。
+
 ## Production (not yet wired to release)
 
 After genuine CodeQL/dependency, compatible GitLab provider, migration/recovery and OCI/image verification are completed, a separate reviewer actually reviews the current SHA and evidence and signs:
