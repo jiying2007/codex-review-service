@@ -41,15 +41,18 @@ function sign(payload,keyId,privateKeyFile){
  const unsigned={schemaVersion:1,keyId,payload};
  return{...unsigned,signature:crypto.sign(null,signedMessage(unsigned),safeSecret(privateKeyFile)).toString('base64')};
 }
-function signReview({ciFile,author,reviewer,sha,privateKeyFile,keyId}){
+function signReview({ciFile,ciBytes,author,reviewer,sha,privateKeyFile,keyId}){
  if(!/^[a-z][a-z0-9-]{0,63}$/.test(reviewer)||reviewer===author||
    !/^[a-z][a-z0-9-]{0,63}$/.test(author)||!/^[0-9a-f]{40}$/.test(sha))
    throw Error('Independent reviewer, author and exact sha required');
- const ciBytes=fs.readFileSync(ciFile),ci=JSON.parse(ciBytes);
+ // Sign the same checked CI receipt bytes. Do not reopen a potentially
+ // changed or symlinked file after verifying the incoming CI signature.
+ const bytes=ciBytes||readRegularBytes(ciFile);
+ const ci=JSON.parse(bytes);
  if(ci?.payload?.kind!=='ci'||ci.payload.sha!==sha||ci.payload.author!==author)
    throw Error('Review must bind to exact signed CI receipt and author');
  const payload={schemaVersion:1,kind:'review',repository:'jiying2007/codex-review-service',
-   sha,author,reviewer,decision:'approved',issuedAt:new Date().toISOString(),ciSha256:digest(ciBytes)};
+   sha,author,reviewer,decision:'approved',issuedAt:new Date().toISOString(),ciSha256:digest(bytes)};
  return sign(payload,keyId,privateKeyFile);
 }
 function main(){const a=args(process.argv.slice(2));
@@ -70,10 +73,14 @@ function main(){const a=args(process.argv.slice(2));
    result=sign(payload,a['key-id'],a.key);
  }else{
    if(a.mode==='development')throw Error('Reviewer signing only applies to production');
-   const envelope=JSON.parse(readRegularBytes(a.ci).toString('utf8'));
+   const ciBytes=readRegularBytes(a.ci);
+   const envelope=JSON.parse(ciBytes.toString('utf8'));
    const payload=verifyEnvelope(envelope,trust.ci.keyId,trust.ci.publicKeyPem);
    validateCi(payload,{sha:a.sha,author:a.author,mode:a.mode,trust,logsDir:a.logs,now:Date.now()});
-   result=signReview({ciFile:a.ci,author:a.author,reviewer:a.reviewer,sha:a.sha,
+   if(!trust.review.allowedIdentities.includes(a.reviewer) ||
+       a.reviewer===a.author || a.reviewer===payload.issuer)
+     throw Error('Reviewer must be an independently trusted identity distinct from CI issuer and code author');
+   result=signReview({ciFile:a.ci,ciBytes,author:a.author,reviewer:a.reviewer,sha:a.sha,
      privateKeyFile:a.key,keyId:a['key-id']});
  }
  fs.writeFileSync(a.output,JSON.stringify(result,null,2)+'\n',{flag:'wx',mode:0o600});
