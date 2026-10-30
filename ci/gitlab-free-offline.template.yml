@@ -10,6 +10,7 @@ stages: [offline]
   when: manual
   variables:
     GIT_STRATEGY: none
+    SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration"
   script:
     - |
       set -eu
@@ -28,7 +29,7 @@ stages: [offline]
       unset CI_JOB_TOKEN CI_REPOSITORY_URL GITLAB_TOKEN GITLAB_API_TOKEN GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY CODEX_HOME || true
       evidence_dir="$(mktemp -d /tmp/service-offline-ci.XXXXXXXX)"
       status=0
-      node "$TRUSTED_COLLECTOR" --checkout "$VERIFIED_SOURCE_CHECKOUT" --output "$evidence_dir" --sha "$REVIEWED_SHA" --author "$REVIEWED_AUTHOR" --issuer ci-operator --runner isolated-linux --suites syntax,offline-unit,migration || status=$?
+      node "$TRUSTED_COLLECTOR" --checkout "$VERIFIED_SOURCE_CHECKOUT" --output "$evidence_dir" --sha "$REVIEWED_SHA" --author "$REVIEWED_AUTHOR" --issuer ci-operator --runner isolated-linux --suites "$SELECTED_OFFLINE_SUITES" || status=$?
       test ! -e "$CI_PROJECT_DIR/offline-unsigned-evidence"
       mkdir -m 700 "$CI_PROJECT_DIR/offline-unsigned-evidence"
       cp -R "$evidence_dir/logs" "$CI_PROJECT_DIR/offline-unsigned-evidence/"
@@ -51,3 +52,10 @@ node24-dev:
   image: "$NODE24_VERIFIED_IMAGE_DIGEST"
   variables:
     REQUIRED_NODE_MAJOR: "24"
+
+multi-gitlab-dev:
+  extends: .offline-dev
+  image: "$NODE24_VERIFIED_IMAGE_DIGEST"
+  variables:
+    REQUIRED_NODE_MAJOR: "24"
+    SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration,multi-offline"

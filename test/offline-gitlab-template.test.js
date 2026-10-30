@@ -14,7 +14,8 @@ test('optional GitLab Free template remains a protected-controller-only unsigned
   assert.match(source,/REVIEWED_SHA.*git -C/);
   assert.match(source,/VERIFIED_SOURCE_CHECKOUT:\?/);
   assert.match(source,/node "\$TRUSTED_COLLECTOR"/);
-  assert.match(source,/--suites syntax,offline-unit,migration/);
+  assert.match(source,/--suites "\$SELECTED_OFFLINE_SUITES"/);
+  assert.match(source,/SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration"/);
   assert.match(source,/ci\.unsigned\.json/);
   assert.match(source,/when: always/);
   assert.doesNotMatch(source,/--type\s+review|--type\s+ci|gh release|codex exec|codex login/);
@@ -36,4 +37,14 @@ test('GitLab Free development uses two required, digest-supplied Node images wit
   assert.match(source,/test -z "\$origin" \|\| test "\$origin" = \/dev\/null/);
   assert.match(source,/unset CI_JOB_TOKEN CI_REPOSITORY_URL/);
   assert.doesNotMatch(source,/PRIVATE-TOKEN:|OPENAI_API_KEY:|GITLAB_API_TOKEN:/);
+});
+
+test('manual multi-GitLab development requires the real multi-offline suite',()=>{
+  const at=source.indexOf('multi-gitlab-dev:');
+  assert.ok(at>0);
+  const block=source.slice(at);
+  assert.match(block,/extends: \.offline-dev/);
+  assert.match(block,/REQUIRED_NODE_MAJOR: "24"/);
+  assert.match(block,/SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration,multi-offline"/);
+  assert.doesNotMatch(block,/CODEX_API_KEY|codex exec|release/);
 });
