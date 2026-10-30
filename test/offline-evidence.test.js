@@ -1,5 +1,6 @@
 'use strict';
 const test=require('node:test');
+const posixTest=process.platform==='win32'?test.skip:test;
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
@@ -81,9 +82,11 @@ test('reject tampered or missing raw log, and symlinked receipts',()=>{
   fs.appendFileSync(path.join(f.logs,'syntax.log'),'tampered');
   assert.throws(()=>verifyEvidence(f.opts),/digest mismatch/);
   f.persist();
-  fs.renameSync(f.ciFile,f.ciFile+'.raw');
-  fs.symlinkSync(f.ciFile+'.raw',f.ciFile);
-  assert.throws(()=>verifyEvidence(f.opts),/Invalid or symlinked/);
+  if(process.platform!=='win32'){
+    fs.renameSync(f.ciFile,f.ciFile+'.raw');
+    fs.symlinkSync(f.ciFile+'.raw',f.ciFile);
+    assert.throws(()=>verifyEvidence(f.opts),/Invalid or symlinked/);
+  }
  }finally{f.close();}
 });
 test('reject self-approval, wrong reviewer, stale review or mismatched CI receipt',()=>{
@@ -115,7 +118,7 @@ test('reject identical release and CI signing principals and wrong trust root',(
   assert.throws(()=>verifyEvidence(f.opts),/Trust repository mismatch/);
  }finally{f.close();}
 });
-test('release trust root must not be group/world writable',()=>{
+posixTest('release trust root must not be group/world writable',()=>{
  const f=fixtures();try{
   fs.chmodSync(f.trustFile,0o666);
   assert.throws(()=>verifyEvidence(f.opts),/not writable by group\/other/);
@@ -153,7 +156,7 @@ test('CI author cannot self-attest by reusing a trusted runner or issuer name',(
   }finally{f.close();}
  }
 });
-test('signed raw log must be a regular file, not a symlink to otherwise matching bytes',()=>{
+posixTest('signed raw log must be a regular file, not a symlink to otherwise matching bytes',()=>{
  const f=fixtures();try{
   const log=path.join(f.logs,'syntax.log'),source=path.join(f.root,'old-syntax.log');
   fs.renameSync(log,source);fs.symlinkSync(source,log);
