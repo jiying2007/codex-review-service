@@ -32,7 +32,9 @@ function readRegularBytes(filename,maxBytes=1024*1024){
   catch(error){if(error.code==='ELOOP')reject('EFILE','Invalid or symlinked evidence file');throw error;}
   try{
     const stat=fs.fstatSync(fd);
-    if(!stat.isFile()||stat.size>maxBytes)reject('EFILE','Invalid or symlinked evidence file');
+    if(!stat.isFile()||stat.size>maxBytes||
+       stat.dev!==initial.dev||stat.ino!==initial.ino)
+      reject('EFILE','Invalid, changed or symlinked evidence file');
     return fs.readFileSync(fd);
   }finally{fs.closeSync(fd);}
 }
