@@ -60,6 +60,14 @@ This is evidence for review, not a synthetic GitHub success receipt or auto-merg
 
 GitLab 提供的 `CI_JOB_TOKEN` 等作业身份本身也可能被执行代码接触；脚本里取消环境变量并不构成安全沙箱。需要通过隔离 Executor、最小的作业令牌权限、可信的受保护 pipeline 配置、独立 Git checkout 和 Runner 生命周期控制真正减少攻击面。GitHub 官方也明确警告自托管 Runner 运行不可信 PR 的风险。选择既有 GitLab Free 是**运行工具的替代手段**，不是产品安全资格自动放宽。
 
+## CodeQL 许可边界与免费 SAST（开发用途）
+
+截至 2026-10-30，GitHub [CodeQL CLI 官方说明](https://docs.github.com/en/code-security/concepts/code-scanning/codeql/codeql-cli) 与 [CodeQL CLI License](https://github.com/github/codeql-cli-binaries/blob/main/LICENSE.md) 指出：对未公开/闭源私有代码库进行自动化 CodeQL 扫描，不因把 Runner 从 GitHub Actions 搬到自托管 GitLab 就自动获得授权。**在未确认满足 CodeQL 商业许可前，不运行 CodeQL CLI 扫描私有 Service，也不通过虚构 `codeql` PASS 解除原门禁。**
+
+免费的开发期可选手段：受保护 [GitLab Free CI 模板](../ci/gitlab-free-offline.template.yml) 新增手动 `oss-sast-dev`，通过管理员验证的 `SEMGREP_CE_VERIFIED_IMAGE_DIGEST` 镜像、源代码外受保护的 `TRUSTED_SEMGREP_RULES` 本地规则包、`--metrics=off`，在隔离 Runner 上只读扫描准备好的精确 Git SHA。Semgrep Community Edition 以 LGPL-2.1 开源；GitLab SAST 基础能力也有 Free Self-Managed 版本。Community/Rule 包许可与具体安全覆盖需独立审查，避免使用需付费的 Pro 规则、未经许可的第三方规则或自动将私有源码上传外部平台。
+
+扫描结果只是一份开发期 OSS SAST 报告，**不是** CodeQL 的授权替代或当前生产 Required CI Gate 的豁免。现有 `production` / `production-multi` 完整 CodeQL 等检查继续 fail-closed；若希望完全不付费闭环生产，必须在 Core [#91](https://github.com/jiying2007/codex-safe-core/issues/91) 正式审查并批准版本化的安全检测替代合同（含 SAST 敏感规则、依赖/Secret/容器扫描、假阳性处理和可信审查），然后通过单独的受保护发布链验证。不能简单删掉 `codeql` 项宣称标准不变。
+
 ## Production (not yet wired to release)
 
 After genuine CodeQL/dependency, compatible GitLab provider, migration/recovery and OCI/image verification are completed, a separate reviewer actually reviews the current SHA and evidence and signs:
