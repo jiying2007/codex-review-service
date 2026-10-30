@@ -21,7 +21,7 @@ function noSecrets(parent=process.env){
   const result={};
   for(const key of ['PATH','HOME','LANG','LC_ALL','TMPDIR','TEMP','TMP','SystemRoot','WINDIR','NODE_EXTRA_CA_CERTS','SSL_CERT_FILE'])
     if(typeof parent[key]==='string')result[key]=parent[key];
-  result.CI='true';result.NO_COLOR='1';result.GIT_TERMINAL_PROMPT='0';result.CODEX_OFFLINE_EVIDENCE='1';
+  result.CI='true';result.NO_COLOR='1';result.GIT_TERMINAL_PROMPT='0';result.GIT_OPTIONAL_LOCKS='0';result.CODEX_OFFLINE_EVIDENCE='1';
   return result;
 }
 function sha256(bytes){return crypto.createHash('sha256').update(bytes).digest('hex');}

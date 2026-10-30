@@ -33,7 +33,7 @@ test('real isolated process creates measured unsigned log; no signing key can be
   assert.throws(()=>collect({repoDir:f.dir,outDir:out,sha:'f'.repeat(40),author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax']}),/not checked out/);
   const env=noSecrets({PATH:process.env.PATH,GITLAB_API_TOKEN:'no',OPENAI_API_KEY:'no',GH_TOKEN:'no'});
   assert.equal(env.OPENAI_API_KEY,undefined);assert.equal(env.GITLAB_API_TOKEN,undefined);
-  assert.equal(env.GH_TOKEN,undefined);assert.equal(env.CODEX_OFFLINE_EVIDENCE,'1');
+  assert.equal(env.GH_TOKEN,undefined);assert.equal(env.GIT_OPTIONAL_LOCKS,'0');assert.equal(env.CODEX_OFFLINE_EVIDENCE,'1');
  }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
 });
 posixTest('operator can sign measured evidence with independent keys; self-signing and weak private-key modes fail',()=>{

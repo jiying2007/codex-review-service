@@ -52,7 +52,9 @@ This is evidence for review, not a synthetic GitHub success receipt or auto-merg
 
 [ci/gitlab-free-offline.template.yml](../ci/gitlab-free-offline.template.yml) 可在一个**独立且由管理员保护**的 GitLab CI 控制项目安装。不要直接把 PR/MR 来源代码中的 pipeline YAML 当作可信控制策略：PR 作者可能修改 YAML、image、script 或 artifact，窃取 Runner 令牌或伪造日志。该模板**不是现有服务已部署的 CI**，也没有自动同步 GitHub 私有库。
 
-使用者需要给受保护 CI 项目配好：`NODE22_VERIFIED_IMAGE_DIGEST`、`NODE24_VERIFIED_IMAGE_DIGEST`（必须是经确认的不可变 `@sha256` 镜像）、`TRUSTED_COLLECTOR`（由可信管理员安装到 Runner 的源仓库之外、只读）、`REVIEWED_AUTHOR`（由 GitLab/GitHub API 独立核验的 PR 作者，不是代码自报值），并为作业配置真正隔离、每次丢弃、禁止访问生产主机/生产 Secret/模型服务的 `isolated-ephemeral` Runner。
+**控制仓库与目标仓库不是同一份 Git checkout。** 控制项目的 `CI_COMMIT_SHA` 仅标识控制项目，**不得当成私有 Service PR 的 SHA**。由受信任的独立协调者在 Runner 启动前，将 GitHub 私有 Service 的 **`REVIEWED_SHA` 精确提交**及完整、初始化后的 Core submodule 拉取到可信临时目录，清除 Git checkout 原有凭据/remote 后以**只读**方式挂载为 `VERIFIED_SOURCE_CHECKOUT`。`REVIEWED_SHA`、`REVIEWED_AUTHOR` 必须由 GitHub API 或独立受保护记录核实，而不是 PR 本身提供。控制项目 `GIT_STRATEGY: none`，模板作业默认 **manual**，不会自动运行生产或测试错误的仓库。
+
+使用者需要给受保护 CI 项目配好：`NODE22_VERIFIED_IMAGE_DIGEST`、`NODE24_VERIFIED_IMAGE_DIGEST`（真实不可变 `@sha256` 镜像）、`TRUSTED_COLLECTOR`（可信管理员安装在待测源码目录之外，且不能被 PR 改写）、`REVIEWED_SHA`、`REVIEWED_AUTHOR`、`VERIFIED_SOURCE_CHECKOUT`；使用真正隔离、每次丢弃、禁止访问生产主机/生产 Secret/模型服务的 `isolated-ephemeral` Runner。Collector 通过 `GIT_OPTIONAL_LOCKS=0` 只读执行 Git 检查，既可保持 Source 只读，又不会产生多余 index lock。
 
 模板在 Node 22.22.2 / 24.19.0 最低版本条件下执行 `syntax,offline-unit,migration`。其 GitLab Artifact 仅为**原始、未签名的** `ci.unsigned.json` 和 raw logs，不能变成受信任的自动审批。受控签名方必须独立验证 Git commit、子模块、Runner 来源、真实退出码与日志，随后使用**不同身份和密钥**签署。离线开发通过不满足生产 `security`、`codeql`、`dependency-audit`、`gitlab-14/17/19`、`image`、`sbom`、`provenance` 门禁。
 
