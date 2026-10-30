@@ -17,6 +17,9 @@ stages: [offline]
       : "${TRUSTED_COLLECTOR:?Mount reviewed collector outside the checkout}"
       test -f "$TRUSTED_COLLECTOR"
       test "$CI_COMMIT_SHA" = "$(git rev-parse HEAD)"
+      # Remove the credential-bearing Git remote before running any PR code.
+      git remote set-url origin /dev/null
+      git config --local credential.helper ""
       node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); const major=Number(process.env.REQUIRED_NODE_MAJOR); if(a!==major || (a===22 && (b<22 || (b===22 && c<2))) || (a===24 && (b<19 || (b===19 && c<0)))) process.exit(2)'
       # These variables could otherwise be visible to source-controlled tests.
       # This is NOT a substitute for an isolated, no-network, secret-free runner.
