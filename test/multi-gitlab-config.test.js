@@ -116,6 +116,7 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
     f=>{f.sensor.gitlab.projects=[0];},
     f=>{f.sensor.gitlab.projects=['113'];},
     f=>{f.sensor.gitlab.projects=[Number.MAX_SAFE_INTEGER+10];},
+    f=>{f.sensor.gitlab.groups=[{id:Number.MAX_SAFE_INTEGER+10,includeSubgroups:true}];},
     f=>{f.sensor.gitlab.groups=[{id:0,includeSubgroups:true}];},
     f=>{f.sensor.gitlab.groups=[{id:48,includeSubgroups:'yes'}];},
     f=>{f.sensor.unsupportedSection={enabled:true};},
