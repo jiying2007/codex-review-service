@@ -61,3 +61,25 @@ posixTest('CI signer refuses tampered raw logs and unauthorized signer key',()=>
    assert.equal(wrong.status,2);assert.equal(fs.existsSync(f.ciSigned),false);
  }finally{f.close();}
 });
+
+posixTest('review signer refuses an untrusted or source-author reviewer and changed CI receipt',()=>{
+ const f=fixture();try{
+   const c=f.run('--type','ci',...f.base,'--input',f.ciUnsigned,'--key',f.ciKey,
+     '--key-id','ci-key','--output',f.ciSigned);
+   assert.equal(c.status,0,c.stderr);
+   for(const badIdentity of ['ci-operator','change-author','untrusted-reviewer']){
+     const result=f.run('--type','review',...f.base,'--ci',f.ciSigned,'--reviewer',badIdentity,
+       '--key',f.reviewKey,'--key-id','review-key','--output',f.reviewSigned);
+     assert.equal(result.status,2,badIdentity+' must never be a valid independent reviewer');
+     assert.equal(fs.existsSync(f.reviewSigned),false);
+   }
+   const signed=JSON.parse(fs.readFileSync(f.ciSigned,'utf8'));
+   signed.payload.runner='imposter-runner';
+   fs.writeFileSync(f.ciSigned,JSON.stringify(signed));
+   const afterSwap=f.run('--type','review',...f.base,'--ci',f.ciSigned,
+     '--reviewer','code-reviewer','--key',f.reviewKey,'--key-id','review-key',
+     '--output',f.reviewSigned);
+   assert.equal(afterSwap.status,2,'a mutated CI receipt must not be signed by reviewer');
+   assert.equal(fs.existsSync(f.reviewSigned),false);
+ }finally{f.close();}
+});
