@@ -160,3 +160,14 @@ test('signed raw log must be a regular file, not a symlink to otherwise matching
   assert.throws(()=>verifyEvidence(f.opts),/Log must be present/);
  }finally{f.close();}
 });
+
+test('production requires separate real Node, CodeQL, GitLab compatibility and OCI receipts',()=>{
+ for(const required of ['node-22','node-24','codeql','dependency-audit',
+   'gitlab-14','gitlab-17','gitlab-19','sbom','provenance']){
+   const f=fixtures();try{
+     f.ci.suites=f.ci.suites.filter(item=>item.id!==required);
+     f.persist();
+     assert.throws(()=>verifyEvidence(f.opts),new RegExp('Required suite missing: '+required));
+   }finally{f.close();}
+ }
+});
