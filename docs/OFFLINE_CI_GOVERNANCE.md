@@ -16,7 +16,7 @@ The offline suite is not GitHub branch protection. A free private repository can
 
 ## Protected keys and signed evidence
 
-The protected publisher installs /etc/codex-review/release-trust.json with mode 0644 or tighter, regular non-symlink, owned by root on Linux. Do NOT generate this trust root from PR content or allow PR authors to replace it. Its format is:
+The independent publisher / CI verifier administrator installs /etc/codex-review/release-trust.json with mode 0644 or tighter, regular non-symlink, owned by root on Linux. **Both development and production CLI modes use this exact same pinned root**; passing a project-owned or test-generated trust file to the CLI is explicitly rejected. Do NOT generate this trust root from PR content or allow PR authors to replace it. Its format is:
 
     {
       "schemaVersion": 1,
@@ -30,7 +30,7 @@ These are PUBLIC keys only. The CI runner ID must be explicitly allowlisted and 
 
 ## Run real offline tests, no Codex/Work/model usage
 
-Use an independently fetched, clean checkout of the exact approved SHA on an isolated test VM/container, **not** production host 192.168.1.22. The collector invokes only hardcoded, no-Codex test commands using shell:false and scrubbed environment variables (no GitHub/GitLab/OpenAI/Codex credentials). It writes an unsigned receipt and raw logs outside the checkout:
+Use an independently fetched, clean checkout of the exact approved SHA, with all pinned Core submodules initialized at exact commits, on an ephemeral isolated test VM/container, **not** production host 192.168.1.22. The output directory must be fresh, empty, mode 0700, physically outside the checkout, and never symlinked. Previous signed or unsigned log bundles must never be reused or overwritten. The collector invokes only hardcoded test commands using shell:false, private per-run HOME and scrubbed environment variables (no inherited GitHub/GitLab/OpenAI/Codex credentials). **Environment scrubbing is not a code sandbox**: the host operator must additionally ensure no Codex binary, credentials, provider service or network egress is accessible inside the ephemeral untrusted PR runner. Do not interpret a test suite's name as proof of zero model usage. It writes an unsigned receipt and raw logs outside the checkout:
 
     node scripts/collect-offline-ci.js --checkout /work/clean-checkout --output /work/evidence --sha <exact-sha> --author <trusted-pr-author> --issuer ci-operator --runner isolated-linux --suites syntax,offline-unit,migration
 
@@ -54,7 +54,7 @@ After genuine CodeQL/dependency, compatible GitLab provider, migration/recovery 
 
     node scripts/offline-evidence.js verify --mode production --trust /etc/codex-review/release-trust.json --ci /work/evidence/ci.signed.json --review /work/evidence/review.signed.json --logs /work/evidence/logs --sha <exact-sha> --author <trusted-pr-author>
 
-The trusted publisher must authenticate the PR author and SHA independently from the repository, verify the immutable source/artifact digest, ensure neither signer key is controlled by the author, and prevent already-published artifacts from changing. The private production trust root must not be writable by the source author. There is no endorsement here that external evidence and native GitHub Ruleset are equivalent security guarantees.
+The trusted publisher must authenticate the PR author and SHA independently from the repository, verify the immutable source/artifact digest, ensure neither signer key is controlled by the author, and prevent already-published artifacts from changing. The pinned CI/public trust root must not be writable by the source author. The supported offline installer must pin the CI runner identity in allowedRunners; different CI and reviewer signers, unrelated to the source author, are required. There is no endorsement here that external evidence and native GitHub Ruleset are equivalent security guarantees.
 
 **This PR does not modify existing release.yml, Core Family release, Service #113/#116 merge controls, Secrets, branch protection, tag publishing or production deployment.** A separately reviewed publishing-adapter PR is needed to enforce this gate before deployment. It must not waive the current six-repository Core Ruleset contract without explicit independent security-policy approval.
 
