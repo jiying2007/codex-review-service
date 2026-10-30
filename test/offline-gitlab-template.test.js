@@ -30,6 +30,8 @@ test('GitLab Free development uses two required, digest-supplied Node images wit
     assert.ok(block.includes('image: "$'+image+'"'));
     assert.ok(block.includes('REQUIRED_NODE_MAJOR: "'+major+'"'));
   }
+  assert.match(source,/git remote set-url origin \/dev\/null/);
+  assert.match(source,/git config --local credential\.helper/);
   assert.match(source,/unset CI_JOB_TOKEN CI_REPOSITORY_URL/);
   assert.doesNotMatch(source,/PRIVATE-TOKEN:|OPENAI_API_KEY:|GITLAB_API_TOKEN:/);
 });
