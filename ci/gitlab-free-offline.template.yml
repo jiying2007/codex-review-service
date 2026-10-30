@@ -7,26 +7,28 @@ stages: [offline]
   stage: offline
   tags: [isolated-ephemeral]
   allow_failure: false
+  when: manual
   variables:
-    GIT_STRATEGY: clone
-    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_STRATEGY: none
   script:
     - |
       set -eu
-      : "${REVIEWED_AUTHOR:?Set independently checked PR author identity}"
+      : "${REVIEWED_AUTHOR:?Set independently checked Service PR author}"
+      : "${REVIEWED_SHA:?Set independently verified Service commit SHA}"
+      : "${VERIFIED_SOURCE_CHECKOUT:?Mount sanitized exact Service checkout read-only}"
       : "${TRUSTED_COLLECTOR:?Mount reviewed collector outside the checkout}"
       test -f "$TRUSTED_COLLECTOR"
-      test "$CI_COMMIT_SHA" = "$(git rev-parse HEAD)"
-      # Remove the credential-bearing Git remote before running any PR code.
-      git remote set-url origin /dev/null
-      git config --local credential.helper ""
+      test "$REVIEWED_SHA" = "$(git -C "$VERIFIED_SOURCE_CHECKOUT" rev-parse HEAD)"
+      # Reject any checkout that still exposes a Git credential-bearing origin.
+      origin="$(git -C "$VERIFIED_SOURCE_CHECKOUT" remote get-url origin 2>/dev/null || true)"
+      test -z "$origin" || test "$origin" = /dev/null
       node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); const major=Number(process.env.REQUIRED_NODE_MAJOR); if(a!==major || (a===22 && (b<22 || (b===22 && c<2))) || (a===24 && (b<19 || (b===19 && c<0)))) process.exit(2)'
       # These variables could otherwise be visible to source-controlled tests.
       # This is NOT a substitute for an isolated, no-network, secret-free runner.
       unset CI_JOB_TOKEN CI_REPOSITORY_URL GITLAB_TOKEN GITLAB_API_TOKEN GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY CODEX_HOME || true
       evidence_dir="$(mktemp -d /tmp/service-offline-ci.XXXXXXXX)"
       status=0
-      node "$TRUSTED_COLLECTOR" --checkout "$CI_PROJECT_DIR" --output "$evidence_dir" --sha "$CI_COMMIT_SHA" --author "$REVIEWED_AUTHOR" --issuer ci-operator --runner isolated-linux --suites syntax,offline-unit,migration || status=$?
+      node "$TRUSTED_COLLECTOR" --checkout "$VERIFIED_SOURCE_CHECKOUT" --output "$evidence_dir" --sha "$REVIEWED_SHA" --author "$REVIEWED_AUTHOR" --issuer ci-operator --runner isolated-linux --suites syntax,offline-unit,migration || status=$?
       test ! -e "$CI_PROJECT_DIR/offline-unsigned-evidence"
       mkdir -m 700 "$CI_PROJECT_DIR/offline-unsigned-evidence"
       cp -R "$evidence_dir/logs" "$CI_PROJECT_DIR/offline-unsigned-evidence/"
