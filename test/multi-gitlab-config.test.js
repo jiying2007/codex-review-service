@@ -206,3 +206,46 @@ test('explicit multi manifest prevents silent single-instance configuration fall
     assert.throws(()=>loadMultiManifest(link),/non-symlink file/);
   }finally{f.close();}
 });
+
+(process.platform==='win32'?test.skip:test)('hardened multi-GitLab configuration files reject group/world writable control inputs',()=>{
+  for(const target of ['manifest','legacy-config','sensor-config','sensor-secret']){
+    const f=fixture();
+    try{
+      const file=target==='manifest'?f.manifestFile:
+        target==='legacy-config'?f.manifest.instances[0].configFile:
+        target==='sensor-config'?f.manifest.instances[1].configFile:f.tokens.sensorApi;
+      fs.chmodSync(file,0o666);
+      assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular|file/i);
+    }finally{f.close();}
+  }
+});
+(process.platform==='win32'?test.skip:test)('hardlinked manifest, tenant config and credentials are not separate trust domains',()=>{
+  for(const target of ['manifest','sensor-config','sensor-secret']){
+    const f=fixture();
+    try{
+      if(target==='manifest'){
+        const linked=f.location('linked-manifest.json');
+        fs.linkSync(f.manifestFile,linked);
+        assert.throws(()=>loadMultiManifest(linked),/private|regular/i);
+      }else if(target==='sensor-config'){
+        const linked=f.location('linked-sensor.json');
+        fs.linkSync(f.manifest.instances[1].configFile,linked);
+        f.manifest.instances[1].configFile=linked;
+        f.flush();
+        assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular/i);
+      }else{
+        const linked=f.location('linked-sensor-token');
+        fs.linkSync(f.tokens.sensorApi,linked);
+        f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=linked;
+        f.flush();
+        assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular/i);
+      }
+    }finally{f.close();}
+  }
+});
+test('oversized manifest is rejected before parsing even if trailing JSON whitespace is valid',()=>{
+  const f=fixture();try{
+    fs.appendFileSync(f.manifestFile,' '.repeat(1024*1024));
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular|invalid/i);
+  }finally{f.close();}
+});
