@@ -8,7 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { readSecretFile, allowedSecretName } = require('./secrets');
 const { CONFIG_SCHEMA_VERSION } = require('./product-contract');
-const { loadStructuredConfig, positiveIds, parseGroups } = require('./config');
+const { loadStructuredConfig, positiveIds, parseGroups, validateSigningToken } = require('./config');
 
 const INSTANCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const ENV_ALLOWLIST = Object.freeze([
@@ -144,6 +144,12 @@ function validateInstance(raw, allFiles, identities) {
     try { stat=fs.lstatSync(file); }catch { fail(id + ' secret file is missing'); }
     if(stat.isSymbolicLink() || !stat.isFile())fail(id + ' secret must be a regular non-symlink file');
     const value = readSecretFile(file, name.slice(0, -5));
+    if(name==='GITLAB_WEBHOOK_SIGNING_TOKEN_FILE'){
+      // Reject a malformed 32-byte Standard Webhooks secret *before* starting
+      // any tenant. The validator never includes the secret in a response.
+      try{validateSigningToken(value);}
+      catch{fail(id + ' webhook signing secret is malformed');}
+    }
     // Compare hashes, never keep the credentials in the manifest or logs.
     if (name === 'GITLAB_API_TOKEN_FILE' || name === 'GITLAB_WEBHOOK_SIGNING_TOKEN_FILE') {
       const fingerprint = crypto.createHash('sha256').update(value).digest('hex');
