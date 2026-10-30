@@ -59,3 +59,32 @@ multi-gitlab-dev:
   variables:
     REQUIRED_NODE_MAJOR: "24"
     SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration,multi-offline"
+
+# Optional free Community Edition SAST for PRIVATE source in a trusted runner.
+# Development information only: NOT a CodeQL-licensed or production release substitute.
+oss-sast-dev:
+  stage: offline
+  tags: [isolated-ephemeral]
+  allow_failure: false
+  when: manual
+  image: "$SEMGREP_CE_VERIFIED_IMAGE_DIGEST"
+  variables:
+    GIT_STRATEGY: none
+    SEMGREP_SEND_METRICS: "off"
+  script:
+    - |
+      set -eu
+      : "${REVIEWED_SHA:?Independently verified Service SHA required}"
+      : "${VERIFIED_SOURCE_CHECKOUT:?Trusted sanitized read-only Service checkout required}"
+      : "${TRUSTED_SEMGREP_RULES:?Admin-pinned local Community Edition rules required}"
+      test -f "$TRUSTED_SEMGREP_RULES"
+      test "$REVIEWED_SHA" = "$(git -C "$VERIFIED_SOURCE_CHECKOUT" rev-parse HEAD)"
+      origin="$(git -C "$VERIFIED_SOURCE_CHECKOUT" remote get-url origin 2>/dev/null || true)"
+      test -z "$origin" || test "$origin" = /dev/null
+      unset CI_JOB_TOKEN CI_REPOSITORY_URL GITLAB_TOKEN GITLAB_API_TOKEN GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY CODEX_HOME || true
+      semgrep scan --metrics=off --config "$TRUSTED_SEMGREP_RULES" --error --json --output "$CI_PROJECT_DIR/oss-sast-report.json" "$VERIFIED_SOURCE_CHECKOUT"
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - oss-sast-report.json
