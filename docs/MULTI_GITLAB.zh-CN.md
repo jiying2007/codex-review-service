@@ -25,6 +25,8 @@
 
 多实例清单使用 deploy/docker/multi-instance.example.json。 必须人工确认共享进程信任边界后开启该选项，不能把它当成 OS 安全沙箱。每个实例都明确声明 configFile、homeDir、GitLab API Token 与 Webhook Secret 的 *_FILE 文件绝对路径，API 与 Webhook Secret 都不允许两实例共享文件或相同实际内容。配置检查读取受控凭据进行内存摘要比较，不打印凭据值。Worker Thread 仅接收所属实例的文件路径及有限环境变量，不继承宿主旧 API Token、OpenAI API Key 或另一实例的明文。
 
+**新增控制面文件准入约束**：多实例清单和每个租户的 JSON 配置须为独立、单硬链接（`nlink=1`）、非符号链接的普通文件，大小不超过 1 MiB；Linux/Unix 不允许组或其他用户写入。Secret 文件也必须独立、不可被组或其他用户改写且不允许硬链接。加载器采用检查过的文件描述符、有界读取与读取后元数据复核，减少文件替换竞态；它不能替代受保护的上级目录、容器挂载权限和管理员对实际 Secret 的保管。建议将清单/配置/密钥分别设置为 `0600`（或只读 `0400`，以真实运行 UID 能读取为前提），对配置目录实施最小权限并只读挂载；在 Windows 上须另行核验 ACL，POSIX 模式位不足以提供 Windows 文件保护。升级前执行只读预检，拒绝通过 `chmod 777`、硬链接复用或把文件放入租户可写状态卷来修复权限报错。
+
 HTTP 路由只决定内部 Worker，不能代替安全认证。每个 Worker 独立进行原始请求 Webhook 签名、GitLab Instance、项目 allowlist、重放与配额校验。错误实例、错误签名、未知路径按实际校验拒绝。旧 GitLab Classic Token 模式仍兼容缺少 X-Gitlab-Instance 的老版本；如果传了实例头则必须匹配。Standard Webhooks HMAC 必须携带合法实例头和签名。
 
 sensor.config.example.json 默认 review.triggerAssignment = always、projects = [113]、groups = []，notifications.enabled = false。always 仅取消用户指派过滤，不能越过项目白名单、签名、Bot 自触发等安全规则。原 Legacy assignee 用户 ID 8 不应复制给 sensor；若需要新服务器按人员触发，请重新查询新服务器的用户 ID。飞书/企业微信路由和用户身份映射也应单独审核。
