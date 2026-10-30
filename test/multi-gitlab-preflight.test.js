@@ -11,10 +11,15 @@ function fixture(){
   function make(id,url,token,index){
     const config=path.join(dir,id+'.json'),api=path.join(dir,id+'.token'),
       signing=path.join(dir,id+'.signing');
-    fs.writeFileSync(config,JSON.stringify({schemaVersion:8,
-      server:{dataDir:path.join(dir,id+'-data')},gitlab:{
-        baseUrl:url,projects:[113],groups:id==='legacy'?[{id:48,includeSubgroups:true}]:[]
-      },webhook:{expectedInstance:url}}));
+    const cfg=JSON.parse(fs.readFileSync(
+      path.join(__dirname,'../deploy/docker/config.example.json'),'utf8'));
+    cfg.server.dataDir=path.join(dir,id+'-data');
+    cfg.gitlab.baseUrl=url;
+    cfg.gitlab.projects=[113];
+    cfg.gitlab.groups=id==='legacy'?[{id:48,includeSubgroups:true}]:[];
+    cfg.webhook.expectedInstance=url;
+    cfg.codex.home=path.join(dir,id+'-home');
+    fs.writeFileSync(config,JSON.stringify(cfg));
     fs.writeFileSync(api,token);
     fs.writeFileSync(signing,'whsec_'+Buffer.alloc(32,index).toString('base64'));
     return{id,configFile:config,homeDir:path.join(dir,id+'-home'),
