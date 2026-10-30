@@ -52,3 +52,34 @@ test('operator can sign measured evidence with independent keys; self-signing an
   assert.throws(()=>safeSecret(ciPath),/0600/);
  }finally{fs.rmSync(base,{recursive:true,force:true});}
 });
+
+test('evidence output cannot overwrite an older receipt or follow an alias into the checkout',()=>{
+ const f=repo(),out=fs.mkdtempSync(path.join(os.tmpdir(),'offline-ci-immutable-'));
+ try{
+  const opts={repoDir:f.dir,outDir:out,sha:f.sha,author:'author',
+    issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax']};
+  assert.equal(collect(opts).ok,true);
+  const original=fs.readFileSync(path.join(out,'ci.unsigned.json'),'utf8');
+  assert.throws(()=>collect(opts),/fresh, empty/);
+  assert.equal(fs.readFileSync(path.join(out,'ci.unsigned.json'),'utf8'),original);
+  const alias=path.join(path.dirname(out),'alias-'+path.basename(out));
+  try{
+    fs.symlinkSync(out,alias,'dir');
+    assert.throws(()=>collect({...opts,outDir:alias}),/real directory/);
+  }finally{fs.rmSync(alias,{force:true});}
+ }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
+});
+test('an uninitialized Core submodule cannot be signed as a clean product checkout',()=>{
+ const f=repo(),out=fs.mkdtempSync(path.join(os.tmpdir(),'offline-ci-submodule-'));
+ try{
+  const mock=(program,args,options)=>{
+    if(program==='git'&&args.includes('submodule')&&args.includes('status')){
+      return{status:0,stdout:'-190651770a444b0693d82228afc66879dd57b0c0 src/codex-safe-core\n'};
+    }
+    return spawnSync(program,args,options);
+  };
+  assert.throws(()=>collect({repoDir:f.dir,outDir:out,sha:f.sha,
+    author:'author',issuer:'ci-agent',runner:'isolated-runner',suiteIds:['syntax'],spawn:mock}),
+    /uninitialized or changed submodule/);
+ }finally{f.close();fs.rmSync(out,{recursive:true,force:true});}
+});
