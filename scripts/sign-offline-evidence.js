@@ -9,6 +9,8 @@ function args(argv){const out={};for(let i=0;i<argv.length;i+=2){
  out[argv[i].slice(2)]=argv[i+1];
 }return out;}
 function safeSecret(file){
+ // Node's POSIX mode bits are not authoritative Windows ACL evidence.
+ if(process.platform==='win32')throw Error('Protected signing requires POSIX key custody; use an isolated Linux signer');
  if(!path.isAbsolute(file))throw Error('Private key must be outside checkout');
  const checkout=fs.realpathSync(path.resolve(__dirname,'..'));
  // Resolve parent aliases: a regular key reached via a symlinked directory
