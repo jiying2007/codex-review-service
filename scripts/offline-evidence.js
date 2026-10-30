@@ -12,8 +12,12 @@ const ID=/^[a-z][a-z0-9-]{0,63}$/;
 const PRODUCTION_TRUST='/etc/codex-review/release-trust.json';
 const REQUIRED=Object.freeze({
   development:['syntax','offline-unit'],
-  production:['syntax','offline-unit','security','migration','provider','image'],
-  'production-multi':['syntax','offline-unit','multi-offline','security','migration','provider','image']
+  production:['syntax','offline-unit','migration','node-22','node-24',
+    'security','codeql','dependency-audit','provider','gitlab-14','gitlab-17','gitlab-19',
+    'image','sbom','provenance'],
+  'production-multi':['syntax','offline-unit','multi-offline','migration','node-22','node-24',
+    'security','codeql','dependency-audit','provider','gitlab-14','gitlab-17','gitlab-19',
+    'image','sbom','provenance']
 });
 function reject(code,message){const e=new Error(message);e.code=code;throw e;}
 function readRegularBytes(filename,maxBytes=1024*1024){
