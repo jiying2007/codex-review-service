@@ -16,10 +16,15 @@ test('multi admin selects one SQLite/config identity and never passes a secret i
       fs.writeFileSync(api,'api-'+id);
       fs.writeFileSync(hook,'whsec_'+Buffer.alloc(32,index+20).toString('base64'));
       const origin=index?'http://192.168.2.50':'http://192.168.1.4';
-      fs.writeFileSync(configFile,JSON.stringify({schemaVersion:8,
-        server:{dataDir:path.join(dir,id+'-data')},
-        gitlab:{baseUrl:origin,projects:[113],groups:[]},
-        webhook:{expectedInstance:origin}}));
+      const cfg=JSON.parse(fs.readFileSync(
+        path.join(__dirname,'../deploy/docker/config.example.json'),'utf8'));
+      cfg.server.dataDir=path.join(dir,id+'-data');
+      cfg.gitlab.baseUrl=origin;
+      cfg.gitlab.projects=[113];
+      cfg.gitlab.groups=[];
+      cfg.webhook.expectedInstance=origin;
+      cfg.codex.home=path.join(dir,id+'-home');
+      fs.writeFileSync(configFile,JSON.stringify(cfg));
       return{id,configFile,homeDir:path.join(dir,id+'-home'),
         secretFiles:{GITLAB_API_TOKEN_FILE:api,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:hook}};
     });
