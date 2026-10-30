@@ -75,6 +75,13 @@ function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSy
     const file=path.join(logsDir,id+'.log');fs.writeFileSync(file,log,{flag:'wx',mode:0o600});
     results.push({id,exitCode,durationMs,logSha256:sha256(log)});
   }
+  // A source-controlled test can be buggy or malicious and mutate the tree.
+  // Never sign its outcomes against the *old* SHA without a post-execution
+  // worktree, HEAD and pinned submodule recheck.
+  if(git('rev-parse','HEAD')!==sha ||
+     git('status','--porcelain','--untracked-files=all') ||
+     git('submodule','status','--recursive').split('\n').some(line=>line&&/^[-+U]/.test(line)))
+    throw Error('Source checkout or pinned submodules changed while executing offline suites');
   const payload={schemaVersion:1,kind:'ci',repository:REPO,sha,author,issuer,runner,
     issuedAt:new Date(now).toISOString(),suites:results};
   fs.writeFileSync(path.join(outDir,'ci.unsigned.json'),JSON.stringify(payload,null,2)+'\n',{flag:'wx',mode:0o600});
