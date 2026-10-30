@@ -16,12 +16,21 @@ function fixture(){
     sensorApi:write('sensor-api','sensor-api-credential'),
     sensorWebhook:write('sensor-hook','whsec_'+Buffer.alloc(32,4).toString('base64'))
   };
-  const makeConfig=(id,host,projects)=>({
-    schemaVersion:8,server:{host:'127.0.0.1',port:8787,dataDir:location(id+'-db')},
-    gitlab:{baseUrl:host,projects,groups:[]},
-    webhook:{expectedInstance:host,requireInstanceHeader:true},
-    review:{triggerAssignment:{mode:id==='sensor'?'always':'assignee',userIds:id==='sensor'?[]:[8]}}
-  });
+  // Use the complete deployed Config Schema 8 reference. The production
+  // loader requires every top-level section, even when its fields are defaulted.
+  const template=JSON.parse(fs.readFileSync(path.join(__dirname,'../deploy/docker/config.example.json'),'utf8'));
+  const makeConfig=(id,host,projects)=>{
+    const cfg=structuredClone(template);
+    cfg.server.host='127.0.0.1';
+    cfg.server.dataDir=location(id+'-db');
+    cfg.gitlab.baseUrl=host;
+    cfg.gitlab.projects=projects;
+    cfg.gitlab.groups=[];
+    cfg.webhook.expectedInstance=host;
+    cfg.review.triggerAssignment={mode:id==='sensor'?'always':'assignee',userIds:id==='sensor'?[]:[8]};
+    cfg.codex.home=location(id+'-home');
+    return cfg;
+  };
   const legacy=makeConfig('legacy','http://192.168.1.4',[113,139]);
   const sensor=makeConfig('sensor','http://192.168.2.50',[113]);
   const manifest={
@@ -113,7 +122,7 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
     f=>{f.manifest.server.port=65536;},
     f=>{f.manifest.instances[1].id='../sensor';}
   ]){
-    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential|boundary|scope/i);}
+    const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/multi|instance|overlap|duplicate|shared|must|same|port|file|URL|credential|boundary|scope|schema|invalid/i);}
     finally{f.close();}
   }
 });
