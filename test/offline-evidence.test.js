@@ -134,3 +134,29 @@ test('multi-GitLab production additionally requires the real multi-offline suite
   assert.throws(()=>verifyEvidence({...f.opts,mode:'production-multi'}),/Required suite missing: multi-offline/);
  }finally{f.close();}
 });
+
+test('development CLI cannot issue a verified status with a self-selected public key',()=>{
+ const f=fixtures();try{
+  assert.throws(()=>main(['verify','--trust',f.trustFile,'--ci',f.ciFile,
+    '--logs',f.logs,'--sha',SHA,'--author','change-author','--mode','development']),
+    error=>error.code==='ETRUSTPATH');
+ }finally{f.close();}
+});
+test('CI author cannot self-attest by reusing a trusted runner or issuer name',()=>{
+ for(const mutate of [
+  f=>{f.ci.issuer='change-author';f.trust.ci.allowedIdentities.push('change-author');},
+  f=>{f.ci.runner='change-author';f.trust.ci.allowedRunners.push('change-author');}
+ ]){
+  const f=fixtures();try{
+   mutate(f);f.persist();
+   assert.throws(()=>verifyEvidence(f.opts),/identity\/commit/);
+  }finally{f.close();}
+ }
+});
+test('signed raw log must be a regular file, not a symlink to otherwise matching bytes',()=>{
+ const f=fixtures();try{
+  const log=path.join(f.logs,'syntax.log'),source=path.join(f.root,'old-syntax.log');
+  fs.renameSync(log,source);fs.symlinkSync(source,log);
+  assert.throws(()=>verifyEvidence(f.opts),/Log must be present/);
+ }finally{f.close();}
+});
