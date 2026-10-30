@@ -48,3 +48,19 @@ test('manual multi-GitLab development requires the real multi-offline suite',()=
   assert.match(block,/SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration,multi-offline"/);
   assert.doesNotMatch(block,/CODEX_API_KEY|codex exec|release/);
 });
+
+test('manual OSS SAST validates with pinned Semgrep CE and local rules without cloud access',()=>{
+  const at=source.indexOf('\noss-sast-dev:');
+  assert.ok(at>0,'Community Edition development SAST job missing');
+  const job=source.slice(at);
+  assert.match(job,/tags: \[isolated-ephemeral\]/);
+  assert.match(job,/when: manual/);
+  assert.match(job,/SEMGREP_CE_VERIFIED_IMAGE_DIGEST/);
+  assert.match(job,/GIT_STRATEGY: none/);
+  assert.match(job,/TRUSTED_SEMGREP_RULES:\?/);
+  assert.match(job,/REVIEWED_SHA:\?/);
+  assert.match(job,/VERIFIED_SOURCE_CHECKOUT:\?/);
+  assert.match(job,/semgrep scan --metrics=off --config "\$TRUSTED_SEMGREP_RULES" --error/);
+  assert.match(job,/oss-sast-report\.json/);
+  assert.doesNotMatch(job,/--config[= ]auto|codeql|semgrep login|semgrep ci|codex exec|gh release/);
+});
