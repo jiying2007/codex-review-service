@@ -10,14 +10,25 @@ function args(argv){const out={};for(let i=0;i<argv.length;i+=2){
 }return out;}
 function safeSecret(file){
  if(!path.isAbsolute(file))throw Error('Private key must be outside checkout');
- const checkout=path.resolve(__dirname,'..');
- const relative=path.relative(checkout,file);
+ const checkout=fs.realpathSync(path.resolve(__dirname,'..'));
+ // Resolve parent aliases: a regular key reached via a symlinked directory
+ // must not be used if its *physical* path is part of the PR checkout.
+ const actual=fs.realpathSync(file);
+ const relative=path.relative(checkout,actual);
  if(relative===''||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))
    throw Error('Private signer key must not be stored inside the source checkout');
- const stat=fs.lstatSync(file);
- if(stat.isSymbolicLink()||!stat.isFile()||(stat.mode&0o077)!==0)
-   throw Error('Private key must be a regular 0600 non-symlink file');
- const key=crypto.createPrivateKey(fs.readFileSync(file));
+ const parent=fs.statSync(path.dirname(actual));
+ if(!parent.isDirectory()||(parent.mode&0o022)!==0)
+   throw Error('Private signing key directory must not be group/world writable');
+ // Open no-follow and read the same inode that was permission checked.
+ const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0));
+ let key;
+ try{
+   const stat=fs.fstatSync(fd);
+   if(!stat.isFile()||(stat.mode&0o077)!==0||stat.size>64*1024)
+     throw Error('Private key must be a regular 0600 non-symlink file');
+   key=crypto.createPrivateKey(fs.readFileSync(fd));
+ }finally{fs.closeSync(fd);}
  if(key.asymmetricKeyType!=='ed25519')throw Error('Only Ed25519 private keys supported');
  return key;
 }
