@@ -135,7 +135,10 @@ test('invalid or reused GitLab API and webhook secrets fail closed',()=>{
     f=>{f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE='relative-token';},
     f=>{delete f.manifest.instances[1].secretFiles.GITLAB_WEBHOOK_SIGNING_TOKEN_FILE;},
     f=>{f.manifest.instances[1].secretFiles.UNSAFE_INLINE_KEY='some-key';},
-    f=>{fs.writeFileSync(f.tokens.sensorWebhook,'');}
+    f=>{fs.writeFileSync(f.tokens.sensorWebhook,'');},
+    f=>{fs.writeFileSync(f.tokens.sensorWebhook,'whsec_bad');},
+    f=>{fs.writeFileSync(f.tokens.sensorWebhook,'whsec_'+Buffer.alloc(16,9).toString('base64'));},
+    f=>{fs.writeFileSync(f.tokens.sensorWebhook,'whsec_'+Buffer.alloc(32,9).toString('base64').replace(/A/g,'!'));}
   ]){
     const f=fixture();try{mutate(f);f.flush();assert.throws(()=>loadMultiManifest(f.manifestFile),/secret|file|credential|absolute|shared|invalid|empty|unsupported/i);}
     finally{f.close();}
