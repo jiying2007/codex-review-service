@@ -1,0 +1,48 @@
+# INSTALL IN A SEPARATE, ADMIN-PROTECTED GITLAB CONTROL PROJECT.
+# DO NOT load this CI definition from an untrusted source PR/MR.
+# It is a two-version DEVELOPMENT smoke template, not production qualification.
+stages: [offline]
+
+.offline-dev:
+  stage: offline
+  tags: [isolated-ephemeral]
+  allow_failure: false
+  variables:
+    GIT_STRATEGY: clone
+    GIT_SUBMODULE_STRATEGY: recursive
+  script:
+    - |
+      set -eu
+      : "${REVIEWED_AUTHOR:?Set independently checked PR author identity}"
+      : "${TRUSTED_COLLECTOR:?Mount reviewed collector outside the checkout}"
+      test -f "$TRUSTED_COLLECTOR"
+      test "$CI_COMMIT_SHA" = "$(git rev-parse HEAD)"
+      node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); const major=Number(process.env.REQUIRED_NODE_MAJOR); if(a!==major || (a===22 && (b<22 || (b===22 && c<2))) || (a===24 && (b<19 || (b===19 && c<0)))) process.exit(2)'
+      # These variables could otherwise be visible to source-controlled tests.
+      # This is NOT a substitute for an isolated, no-network, secret-free runner.
+      unset CI_JOB_TOKEN CI_REPOSITORY_URL GITLAB_TOKEN GITLAB_API_TOKEN GH_TOKEN GITHUB_TOKEN OPENAI_API_KEY CODEX_HOME || true
+      evidence_dir="$(mktemp -d /tmp/service-offline-ci.XXXXXXXX)"
+      status=0
+      node "$TRUSTED_COLLECTOR" --checkout "$CI_PROJECT_DIR" --output "$evidence_dir" --sha "$CI_COMMIT_SHA" --author "$REVIEWED_AUTHOR" --issuer ci-operator --runner isolated-linux --suites syntax,offline-unit,migration || status=$?
+      test ! -e "$CI_PROJECT_DIR/offline-unsigned-evidence"
+      mkdir -m 700 "$CI_PROJECT_DIR/offline-unsigned-evidence"
+      cp -R "$evidence_dir/logs" "$CI_PROJECT_DIR/offline-unsigned-evidence/"
+      cp "$evidence_dir/ci.unsigned.json" "$CI_PROJECT_DIR/offline-unsigned-evidence/"
+      exit "$status"
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - offline-unsigned-evidence/
+
+node22-dev:
+  extends: .offline-dev
+  image: "$NODE22_VERIFIED_IMAGE_DIGEST"
+  variables:
+    REQUIRED_NODE_MAJOR: "22"
+
+node24-dev:
+  extends: .offline-dev
+  image: "$NODE24_VERIFIED_IMAGE_DIGEST"
+  variables:
+    REQUIRED_NODE_MAJOR: "24"
