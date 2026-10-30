@@ -42,7 +42,9 @@ test('GitLab Free development uses two required, digest-supplied Node images wit
 test('manual multi-GitLab development requires the real multi-offline suite',()=>{
   const at=source.indexOf('multi-gitlab-dev:');
   assert.ok(at>0);
-  const block=source.slice(at);
+  const end=source.indexOf('\n\n',at);
+  assert.ok(end>at,'each GitLab job must be separated from the next');
+  const block=source.slice(at,end);
   assert.match(block,/extends: \.offline-dev/);
   assert.match(block,/REQUIRED_NODE_MAJOR: "24"/);
   assert.match(block,/SELECTED_OFFLINE_SUITES: "syntax,offline-unit,migration,multi-offline"/);
