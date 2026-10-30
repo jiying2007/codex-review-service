@@ -80,6 +80,19 @@ test('legacy Config Schema 8 may omit either optional scope array without changi
   }finally{f.close();}
 });
 
+
+test('optional Schema 8 sections may be omitted without weakening mandatory tenant isolation',()=>{
+  const f=fixture();try{
+    for(const optional of ['review','flowTracking','codex','runner','publication',
+      'notifications','lifecycle','observability'])delete f.sensor[optional];
+    f.flush();
+    const result=loadMultiManifest(f.manifestFile);
+    assert.equal(result.instances[0].origin,'http://192.168.1.4');
+    assert.equal(result.instances[1].origin,'http://192.168.2.50');
+    assert.notEqual(result.instances[0].dataDir,result.instances[1].dataDir);
+  }finally{f.close();}
+});
+
 test('worker environments retain only their own secret file paths and runtime homes',()=>{
   const f=fixture();try{
     const c=loadMultiManifest(f.manifestFile);
