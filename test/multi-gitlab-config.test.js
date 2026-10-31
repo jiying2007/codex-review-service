@@ -9,7 +9,8 @@ const {loadMultiManifest,buildWorkerEnv,overlaps}=require('../src/multi-gitlab-c
 function fixture(){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'multi-gitlab-config-'));
   function location(name){return path.join(dir,name);}
-  function write(name,content){const file=location(name);fs.writeFileSync(file,content);return file;}
+  // Fixture permissions must not depend on the caller's process umask.
+  function write(name,content){const file=location(name);fs.writeFileSync(file,content,{mode:0o600});return file;}
   const tokens={
     legacyApi:write('legacy-api','legacy-api-credential'),
     legacyWebhook:write('legacy-hook','whsec_'+Buffer.alloc(32,3).toString('base64')),
@@ -44,9 +45,9 @@ function fixture(){
   };
   const manifestFile=location('multi.json');
   const flush=()=>{
-    fs.writeFileSync(manifest.instances[0].configFile,JSON.stringify(legacy));
-    fs.writeFileSync(manifest.instances[1].configFile,JSON.stringify(sensor));
-    fs.writeFileSync(manifestFile,JSON.stringify(manifest));
+    fs.writeFileSync(manifest.instances[0].configFile,JSON.stringify(legacy),{mode:0o600});
+    fs.writeFileSync(manifest.instances[1].configFile,JSON.stringify(sensor),{mode:0o600});
+    fs.writeFileSync(manifestFile,JSON.stringify(manifest),{mode:0o600});
   };
   flush();
   return {dir,location,manifest,legacy,sensor,tokens,manifestFile,flush,
@@ -189,7 +190,7 @@ test('explicit multi manifest prevents silent single-instance configuration fall
     f=>{
       fs.mkdirSync(f.legacy.server.dataDir);
       const token=path.join(f.legacy.server.dataDir,'sensor-api-secret');
-      fs.writeFileSync(token,'sensor-api-alternate-value');
+      fs.writeFileSync(token,'sensor-api-alternate-value',{mode:0o600});
       f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=token;
     }
   ];
@@ -250,4 +251,39 @@ test('oversized manifest is rejected before parsing even if trailing JSON whites
     fs.appendFileSync(f.manifestFile,' '.repeat(1024*1024));
     assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular|invalid/i);
   }finally{f.close();}
+});
+
+(process.platform==='win32'?test.skip:test)('control-file fixture permissions do not depend on the invoking shell umask',()=>{
+  const {spawnSync}=require('node:child_process');
+  // umask is process-global. Keep each case in its own bounded child instead
+  // of mutating the test runner's mask or the source-controlled permission gate.
+  const childScript=`
+    'use strict';
+    const fs=require('node:fs');
+    const os=require('node:os');
+    const path=require('node:path');
+    const assert=require('node:assert/strict');
+    const __dirname=process.argv[1];
+    process.umask(Number(process.argv[2]));
+    ${fixture.toString()}
+    const f=fixture();
+    try{
+      const files=[f.manifestFile,...f.manifest.instances.map(item=>item.configFile),
+        ...Object.values(f.tokens)];
+      for(const file of files){
+        const stat=fs.lstatSync(file);
+        assert.equal(stat.isFile(),true);
+        assert.equal(stat.nlink,1);
+        assert.equal(stat.mode&0o777,0o600);
+      }
+    }finally{f.close();}
+  `;
+  for(const mask of [0o000,0o002,0o022,0o077]){
+    const result=spawnSync(process.execPath,['-e',childScript,__dirname,String(mask)],{
+      encoding:'utf8',timeout:10000,maxBuffer:1024*1024,shell:false,
+      env:{PATH:process.env.PATH||'',TMPDIR:os.tmpdir(),HOME:os.tmpdir()}
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status,0,'fixture failed under umask '+mask.toString(8)+': '+result.stderr);
+  }
 });
