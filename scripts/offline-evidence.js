@@ -158,12 +158,15 @@ function verifyEvidence({trustFile,ciFile,reviewFile,logsDir,sha,author,mode='pr
 }
 function main(args=process.argv.slice(2)){
   if(args[0]!=='verify')reject('EUSAGE','Usage: verify --trust ABS --ci ABS --logs ABS --sha SHA --author ID --mode development|production|production-multi [--review ABS]');
-  const kv={};
+  const kv=Object.create(null);
+  const allowed=new Set(['--trust','--ci','--review','--logs','--sha','--author','--mode']);
   for(let i=1;i<args.length;i+=2){
-    if(!args[i]?.startsWith('--')||args[i+1]===undefined||kv[args[i]])reject('EUSAGE','Malformed arguments');
-    kv[args[i]]=args[i+1];
+    const flag=args[i],value=args[i+1];
+    if(!allowed.has(flag)||Object.hasOwn(kv,flag)||
+        typeof value!=='string'||value.length===0||value.startsWith('--')||value.includes('\0'))
+      reject('EUSAGE','Malformed arguments');
+    kv[flag]=value;
   }
-  for(const k of Object.keys(kv))if(!['--trust','--ci','--review','--logs','--sha','--author','--mode'].includes(k))reject('EUSAGE','Unknown flag');
   // All CLI verdicts, including development, require one independently
   // installed trust root. Unit tests may call verifyEvidence() with fixtures,
   // but an untrusted local public key must not emit a qualifying CLI receipt.
