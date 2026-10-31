@@ -3,23 +3,83 @@
 // Credential-safe, READ-ONLY GitLab acceptance preflight. This module does
 // not start Service workers, use Codex, publish statuses or process webhooks.
 const fs=require('node:fs');
-const {loadMultiManifest}=require('./multi-gitlab-config');
 const {readSecretFile}=require('./secrets');
-const {contract}=require('./product-contract');
 
-async function checkResponse(url,token,{fetchImpl=fetch,timeoutMs=8000}={}){
-  const response=await fetchImpl(url,{
-    method:'GET',
-    headers:{'Accept':'application/json','PRIVATE-TOKEN':token},
-    redirect:'error',
-    signal:AbortSignal.timeout(timeoutMs)
+const MAX_JSON_BYTES=1024*1024;
+function readError(code,message){const error=new Error(message);error.code=code;return error;}
+async function checkResponse(url,token,{fetchImpl=fetch,timeoutMs=8000,
+    readJson=false,maxBytes=MAX_JSON_BYTES}={}){
+  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>120000||
+      !Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>MAX_JSON_BYTES)
+    throw readError('EGITLABOPTIONS','Invalid bounded preflight read options');
+  const controller=new AbortController();
+  let response,reader,timer,timedOut=false;
+  const cancel=async()=>{
+    try{
+      if(reader)await reader.cancel();
+      else if(response?.body)await response.body.cancel();
+    }catch{/* Abort below still closes a failed or already consumed body. */}
+    finally{try{reader?.releaseLock();}catch{}}
+  };
+  const deadline=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+      timedOut=true;
+      controller.abort();
+      reject(readError('EGITLABTIMEOUT','GitLab API read timed out'));
+    },timeoutMs);
   });
-  if(!response?.ok){
-    const error=new Error('GitLab API read unavailable: HTTP '+String(response?.status||0));
-    error.code='EGITLABREAD';
-    throw error;
+  const request=(async()=>{
+    response=await fetchImpl(url,{
+      method:'GET',
+      headers:{'Accept':'application/json','PRIVATE-TOKEN':token},
+      redirect:'error',signal:controller.signal
+    });
+    // A custom transport might settle after the deadline. Never leave its
+    // late response open or continue parsing it after the caller has failed.
+    if(timedOut){await cancel();throw readError('EGITLABTIMEOUT','GitLab API read timed out');}
+    if(!response?.ok){
+      await cancel();
+      throw readError('EGITLABREAD','GitLab API read unavailable');
+    }
+    if(!readJson){
+      // Project/group probes only need status. Release the body immediately,
+      // rather than keeping sockets alive until GC or the request deadline.
+      await cancel();
+      return response;
+    }
+    if(!response.body||typeof response.body.getReader!=='function')
+      throw readError('EGITLABBODY','GitLab API JSON body is unavailable');
+    reader=response.body.getReader();
+    const chunks=[];
+    let total=0;
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      if(!(value instanceof Uint8Array))
+        throw readError('EGITLABBODY','GitLab API JSON body is invalid');
+      total+=value.byteLength;
+      if(total>maxBytes)throw readError('EGITLABSIZE','GitLab API JSON body exceeds limit');
+      chunks.push(Buffer.from(value));
+    }
+    try{
+      return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks,total)));
+    }catch{throw readError('EGITLABBODY','GitLab API JSON body is invalid');}
+  })();
+  try{return await Promise.race([request,deadline]);}
+  catch(error){
+    if(timedOut)throw readError('EGITLABTIMEOUT','GitLab API read timed out');
+    // Even a transport-supplied error with a recognized code must not leak
+    // its raw message, URL, credential or response body.
+    const messages={EGITLABREAD:'GitLab API read unavailable',
+      EGITLABBODY:'GitLab API JSON body is invalid',EGITLABSIZE:'GitLab API JSON body exceeds limit'};
+    const code=Object.hasOwn(messages,error?.code)?error.code:'EGITLABREAD';
+    throw readError(code,messages[code]);
+  }finally{
+    clearTimeout(timer);
+    controller.abort();
+    // Cleanup is best-effort and cannot extend the public request deadline.
+    void cancel();
   }
-  return response;
 }
 async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
   const cfg=JSON.parse(fs.readFileSync(instance.configFile,'utf8'));
@@ -28,15 +88,13 @@ async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
   const context={fetchImpl,timeoutMs};
   // Public projects and /version can return HTTP 200 even if a supplied PAT
   // is invalid. /user requires a real authenticated GitLab identity.
-  const identityResponse=await checkResponse(base+'/user',token,context);
-  const identity=await identityResponse.json();
+  const identity=await checkResponse(base+'/user',token,{...context,readJson:true});
   if(!Number.isSafeInteger(identity?.id)||identity.id<=0){
     const error=new Error('GitLab API token did not resolve an authenticated user');
     error.code='EGITLABAUTH';
     throw error;
   }
-  const versionResponse=await checkResponse(base+'/version',token,context);
-  const version=await versionResponse.json();
+  const version=await checkResponse(base+'/version',token,{...context,readJson:true});
   const value=String(version?.version||'');
   const parts=value.match(/^(\d+)\.(\d+)\.(\d+)/);
   if(!parts){
@@ -60,6 +118,9 @@ async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
     writePermissionsVerified:false,webhookDeliveryVerified:false};
 }
 async function runPreflight({manifestFile,fetchImpl=fetch,timeoutMs=8000}={}){
+  // Keep transport-only probes independent of Service startup dependencies.
+  // The CLI still validates the complete manifest before any API request.
+  const {loadMultiManifest}=require('./multi-gitlab-config');
   const manifest=loadMultiManifest(manifestFile);
   const results=[];
   for(const instance of manifest.instances){
