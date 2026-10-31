@@ -25,10 +25,20 @@ function noSecrets(parent=process.env){
   return result;
 }
 function sha256(bytes){return crypto.createHash('sha256').update(bytes).digest('hex');}
-function argMap(argv){const o={};for(let i=0;i<argv.length;i+=2){
-  if(!argv[i]?.startsWith('--')||argv[i+1]===undefined||o[argv[i]])throw Error('Invalid CLI flags');
-  o[argv[i].slice(2)]=argv[i+1];
-}return o;}
+function argMap(argv){
+  const allowed=new Set(['--checkout','--output','--sha','--author','--issuer','--runner','--suites']);
+  const out=Object.create(null);
+  for(let i=0;i<argv.length;i+=2){
+    const flag=argv[i],value=argv[i+1];
+    // Check the normalized key that is actually stored; last-value-wins must
+    // never silently change the requested source identity or evidence output.
+    if(!allowed.has(flag)||Object.hasOwn(out,flag.slice(2))||
+        typeof value!=='string'||value.length===0||value.startsWith('--')||value.includes('\0'))
+      throw Object.assign(new Error('Invalid CLI flags'),{code:'EARGS'});
+    out[flag.slice(2)]=value;
+  }
+  return out;
+}
 function collect({repoDir,outDir,sha,author,issuer,runner,suiteIds,spawn=spawnSync,now=Date.now()}){
   if(!path.isAbsolute(repoDir)||!path.isAbsolute(outDir)||outDir===repoDir||
     outDir.startsWith(repoDir+path.sep))throw Error('Outputs must be outside the checkout');
