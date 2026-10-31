@@ -4,10 +4,20 @@ const fs=require('node:fs');
 const path=require('node:path');
 const crypto=require('node:crypto');
 const {signedMessage,digest,readRegularBytes,verifyEnvelope,validateCi,validateTrust}=require('./offline-evidence');
-function args(argv){const out={};for(let i=0;i<argv.length;i+=2){
- if(!argv[i]?.startsWith('--')||argv[i+1]===undefined||out[argv[i]])throw Error('Invalid signer flags');
- out[argv[i].slice(2)]=argv[i+1];
-}return out;}
+function args(argv){
+ const allowed=new Set(['--type','--mode','--trust','--logs','--sha','--author',
+   '--input','--ci','--reviewer','--key','--key-id','--output']);
+ const out=Object.create(null);
+ for(let i=0;i<argv.length;i+=2){
+   const flag=argv[i],value=argv[i+1];
+   // Reject ambiguity before reading any trust root, receipt or private key.
+   if(!allowed.has(flag)||Object.hasOwn(out,flag.slice(2))||
+       typeof value!=='string'||value.length===0||value.startsWith('--')||value.includes('\0'))
+     throw Object.assign(new Error('Invalid signer flags'),{code:'EARGS'});
+   out[flag.slice(2)]=value;
+ }
+ return out;
+}
 function safeSecret(file){
  // Node's POSIX mode bits are not authoritative Windows ACL evidence.
  if(process.platform==='win32')throw Error('Protected signing requires POSIX key custody; use an isolated Linux signer');
