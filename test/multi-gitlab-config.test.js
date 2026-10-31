@@ -201,9 +201,11 @@ test('explicit multi manifest prevents silent single-instance configuration fall
     }finally{f.close();}
   }
   const f=fixture();try{
+    // Prove this fixture loads before changing only the manifest path.
+    assert.equal(loadMultiManifest(f.manifestFile).instances.length,2);
     const link=f.location('manifest-link');
     fs.symlinkSync(f.manifestFile,link);
-    assert.throws(()=>loadMultiManifest(link),/non-symlink file/);
+    assert.throws(()=>loadMultiManifest(link),error=>error.code==='EMULTIGITLABCONFIG');
   }finally{f.close();}
 });
 
