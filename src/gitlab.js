@@ -1,7 +1,7 @@
 'use strict';
 
 const{version:SERVICE_VERSION}=require('../package.json');
-const{selectGitLabCapabilities}=require('./gitlab-capabilities');
+const{selectGitLabCapabilities,versionAtLeast}=require('./gitlab-capabilities');
 const{safePath,sha,createRawTextDiff}=require('./raw-diff-fallback');
 const GITLAB_RESPONSE_MAX_BYTES=8*1024*1024;
 async function readBoundedResponseText(response,maxBytes=GITLAB_RESPONSE_MAX_BYTES){const limit=Number(maxBytes);if(!Number.isSafeInteger(limit)||limit<1)throw Object.assign(new Error('GitLab response byte limit is invalid'),{code:'EGITLABOUTPUT'});const declared=Number(response.headers?.get?.('content-length')||0);if(Number.isFinite(declared)&&declared>limit){try{await response.body?.cancel?.();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:declared});}if(response.body?.getReader){const reader=response.body.getReader(),chunks=[];let total=0;try{for(;;){const{done,value}=await reader.read();if(done)break;const chunk=Buffer.from(value);total+=chunk.length;if(total>limit){try{await reader.cancel();}catch{}throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:total});}chunks.push(chunk);}return Buffer.concat(chunks,total).toString('utf8');}finally{try{reader.releaseLock();}catch{}}}const fallback=typeof response.text==='function'?await response.text():'';const bytes=Buffer.byteLength(fallback,'utf8');if(bytes>limit)throw Object.assign(new Error(`GitLab response exceeds ${limit} bytes`),{code:'EGITLABOUTPUT',status:response.status,maxBytes:limit,responseBytes:bytes});return fallback;}
@@ -15,9 +15,40 @@ function findingBody(finding){const markers=[`<!-- codex-review-service:finding:
 function selectDiscussionByFingerprint(discussions,fingerprint,diffRefs=null){const marker=`<!-- codex-review-service:finding:${fingerprint} -->`,matches=(discussions||[]).filter(d=>Array.isArray(d.notes)&&d.notes.some(n=>typeof n.body==='string'&&n.body.includes(marker)));if(!diffRefs)return matches[0]||null;const positioned=matches.filter(d=>d.notes.some(n=>n.position&&String(n.position.base_sha||'')===String(diffRefs.base_sha||'')&&String(n.position.start_sha||'')===String(diffRefs.start_sha||'')&&String(n.position.head_sha||'')===String(diffRefs.head_sha||'')));return positioned.find(d=>discussionResolved(d)===false)||positioned[0]||matches[0]||null;}
 class RateLimiter{constructor(perSecond){this.interval=Math.max(1,Math.ceil(1000/Math.max(1,perSecond)));this.tail=Promise.resolve();this.nextAt=0;}async acquire(){let release;const turn=new Promise(resolve=>release=resolve),previous=this.tail;this.tail=turn;await previous;const wait=Math.max(0,this.nextAt-Date.now());if(wait)await sleep(wait);this.nextAt=Date.now()+this.interval;release();}}
 class CircuitBreaker{constructor(threshold,resetMs){this.threshold=threshold;this.resetMs=resetMs;this.failures=0;this.openUntil=0;}before(){if(this.openUntil>Date.now()){const error=new Error('GitLab circuit breaker is open');error.code='EGITLABCIRCUIT';error.retryAfterMs=this.openUntil-Date.now();throw error;}if(this.openUntil&&this.openUntil<=Date.now()){this.openUntil=0;this.failures=0;}}success(){this.failures=0;this.openUntil=0;}failure(error){const status=Number(error?.status||0),transient=error?.code==='EGITLABNETWORK'||status===429||status>=500;if(!transient)return;this.failures+=1;if(this.failures>=this.threshold)this.openUntil=Date.now()+this.resetMs;}state(){return this.openUntil>Date.now()?'open':'closed';}}
+function redirectError(message){return Object.assign(new Error(message),{code:'EGITLABREDIRECT'});}
+async function fetchGitLab(url,options,{allowExternalRedirect=false,beforeSend}={}){
+  let current=new URL(url),headers={...options.headers};
+  for(let redirects=0;redirects<=5;redirects++){
+    // Synchronous generation/write-intent checks run after throttling and
+    // immediately before transport, with no intervening asynchronous boundary.
+    const checked=beforeSend?.();if(checked&&typeof checked.then==='function')await checked;
+    const response=await fetch(current,{...options,headers,redirect:'manual'});
+    if(![301,302,303,307,308].includes(response.status))return response;
+    await response.body?.cancel?.();
+    if(redirects===5)throw redirectError('GitLab redirect limit exceeded');
+    if(options.method!=='GET')throw redirectError('GitLab writes must not be redirected');
+    const location=response.headers?.get?.('location');if(!location)throw redirectError('GitLab redirect has no Location');
+    let next;try{next=new URL(location,current);}catch{throw redirectError('GitLab redirect URL is invalid');}
+    if(!['http:','https:'].includes(next.protocol)||next.username||next.password||next.hash)throw redirectError('GitLab redirect URL is unsafe');
+    if(current.protocol==='https:'&&next.protocol!=='https:')throw redirectError('GitLab redirect must not downgrade HTTPS');
+    if(next.origin!==current.origin){if(!allowExternalRedirect)throw redirectError('GitLab API redirect must remain on the configured origin');headers={'User-Agent':headers['User-Agent']};}
+    current=next;
+  }
+  throw redirectError('GitLab redirect did not terminate');
+}
 class GitLabClient{
 constructor(config){this.config=config;this.apiUrl=config.gitlabApiUrl;this.token=config.gitlabToken;this.statusName=config.statusName;this.limiter=new RateLimiter(config.gitlabRequestsPerSecond||20);this.circuit=new CircuitBreaker(config.gitlabCircuitFailureThreshold||8,config.gitlabCircuitResetMs||30000);this.versionInfo=null;this.capabilities=null;}
-async request(method,pathname,{query,body,expected=[200],accept='json'}={}){this.circuit.before();await this.limiter.acquire();const url=new URL(this.apiUrl+pathname);if(query)for(const[key,value]of Object.entries(query))if(value!==undefined&&value!==null&&value!=='')url.searchParams.set(key,String(value));let response;try{response=await fetch(url,{method,headers:{'PRIVATE-TOKEN':this.token,'User-Agent':`codex-review-service/${SERVICE_VERSION}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(this.config.gitlabRequestTimeoutMs)});}catch(cause){const error=new Error(`GitLab ${method} ${pathname} network failure`);error.code='EGITLABNETWORK';error.cause=cause;this.circuit.failure(error);throw error;}let text;try{text=await readBoundedResponseText(response,this.config.gitlabResponseMaxBytes||GITLAB_RESPONSE_MAX_BYTES);}catch(error){this.circuit.failure(error);throw error;}if(!expected.includes(response.status)){const error=new Error(`GitLab ${method} ${pathname} failed with ${response.status}`);error.code='EGITLABHTTP';error.status=response.status;error.responseBody=text.slice(0,2000);error.retryAfterMs=parseRetryAfter(response.headers.get('retry-after'));this.circuit.failure(error);throw error;}let data=text;if(accept==='json'){if(!text)data=null;else try{data=JSON.parse(text);}catch(cause){const error=new Error(`GitLab ${method} ${pathname} returned invalid JSON`);error.code='EGITLABJSON';error.cause=cause;throw error;}}this.circuit.success();return{data,status:response.status,headers:response.headers};}
+async request(method,pathname,{query,body,expected=[200],accept='json',allowExternalRedirect=false,beforeSend}={}){
+  this.circuit.before();await this.limiter.acquire();this.circuit.before();
+  const url=new URL(this.apiUrl+pathname);if(query)for(const[key,value]of Object.entries(query))if(value!==undefined&&value!==null&&value!=='')url.searchParams.set(key,String(value));
+  let response;
+  try{response=await fetchGitLab(url,{method,headers:{'PRIVATE-TOKEN':this.token,'User-Agent':`codex-review-service/${SERVICE_VERSION}`,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(this.config.gitlabRequestTimeoutMs)},{allowExternalRedirect,beforeSend});}
+  catch(cause){if(typeof cause?.code==='string'&&!['ETIMEDOUT','ECONNRESET','ENOTFOUND'].includes(cause.code))throw cause;const error=new Error(`GitLab ${method} ${pathname} network failure`);error.code='EGITLABNETWORK';error.cause=cause;this.circuit.failure(error);throw error;}
+  let text;try{text=await readBoundedResponseText(response,this.config.gitlabResponseMaxBytes||GITLAB_RESPONSE_MAX_BYTES);}catch(error){this.circuit.failure(error);throw error;}
+  if(!expected.includes(response.status)){const error=new Error(`GitLab ${method} ${pathname} failed with ${response.status}`);error.code='EGITLABHTTP';error.status=response.status;error.responseBody=text.slice(0,2000);error.retryAfterMs=parseRetryAfter(response.headers.get('retry-after'));this.circuit.failure(error);throw error;}
+  let data=text;if(accept==='json'){if(!text)data=null;else try{data=JSON.parse(text);}catch(cause){const error=new Error(`GitLab ${method} ${pathname} returned invalid JSON`);error.code='EGITLABJSON';error.cause=cause;throw error;}}
+  this.circuit.success();return{data,status:response.status,headers:response.headers};
+}
 async getVersion(){if(this.versionInfo)return this.versionInfo;const version=(await this.request('GET','/version')).data;this.capabilities=selectGitLabCapabilities(version?.version);this.versionInfo=version;return version;}
 async getCapabilities(){if(!this.capabilities)await this.getVersion();return this.capabilities;}
 async getMergeRequest(projectId,iid){return(await this.request('GET',`/projects/${encodeProject(projectId)}/merge_requests/${iid}`)).data;}
@@ -36,15 +67,65 @@ listNotes(projectId,iid){return this.paginated(`/projects/${encodeProject(projec
 listDiscussions(projectId,iid){return this.paginated(`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions`);}
 async createNote(projectId,iid,body){return(await this.request('POST',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/notes`,{body:{body},expected:[201]})).data;}
 async updateNote(projectId,iid,noteId,body){return(await this.request('PUT',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/notes/${noteId}`,{body:{body}})).data;}
-async upsertSummary(projectId,iid,body){const marker='<!-- codex-review-service:summary -->',result=await this.listNotes(projectId,iid);if(!result.complete){const error=new Error('Could not exhaustively scan MR notes for summary marker');error.code='EGITLABPAGINATION';throw error;}const existing=result.items.find(note=>typeof note.body==='string'&&note.body.includes(marker)),rendered=`${body}\n\n${marker}`;return existing?this.updateNote(projectId,iid,existing.id,rendered):this.createNote(projectId,iid,rendered);}
+async upsertSummary(projectId,iid,body){
+  if(!this.statusAuthor)this.statusAuthor=(await this.request('GET','/user')).data;
+  const actorId=Number(this.statusAuthor?.id);
+  if(!Number.isSafeInteger(actorId)||actorId<=0||typeof this.statusAuthor?.username!=='string'||!this.statusAuthor.username){
+    throw Object.assign(new Error('Authenticated GitLab actor identity is unavailable; refusing summary publication.'),{code:'EGITLABAUTHOR'});
+  }
+  const marker='<!-- codex-review-service:summary -->',result=await this.listNotes(projectId,iid);
+  if(!result.complete)throw Object.assign(new Error('Could not exhaustively scan MR notes for summary marker'),{code:'EGITLABPAGINATION'});
+  const own=result.items.filter(note=>typeof note.body==='string'&&note.body.includes(marker)&&Number(note.author?.id)===actorId);
+  if(own.length>1)throw Object.assign(new Error('Multiple actor-owned summary notes require reconciliation.'),{code:'EGITLABAMBIGUOUS'});
+  const rendered=`${body}\n\n${marker}`;
+  return own.length?this.updateNote(projectId,iid,own[0].id,rendered):this.createNote(projectId,iid,rendered);
+}
 async findDiscussionByFingerprint(projectId,iid,fingerprint,diffRefs=null){const result=await this.listDiscussions(projectId,iid);if(!result.complete){const error=new Error('Could not exhaustively scan MR discussions');error.code='EGITLABPAGINATION';throw error;}return selectDiscussionByFingerprint(result.items,fingerprint,diffRefs);}
-async createDiscussion(projectId,iid,finding,diffRefs,oldPath,newPath){const position={position_type:'text',base_sha:diffRefs.base_sha,start_sha:diffRefs.start_sha,head_sha:diffRefs.head_sha,old_path:oldPath||newPath,new_path:newPath||oldPath};if(finding.side==='old')position.old_line=finding.line;else position.new_line=finding.line;return(await this.request('POST',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions`,{body:{body:findingBody(finding),position},expected:[201]})).data;}
+async createDiscussion(projectId,iid,finding,diffRefs,oldPath,newPath,{beforeSend}={}){const position={position_type:'text',base_sha:diffRefs.base_sha,start_sha:diffRefs.start_sha,head_sha:diffRefs.head_sha,old_path:oldPath||newPath,new_path:newPath||oldPath};if(finding.side==='old')position.old_line=finding.line;else position.new_line=finding.line;return(await this.request('POST',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions`,{body:{body:findingBody(finding),position},expected:[201],beforeSend})).data;}
 updateFindingNote(projectId,iid,noteId,finding){return this.updateNote(projectId,iid,noteId,findingBody(finding));}
 async getDiscussion(projectId,iid,discussionId){const response=await this.request('GET',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions/${encodeURIComponent(discussionId)}`,{expected:[200,404]});return response.status===404?null:response.data;}
 async setDiscussionResolved(projectId,iid,discussionId,resolved){return(await this.request('PUT',`/projects/${encodeProject(projectId)}/merge_requests/${iid}/discussions/${encodeURIComponent(discussionId)}`,{body:{resolved:Boolean(resolved)}})).data;}
 async getProjectMember(projectId,userId){const response=await this.request('GET',`/projects/${encodeProject(projectId)}/members/all/${encodeURIComponent(userId)}`,{expected:[200,404]});return response.status===404?null:response.data;}
 async getRepositoryFileRaw(projectId,filePath,ref){const response=await this.request('GET',`/projects/${encodeProject(projectId)}/repository/files/${encodeURIComponent(filePath)}/raw`,{query:{ref},expected:[200,404],accept:'text'});return response.status===404?null:response.data;}
-async setCommitStatus(projectId,sha,state,description,ref='',pipelineId=null){const doRequest=()=>this.request('POST',`/projects/${encodeProject(projectId)}/statuses/${sha}`,{query:{state,name:this.statusName,description:String(description||'').slice(0,255),ref,pipeline_id:pipelineId||undefined,target_url:this.config.statusTargetUrl||undefined},expected:[201]});let lastError;for(let attempt=0;attempt<this.config.gitlabStatusRetries;attempt++){try{return(await doRequest()).data;}catch(error){lastError=error;if(error.status!==409||attempt===this.config.gitlabStatusRetries-1)throw error;await sleep(Math.min(2000,250*(attempt+1)));}}throw lastError;}
+async setCommitStatus(projectId,sha,state,description,ref='',pipelineId=null,{beforeSend,onAttemptSettled}={}){
+  const doRequest=()=>this.request('POST',`/projects/${encodeProject(projectId)}/statuses/${sha}`,{query:{state,name:this.statusName,description:String(description||'').slice(0,255),ref,pipeline_id:pipelineId||undefined,target_url:this.config.statusTargetUrl||undefined},expected:[201],beforeSend});
+  let lastError;
+  for(let attempt=0;attempt<this.config.gitlabStatusRetries;attempt++){
+    let result;
+    try{result=(await doRequest()).data;}
+    catch(error){
+      onAttemptSettled?.({error});lastError=error;
+      if(error.status!==409||attempt===this.config.gitlabStatusRetries-1)throw error;
+      await sleep(Math.min(2000,250*(attempt+1)));continue;
+    }
+    onAttemptSettled?.({result});return result;
+  }
+  throw lastError;
+}
+async readCommitStatus(payload,{remoteId='',botUsername=''}={}){
+  // pipeline_id filtering is absent before GitLab 17.9. Never infer a pipeline
+  // from name/SHA alone, and never treat an implicit pipeline as exact evidence.
+  const version=String((await this.getVersion())?.version||'');
+  if(!versionAtLeast(version,'17.9.0')||!Number.isSafeInteger(Number(payload.pipelineId))||Number(payload.pipelineId)<=0){
+    return{kind:'ambiguous',reason:'pipeline_identity_unavailable'};
+  }
+  if(!this.statusAuthor)this.statusAuthor=(await this.request('GET','/user')).data;
+  const author=this.statusAuthor,username=String(botUsername||'').toLowerCase();
+  if(!Number.isSafeInteger(Number(author?.id))||Number(author.id)<=0||!author?.username||(username&&String(author.username).toLowerCase()!==username))return{kind:'ambiguous',reason:'bot_identity_unavailable'};
+  const result=await this.paginated(`/projects/${encodeProject(payload.statusProjectId)}/repository/commits/${encodeURIComponent(payload.headSha)}/statuses`,{ref:payload.ref,name:payload.statusName||this.statusName,pipeline_id:payload.pipelineId,all:false});
+  if(!result.complete)return{kind:'ambiguous',reason:'incomplete_status_scan'};
+  if(!result.items.length)return{kind:'missing',reason:'exact_pipeline_has_no_status'};
+  if(result.items.length!==1)return{kind:'ambiguous',reason:'multiple_statuses'};
+  const status=result.items[0];
+  if(String(status.sha||'')!==String(payload.headSha)||String(status.ref||'')!==String(payload.ref||'')||String(status.name||'')!==String(payload.statusName||this.statusName)||
+    !Number.isSafeInteger(Number(status.id))||Number(status.id)<=0||Number(status.author?.id)!==Number(author.id)||String(status.author?.username||'').toLowerCase()!==String(author.username).toLowerCase()||
+    (status.pipeline_id!==undefined&&Number(status.pipeline_id)!==Number(payload.pipelineId))||!['pending','running','success','failed','canceled','skipped'].includes(status.status)){
+    return{kind:'ambiguous',reason:'status_identity_mismatch'};
+  }
+  const matches=String(status.status)===String(payload.state)&&String(status.description||'')===String(payload.description||'').slice(0,255);
+  return{kind:matches?'match':'mismatch',remoteId:String(status.id),remoteIdMatches:Boolean(remoteId)&&String(status.id)===String(remoteId),
+    state:status.status,description:String(status.description||''),pipelineId:Number(payload.pipelineId),authorId:Number(author.id)};
+}
 health(){return{circuit:this.circuit.state(),profile:this.capabilities?.profile||'unknown',version:this.capabilities?.version||null};}
 }
 function discussionResolved(discussion){if(!discussion||!Array.isArray(discussion.notes))return null;const note=discussion.notes.find(item=>item?.resolvable===true);return note?Boolean(note.resolved):null;}

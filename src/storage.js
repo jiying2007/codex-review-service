@@ -1,6 +1,6 @@
 'use strict';
 
-const { Store } = require('./db');
+const { Store, SCHEMA_VERSION } = require('./db');
 
 const STORAGE_BACKENDS = Object.freeze(['sqlite']);
 const HA_UPGRADE_THRESHOLDS = Object.freeze({
@@ -38,7 +38,7 @@ function storageCapabilities() {
     multiProcessWriters: false,
     multiControllerHa: false,
     migrations: true,
-    currentSchemaVersion: 6,
+    currentSchemaVersion: SCHEMA_VERSION,
     replacementBoundary: 'createStorage'
   });
 }

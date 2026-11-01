@@ -8,7 +8,7 @@ Flow Tracking 不是通用 GitLab 运维机器人。正式支持 Pipeline 终态
 
 ## 配置
 
-Config Schema 4 新增 `flowTracking`。`enabled` 默认 `false`，升级后不会自动产生新通知。开启但省略子项时采用克制默认值：Pipeline 仅 `failed`、MR 仅 `merge`、Tag 仅 `v*` 的 `create`，Branch Tracking 默认关闭。Pipeline ref/source/job name 可通过锚定的 `*`/`?` glob 过滤；Job 明细支持 `none`、`failed-only`、`all`。
+当前配置使用 Config Schema 8。历史上，Config Schema 4 引入 `flowTracking`。`enabled` 默认 `false`，升级后不会自动产生新通知。开启但省略子项时采用克制默认值：Pipeline 仅 `failed`、MR 仅 `merge`、Tag 仅 `v*` 的 `create`，Branch Tracking 默认关闭。Pipeline ref/source/job name 可通过锚定的 `*`/`?` glob 过滤；Job 明细支持 `none`、`failed-only`、`all`。
 
 `flowTracking` 决定跟踪哪些 GitLab 流程；`notifications.routes[].events` 独立决定哪些标准化终态事件进入哪个飞书/企业微信 Route，两层正交。
 
@@ -31,6 +31,6 @@ Review 继续开启 Merge Request + Note events。使用 Pipeline Tracking 时�
 
 ## 普通 Commit Push 跟踪
 
-Service 6.5.0 新增可选的 `flowTracking.commitPush`，用于普通分支更新通知。默认关闭，并继续坚持 Webhook-only：不会为了通知额外读取 diff、commit 或仓库 API，Codex Token 成本仍为 0。可配置 `refs`、`excludeRefs`、`ignoreUsers`、`maxCommits`、`includeMergeCommits`、`includeCommitMessage`；默认只关注 `main`、`release/*`、`hotfix/*`。一次 Push Hook 最多产生一条聚合的 `gitlab.push.committed` 事件，Commit 明细有界；Branch create/delete 继续由 `flowTracking.push` 负责，不会重复分类。
+历史上，Service 6.5.0 引入可选的 `flowTracking.commitPush`，用于普通分支更新通知。默认关闭，并继续坚持 Webhook-only：不会为了通知额外读取 diff、commit 或仓库 API，Codex Token 成本仍为 0。可配置 `refs`、`excludeRefs`、`ignoreUsers`、`maxCommits`、`includeMergeCommits`、`includeCommitMessage`；默认只关注 `main`、`release/*`、`hotfix/*`。一次 Push Hook 最多产生一条聚合的 `gitlab.push.committed` 事件，Commit 明细有界；Branch create/delete 继续由 `flowTracking.push` 负责，不会重复分类。
 
 从独立 GitLab 通知机器人迁移时，先开启 GitLab Push events，把 `gitlab.push.committed` 加入对应 `notifications.routes[].events`，验证目标群通知后再关闭旧 Bot Webhook 和旧服务。

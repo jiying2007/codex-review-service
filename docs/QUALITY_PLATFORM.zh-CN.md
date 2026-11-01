@@ -1,6 +1,6 @@
 # 质量平台
 
-Codex Review Service 6.2 使用 Safe Core 4.8 的 Quality Platform v2、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
+Codex Review Service 7.6.2 使用精确固定的 Safe Core 4.18.1：Quality Platform v3、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
 
 ## Review Profile Pack
 
@@ -8,7 +8,7 @@ Codex Review Service 6.2 使用 Safe Core 4.8 的 Quality Platform v2、Review P
 
 ## Analyzer Adapter Hub
 
-Config Schema 3 删除旧的“仓库内文件” `sarifFiles`，统一改为 `review.analyzerReports`。报告通过 GitLab Job Artifact API 从精确 head pipeline 获取，再由产品侧有界 Adapter 解析。支持：
+当前配置使用 Config Schema 8。历史上，Config Schema 3 删除旧的“仓库内文件” `sarifFiles`，统一改为 `review.analyzerReports`。报告通过 GitLab Job Artifact API 从精确 head pipeline 获取，再由产品侧有界 Adapter 解析。支持：
 
 - SARIF 2.1-compatible JSON；
 - GitLab Code Quality JSON；
