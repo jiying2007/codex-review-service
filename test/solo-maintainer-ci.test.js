@@ -25,3 +25,14 @@ test('main and Release keep the expensive production qualification',()=>{
   assert.match(release,/Attest immutable release files/);
   assert.match(release,/Publish immutable GitHub Release/);
 });
+
+test('private CodeQL has the minimal workflow metadata permission it requires',()=>{
+  const security=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+  const codeql=security.slice(security.indexOf('  codeql:'));
+  assert.match(codeql,/permissions:\n\s+actions: read\n\s+contents: read\n\s+security-events: write/);
+  assert.doesNotMatch(codeql,/actions: write/);
+  const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
+  const caller=ci.slice(ci.indexOf('  security:'),ci.indexOf('  fault-injection:'));
+  assert.match(caller,/permissions:\n\s+actions: read\n\s+contents: read\n\s+security-events: write/);
+  assert.doesNotMatch(caller,/actions: write/);
+});
