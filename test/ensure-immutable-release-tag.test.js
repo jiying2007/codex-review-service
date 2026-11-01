@@ -22,7 +22,7 @@ function fixture(routes){
   return{calls,options:{...config,fetchImpl}};
 }
 test('GET existing matching tag is read-only and never overwritten',async()=>{
-  const f=fixture({'GET /repos/'+REPO+'/git/ref/tags/v7.6.2':[[200,ref()]]});
+  const f=fixture({['GET /repos/'+REPO+'/git/ref/tags/v7.6.2']:[[200,ref()]]});
   assert.deepEqual(await ensureTag(f.options),{ok:true,created:false,tag:config.tag,sha:SHA});
   assert.equal(f.calls.length,1);
   assert.equal(f.calls[0].options.method,'GET');
