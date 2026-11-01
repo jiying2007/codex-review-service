@@ -125,6 +125,7 @@ jobs:
   security:
     if: github.event_name != 'pull_request'
     permissions:
+      actions: read
       contents: read
       security-events: write
     uses: ./.github/workflows/security.yml
