@@ -11,7 +11,7 @@ test('ordinary PR CI uses the canonical runtime and all pull-request bases',()=>
   assert.match(ci,/Development \/ Node 24\.19\.0/);
   assert.match(ci,/node-version: '24\.19\.0'/);
   assert.match(ci,/releaseOnly=new Set\(\['compatibility-node22','migration-portability','security','fault-injection','gitlab-system','family-release-guard'\]\)/);
-  assert.match(ci,/github\.event_name==='pull_request'&&releaseOnly\.has\(name\)&&value\.result==='skipped'/);
+  assert.match(ci,/process\.env\.EVENT_NAME==='pull_request'&&releaseOnly\.has\(name\)&&value\.result==='skipped'/);
 });
 
 test('main and Release keep the expensive production qualification',()=>{
