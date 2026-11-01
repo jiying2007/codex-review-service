@@ -65,3 +65,13 @@
 对于受支持的 `/release-retry`，原始 Release workflow 的 HEAD 与实际被恢复的 immutable tag SHA 可能不同，必须使用**来源作业记录的发行 SHA**，不能拿当前 main SHA 硬套旧 tag。保留产品版本、Node 全量、OCI、SBOM、provenance、Trivy Critical、签名/不可变资产和生产回滚要求，不修改批准边界。
 
 此项仅改变 Release Integrity 对**实际成功出版还是普通无发布推送**的判定，不会让 PR CI 的局部结果代替真正 Release CI，也不表示私仓主线已有 GitHub 原生 Ruleset。
+
+## 正式发布增加同 SHA 主线 CI 准入
+
+`.github/workflows/release.yml` 的正式 `Package / OCI / attest / publish` 作业必须在构建/推送之前，查询 GitHub 原生 `CI` 工作流中**和实际发行源码 SHA 完全相同、目标为 main、事件为 push** 的最新运行；该运行必须 `completed/success`，且真实 `CI Gate` Job 中的依赖检查 Step 已执行成功。
+
+新流程只在 `publish=true` 时执行该准入。正常 `main` 推送而产品版本未变化时仍沿已有 Release Intent 检测，**不会**因没有新产品发行而阻断开发；正式发行则等待最长 25 分钟，CI 真实失败、取消、结果不一致、权限不足或超时均阻断，绝不生成虚构绿色 Gate。普通 PR 的 canonical Node24 `CI Gate` **不能**代替主线完整资格；需要 main 的 Node22/24、故障注入、真实 GitLab Provider、Security/Family Gate 一起成功。
+
+任何主线在实际发行前再次前进都会阻断陈旧 push 的发版。受控 `/release-retry` 使用已固定的历史 release SHA 验证它自己的既有真实 main CI，不假装它等于当前 main。原有不可变 Tag/Release、SBOM、OCI、多架构、Trivy Critical、provenance 和生产回滚仍是独立必需条件。
+
+此保护是对*发行端*的约束，不能替代 GitHub 私有仓库的原生主线 Ruleset；对于缺少平台授权的私有 CodeQL/Scorecard 检查，应记录明确的“不可用”，不是伪造实际扫描。
