@@ -7,12 +7,63 @@ on:
 
 permissions:
   contents: read
+  actions: read
   attestations: read
 
 jobs:
-  integrity:
+  admission:
+    name: Resolve actual source release decision
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      published: ${{ steps.decision.outputs.published }}
+      release_sha: ${{ steps.decision.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+        with:
+          node-version: '24.19.0'
+      - id: decision
+        name: Inspect parent jobs and exact immutable intent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          PARENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PARENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PARENT_EVENT: ${{ github.event.workflow_run.event }}
+        run: node scripts/release-integrity-admission.js verify
+
+  integrity:
+    needs: admission
+    if: ${{ needs.admission.result == 'success' && needs.admission.outputs.published == 'true' }}
     uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@e962826ee6556fd8ffa74ab1994bf43d62826f10
     with:
-      expected_sha: ${{ github.event.workflow_run.head_sha }}
+      expected_sha: ${{ needs.admission.outputs.release_sha }}
       product: codex-review-service
+
+  gate:
+    name: Release Integrity Gate
+    needs: [admission, integrity]
+    if: ${{ always() && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require verification for every actual publication
+        env:
+          ADMISSION: ${{ needs.admission.result }}
+          PUBLISHED: ${{ needs.admission.outputs.published }}
+          INTEGRITY: ${{ needs.integrity.result }}
+        run: |
+          node - <<'NODE'
+          const {ADMISSION,PUBLISHED,INTEGRITY}=process.env;
+          if(ADMISSION!=='success'||!['true','false'].includes(PUBLISHED)||
+             (PUBLISHED==='true'&&INTEGRITY!=='success')||
+             (PUBLISHED==='false'&&INTEGRITY!=='skipped')){
+            console.error('Release Integrity Gate blocked:',{ADMISSION,PUBLISHED,INTEGRITY});
+            process.exit(1);
+          }
+          console.log(PUBLISHED==='true'?'Immutable release verified':'No new release; integrity not applicable');
+          NODE
