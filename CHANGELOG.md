@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.6.3
+
+- **Candidate, not released.** Forward-port the Schema 9 -> 10 -> 11 durable status-write and original GitLab MR source/target/base identity migration from #113 onto the currently published Core 4.18.2 contract.
+- Preserve every new solo-maintainer CI Gate, immutable v7.6.2 release and private BuildKit/Release Integrity control. No production database, Tag, GHCR image or remote GitLab ref is changed by this candidate.
+- Require fresh Node 22/24 qualification, lossless backup/rollback and true GitLab integration before accepting any Schema 11 cutover.
+
 ## 7.6.2
 
 - Repin to Codex Safe Core 4.18.2 because the shipped Core runtime digest changed to `d50d065c716dcb5b70f9cdd832ea05e6a9d49617bc6582567b3c69a7fb133d6e`; publish a new immutable product release and required distribution evidence.
