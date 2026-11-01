@@ -311,12 +311,12 @@ jobs:
           set -euo pipefail
           [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           image="$IMAGE_REF@$IMAGE_DIGEST"
-          docker buildx imagetools inspect "$image" --raw > /tmp/release-oci-index.json
-          docker buildx imagetools inspect "$image" --format '{{json .Provenance}}' > /tmp/release-oci-provenance.json
-          docker buildx imagetools inspect "$image" --format '{{json .SBOM}}' > /tmp/release-oci-sbom.json
+          docker buildx imagetools inspect "$image" --raw > $RUNNER_TEMP/release-oci-index.json
+          docker buildx imagetools inspect "$image" --format '{{json .Provenance}}' > $RUNNER_TEMP/release-oci-provenance.json
+          docker buildx imagetools inspect "$image" --format '{{json .SBOM}}' > $RUNNER_TEMP/release-oci-sbom.json
           node - <<'NODE'
-          const fs=require('node:fs'),crypto=require('node:crypto');
-          const read=f=>fs.readFileSync('/tmp/release-oci-'+f+'.json');
+          const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');
+          const read=f=>fs.readFileSync(path.join(process.env.RUNNER_TEMP,'release-oci-'+f+'.json'));
           const indexBytes=read('index'),provBytes=read('provenance'),sbomBytes=read('sbom');
           const index=JSON.parse(indexBytes),provenance=JSON.parse(provBytes),sbom=JSON.parse(sbomBytes);
           const sha=/^sha256:[0-9a-f]{64}$/;
