@@ -83,3 +83,16 @@
 现改为独立 `scripts/ensure-immutable-release-tag.js`，直接按 GitHub API 状态码处理：GET **200** 必须证明已有 Tag 对应完整 40 位提交 SHA；**404** 才允许 POST 创建；**403/其它错误** 均拒绝，不继续创建；POST **201** 也必须回读同一 Tag 并确认真实 SHA；**422** 只允许重读后确认他人并发创建的 Tag 与精确 SHA 相同，其他冲突一律拒绝。不存在“把 JSON `null` 当成已有 Tag SHA”的隐含路径。保留带作用域 Token、GitHub HTTPS、响应体大小上限和严格错误码，不输出 Token 或任意远端响应。
 
 该修复不授权覆盖、删除、修改任一已存在 Tag，不跳过同 SHA main CI Gate、双 Node/Provider 安全验证、OCI/SBOM/漏洞/签名及 Release Integrity。GitHub API 若确实拒绝 Tag 写入，正式 Release 会留下明确 `ETAGREAD` / `ETAGCREATE` 错误，等待管理员修正权限，而不会伪造成功。
+
+## 私有个人仓库的发行证明：能力等价性边界
+
+2026-11-01 实际 [Release 41269163223](https://github.com/jiying2007/codex-review-service/actions/runs/41269163223) 已真实通过 Node22/24、同 SHA 主线 20/20 CI Gate、GHCR multiarch Buildx 与 Trivy Critical 检查，但 `actions/attest-build-provenance` 返回：`Feature not available for user-owned private repositories`。按 [GitHub Artifact Attestations 可用性说明](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)，Free/Pro/Team 仅支持公开仓库，要对私仓使用 Actions Artifact Attestations 需要 Enterprise Cloud。**不得通过将私有 Service 公开、输出伪造签名或把不可用的能力假装已扫描来解决**。
+
+独立维护者零额外付费的受控替代分成两个不同、不能混为同等签名的证据：
+
+1. Buildx 使用 `--provenance=mode=max --sbom=true`，在 GHCR digest 对应的 OCI index 中真实附带 linux/amd64、linux/arm64 的 BuildKit provenance/SBOM。正式 Publisher 必须从仓库按 `image@sha256:digest` 重读真实索引、双平台 attestation manifest、SLSA/SPDX 数据并生成 `BUILD_EVIDENCE.json`（绑定源码 SHA、镜像 digest、索引与证据 SHA256）。**这是 digest-bound 的构建元数据，非独立身份签名**，不得称为 GitHub Actions Attestation PASS。
+2. 仓库启用 [GitHub Immutable Releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases) 后，正式 GitHub Release 自动产生独立的**发行级**签名证明，绑定 tag、commit 和每个发布资产。新 `BUILD_EVIDENCE.json` 一并列入 `SHA256SUMS`、Actions artifact 和 Release assets。现有独立下游 `consumer-release-integrity.yml` 必须实际完成 `gh release verify` 与全部 `gh release verify-asset`，失败不得标记 Release 合格。
+
+以上**发行级签名不能冒充 Actions 构建级签名**。如未来私仓具备 GitHub Enterprise Artifact Attestations 资格，公共/受支持仓库保留原 `actions/attest-build-provenance` 的额外两层身份签发。私有当前模式通过显式 `if` 跳过不可用的构建证明，但始终运行真实 BuildKit/安全/签名后验门禁；版本 Tag 已存在且对应旧精确 SHA 时，新 main push 不得偷偷 retarget，必须通过有管理员权限的 `/release-retry v7.6.2` 对原 SHA 进行新流程验收。
+
+正式上线仍要求管理员核验 GHCR manifest digest、GitHub Release 签名、真实部署镜像与备份/回滚；该方案只解决受限制平台能力下的**发行路径**，不为私有 GitHub main 创造不存在的分支保护。
