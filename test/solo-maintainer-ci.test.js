@@ -48,3 +48,16 @@ test('private-only GitHub security features degrade to explicit capability state
   assert.match(scorecard,/github\.event\.repository\.private == true/);
   assert.match(scorecard,/github\.event\.repository\.private == false/);
 });
+
+test('real immutable publisher waits for successful main CI Gate at exact source SHA',()=>{
+  const release=fs.readFileSync(path.join(root,'.github/workflows/release.yml'),'utf8');
+  assert.match(release,/Require genuine same-SHA main CI Gate before immutable publication/);
+  assert.match(release,/run: node scripts\/verify-publisher-main-ci\.js/);
+  assert.match(release,/RELEASE_SHA: \$\{\{ needs\.prepare\.outputs\.release_sha \}\}/);
+  assert.match(release,/actions: read/);
+  assert.match(release,/Publish immutable GitHub Release/);
+  const source=fs.readFileSync(path.join(root,'scripts/verify-publisher-main-ci.js'),'utf8');
+  assert.match(source,/head_branch==='main'/);
+  assert.match(source,/name==='CI Gate'/);
+  assert.match(source,/source:'main-CI'/);
+});
