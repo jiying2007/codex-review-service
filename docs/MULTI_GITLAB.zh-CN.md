@@ -31,9 +31,18 @@ HTTP 路由只决定内部 Worker，不能代替安全认证。每个 Worker 独
 
 sensor.config.example.json 默认 review.triggerAssignment = always、projects = [113]、groups = []，notifications.enabled = false。always 仅取消用户指派过滤，不能越过项目白名单、签名、Bot 自触发等安全规则。原 Legacy assignee 用户 ID 8 不应复制给 sensor；若需要新服务器按人员触发，请重新查询新服务器的用户 ID。飞书/企业微信路由和用户身份映射也应单独审核。
 
+
+## 单人维护分级验收：建议先 Advisory，再启用权威合并门禁
+
+**阶段 A：只做非强制的审查建议。** 允许在已有准确的产品 Release/运行时测试、每实例密钥与物理隔离、旧 SQLite 在线备份和迁移回滚、唯一 Writer、Webhook 路由/签名/重放与真实 GitLab 双端只读+写入沙箱 MR 验收之后，以非强制 Advisory 方式逐步接入新 Sensor。此模式必须由项目管理员在每台 GitLab 实际核验并保存设置证据：机器人状态不在 Required/Must-pass 合并检查内，服务没有任何自动 Merge/Approve 权限，所有 `mergeAuthorized:false` 和 `refTransactionBound:false` 保持诚实，任何延迟/未知写入只作为待核对观察结果而不是允许合并的授权。若无法证明非强制性，则**禁止以 Advisory 名义上线并提供合并门禁**。
+
+**阶段 B：允许权威合并或强制 Required status。** 只有在 [#114](https://github.com/jiying2007/codex-review-service/issues/114) 的 GitLab 服务端精确 ref/代次事务 fence 实际实现并通过竞态/断连/延迟 ACK/恢复测试、且生产 GitLab 项目已验收后，才能将机器人判断用于 merge authorization 或 Required status。单次 GET、普通 CI 绿色和本地 mock 不足以达到阶段 B。
+
+两个阶段都要遵守 Secret 不入仓、同旧 DB 仅一名 Writer、真实迁移前备份、可验证回滚、不可变发行 SHA/OCI digest；**阶段 A 不需要为不存在的第二名 Reviewer 设永久阻断**，但也不能把未绑定的审查意见升级为强制合并权。生产机器/网络/凭据和新 GitLab 实际 MR 设置均不可由 GitHub 仓库代码读取冒充验收；没有管理员现场证明时维持 Draft/未部署。
+
 ## 准备（不操作运行中的旧容器）
 
-1. 首先取得受保护 PR 的独立审核、完整 Node 22/24 与 GitLab/CodeQL CI、可信 release 与 OCI 镜像 digest。验证镜像包含 src/multi-gitlab* 和新入口。现有 7.6.1 image 不包含，绝对不能用于本模式。私有 Service 当前 Actions Runner 如果没有运行 job steps，不能把失败/跳过算成通过。
+1. 首先取得精确最终 HEAD 的真实 PR `CI Gate`、完整受支持 Node 22/24 与 GitLab Provider/安全资格、正式不可变 Release 和 OCI 镜像 digest。**单人维护不强制第二名人工 Reviewer**；维护者可以在自动化证据真实通过后合并，但不得以自审伪造独立 reviewer 或跳过生产 Publisher 验证。按私仓当前有效安全能力区分已完成扫描与明确不适用，绝不伪造 CodeQL PASS。验证镜像包含 src/multi-gitlab* 和新入口。旧 v7.6.1 image 不包含，绝不能用于本模式。
 2. 在 192.168.1.22 用 docker inspect 检查旧容器实际状态卷、Codex Home 卷和配置。使用现有 admin backup/backup-verify 完成一致性备份，保留原版本及 Compose 文件。禁止在旧实例运行时粗暴复制 WAL/SQLite 文件。
 3. 将真正的 /opt/codex-review-service/config.json 另存为候选 legacy.json，保留所有旧 Project、Group 48、触发规则、企业微信/飞书、Codex 模型策略等有效设置；只按新容器内部的真实路径设置 server.dataDir 为 /var/lib/codex-review/legacy、codex.home 为 /home/codex-review/legacy。不要用模板覆盖原配置。
 4. 根据 deploy/docker/sensor.config.example.json 创建 sensor.json（Config Schema 8），指向 http://192.168.2.50、projects [113]、独立数据目录 /var/lib/codex-review/sensor 与 Home。Webhook expectedInstance 与该 GitLab 的真实 origin 相同。通知先禁用。
