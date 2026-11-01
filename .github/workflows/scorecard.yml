@@ -11,6 +11,10 @@ permissions: read-all
 
 jobs:
   analysis:
+    # GitHub Free private repos cannot grant this workflow's token the
+    # GraphQL ListCommits permission used by Scorecard v2.4.4.
+    # Skip explicitly: never upload a fabricated SARIF or claim a scan passed.
+    if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
