@@ -75,3 +75,11 @@
 任何主线在实际发行前再次前进都会阻断陈旧 push 的发版。受控 `/release-retry` 使用已固定的历史 release SHA 验证它自己的既有真实 main CI，不假装它等于当前 main。原有不可变 Tag/Release、SBOM、OCI、多架构、Trivy Critical、provenance 和生产回滚仍是独立必需条件。
 
 此保护是对*发行端*的约束，不能替代 GitHub 私有仓库的原生主线 Ruleset；对于缺少平台授权的私有 CodeQL/Scorecard 检查，应记录明确的“不可用”，不是伪造实际扫描。
+
+## Tag 首次创建的明确状态处理（不降发布门禁）
+
+首次发布的 `vX.Y.Z` Tag 可能尚不存在。早期 Release 在 `Ensure immutable release tag` 使用 `gh api --jq '.object.sha' ... || true`，并将命令的标准输出当作 Tag SHA：当 API 返回 404 或异常时，不能仅根据是否输出了字符判断是否已有有效 Tag，且原日志只有 exit 1、难以定位。
+
+现改为独立 `scripts/ensure-immutable-release-tag.js`，直接按 GitHub API 状态码处理：GET **200** 必须证明已有 Tag 对应完整 40 位提交 SHA；**404** 才允许 POST 创建；**403/其它错误** 均拒绝，不继续创建；POST **201** 也必须回读同一 Tag 并确认真实 SHA；**422** 只允许重读后确认他人并发创建的 Tag 与精确 SHA 相同，其他冲突一律拒绝。不存在“把 JSON `null` 当成已有 Tag SHA”的隐含路径。保留带作用域 Token、GitHub HTTPS、响应体大小上限和严格错误码，不输出 Token 或任意远端响应。
+
+该修复不授权覆盖、删除、修改任一已存在 Tag，不跳过同 SHA main CI Gate、双 Node/Provider 安全验证、OCI/SBOM/漏洞/签名及 Release Integrity。GitHub API 若确实拒绝 Tag 写入，正式 Release 会留下明确 `ETAGREAD` / `ETAGCREATE` 错误，等待管理员修正权限，而不会伪造成功。
