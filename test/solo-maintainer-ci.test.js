@@ -36,3 +36,24 @@ test('private CodeQL has the minimal workflow metadata permission it requires',(
   assert.match(caller,/permissions:\n\s+actions: read\n\s+contents: read\n\s+security-events: write/);
   assert.doesNotMatch(caller,/actions: write/);
 });
+
+test('private-only platform features degrade to explicit non-red capability states',()=>{
+  const security=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+  assert.match(security,/code-scanning-capability:/);
+  assert.match(security,/code-scanning\/alerts\?per_page=1/);
+  assert.match(security,/if: needs\.code-scanning-capability\.outputs\.enabled == 'true'/);
+  assert.match(security,/Code Scanning is unavailable for this private repository/);
+  const scorecard=fs.readFileSync(path.join(root,'.github/workflows/scorecard.yml'),'utf8');
+  assert.match(scorecard,/private-repository-note:/);
+  assert.match(scorecard,/github\.event\.repository\.private == true/);
+  assert.match(scorecard,/github\.event\.repository\.private == false/);
+});
+
+test('release integrity distinguishes immutable publication from a no-version main push',()=>{
+  const integrity=fs.readFileSync(path.join(root,'.github/workflows/release-integrity.yml'),'utf8');
+  assert.match(integrity,/Distinguish a new product release from a no-version main change/);
+  assert.match(integrity,/previous_version/);
+  assert.match(integrity,/verify=false/);
+  assert.match(integrity,/needs\.detect\.outputs\.verify == 'true'/);
+  assert.match(integrity,/consumer-release-integrity\.yml/);
+});
