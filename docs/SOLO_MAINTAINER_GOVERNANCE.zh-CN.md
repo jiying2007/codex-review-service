@@ -59,3 +59,11 @@
 对于受支持的 `/release-retry`，原始 Release workflow 的 HEAD 与实际被恢复的 immutable tag SHA 可能不同，必须使用**来源作业记录的发行 SHA**，不能拿当前 main SHA 硬套旧 tag。保留产品版本、Node 全量、OCI、SBOM、provenance、Trivy Critical、签名/不可变资产和生产回滚要求，不修改批准边界。
 
 此项仅改变 Release Integrity 对**实际成功出版还是普通无发布推送**的判定，不会让 PR CI 的局部结果代替真正 Release CI，也不表示私仓主线已有 GitHub 原生 Ruleset。
+
+## 私有仓库 OpenSSF Scorecard 权限不足
+
+`OpenSSF Scorecard` 原生 Action 需要读取 GitHub GraphQL `ListCommits` 等源数据，但在现有私有仓库默认的 `github.token` 下，多轮执行真实返回 `Resource not accessible by integration`，与漏洞检测结果不同。
+
+对于**私有** Service，只将此项标为**不适用 / 未扫描**，不再每次主线推送生成一条相同的权限故障；如果改为公开仓库则按原 SHA 固定的 Scorecard Action 正常执行。此状态不代表 Scorecard PASS，也不生成空 SARIF 或假合格回执。
+
+**不降低生产安全门禁**：正常 PR 的依赖/许可证与项目测试、main 的安全工作流、正式 Release 的 Trivy Critical、SBOM、provenance、签名及不可变性验证都保持原样。若管理员未来提供真正可用的独立 GitHub 认证上下文，可再以单独、可复核的 PR 恢复私有 Scorecard；不得把缺乏扫描权限的结果冒充安全通过。
