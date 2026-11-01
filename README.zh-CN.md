@@ -10,8 +10,8 @@
 
 `product-contract.json` 是唯一机器校验的当前产品身份：
 
-- Service：**7.6.2**
-- Database Schema：**9**
+- Service：**7.6.3**
+- Database Schema：**11**
 - Config Schema：**8**
 - Policy Schema：**4**
 - Review Receipt：**5**
@@ -51,7 +51,7 @@ GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断�
 
 ## 5 分钟部署
 
-优先把经过验证的 `codex-review-service-7.6.2.tgz` 安装到 `/opt/codex-review-service`。
+优先把经过验证的 `codex-review-service-7.6.3.tgz` 安装到 `/opt/codex-review-service`。
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -158,7 +158,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 6 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
+备份使用两个受支持 Node LTS 版本都具备的 SQLite online backup API；只有 `quick_check`、foreign key 与 Schema 11 全部通过才接受备份。未知 `unhandledRejection` / `uncaughtException` 被视为 fatal，由 durable restart/recovery 接管。
 
 ## Upgrade 契约
 
