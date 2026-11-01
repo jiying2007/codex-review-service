@@ -12,7 +12,9 @@ for (const name of ['README.md', 'README.zh-CN.md']) {
     const quickstart = [...text.matchAll(/schemaVersion:\s*(\d+)/g)];
     assert.ok(quickstart.length > 0, 'quickstart must state a concrete configuration schema');
     for (const match of quickstart) assert.equal(Number(match[1]), contract.configSchemaVersion);
-    for (const match of text.matchAll(/Config Schema (\d+)/g)) assert.equal(Number(match[1]), contract.configSchemaVersion);
+    const currentQuickstart = text.split(/## GitLab Flow Tracking|## GitLab 流程跟踪/)[0];
+    for (const match of currentQuickstart.matchAll(/Config Schema (\d+)/g)) assert.equal(Number(match[1]), contract.configSchemaVersion);
+    assert.match(text, /Config Schema 7/, 'Flow Tracking historical introduction must remain visible');
     const backup = name.endsWith('zh-CN.md') ? /Schema (\d+) 全部通过才接受备份/ : /Schema (\d+) verification pass/;
     const match = text.match(backup);
     assert.ok(match, 'backup verification must state the current database schema');
