@@ -96,8 +96,19 @@ jobs:
               if [[ "$GITHUB_EVENT_BEFORE" =~ ^[0-9a-f]{40}$ && ! "$GITHUB_EVENT_BEFORE" =~ ^0+$ ]]; then
                 previous_version=$(git show "${GITHUB_EVENT_BEFORE}:package.json" 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)
               fi
-              if [[ "$previous_version" == "$version" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                publish=false
+              if [[ "$previous_version" == "$version" ]]; then
+                if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                  publish=false
+                else
+                  # No published Release yet. A pre-existing tag may already bind
+                  # this version to an earlier commit. Never retarget it from a
+                  # later ordinary main push; require explicit frozen-tag retry.
+                  tag_sha=$(RELEASE_TAG="$tag" node -e 'const {getTag}=require("./scripts/ensure-immutable-release-tag");getTag(process.env.RELEASE_TAG,process.env.GH_TOKEN).then(sha=>process.stdout.write(sha||"")).catch(e=>{console.error(String(e.code||"ETAGREAD")+": source tag lookup failed");process.exitCode=2;});')
+                  if [[ -n "$tag_sha" && "$tag_sha" != "$GITHUB_SHA" ]]; then
+                    publish=false
+                    echo "Version $tag is already pinned to prior commit $tag_sha; use explicit /release-retry $tag after required validation." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                fi
               fi
             fi
           fi
@@ -189,7 +200,7 @@ jobs:
           CI_RUN_ID: ${{ github.run_id }}
           CI_RUN_ATTEMPT: ${{ github.run_attempt }}
           CI_EVENT: ${{ github.event_name }}
-          CI_SUITES: release-check,node-22.22.2-ci,node-24.19.0-ci,npm-pack,multiarch-oci,trivy-critical,oci-attestation,release-package
+          CI_SUITES: release-check,node-22.22.2-ci,node-24.19.0-ci,npm-pack,multiarch-oci,trivy-critical,buildkit-provenance,immutable-release-attestation,release-package
         run: node src/codex-safe-core/scripts/generate-consumer-ci-receipt.js --output CONSUMER_CI_RECEIPT.json
 
       - name: Build and inspect immutable package
@@ -290,7 +301,53 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL'
 
+      - name: Verify registry-bound BuildKit provenance and SBOM for both platforms
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="$IMAGE_REF@$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$image" --raw > $RUNNER_TEMP/release-oci-index.json
+          docker buildx imagetools inspect "$image" --format '{{json .Provenance}}' > $RUNNER_TEMP/release-oci-provenance.json
+          docker buildx imagetools inspect "$image" --format '{{json .SBOM}}' > $RUNNER_TEMP/release-oci-sbom.json
+          node - <<'NODE'
+          const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');
+          const read=f=>fs.readFileSync(path.join(process.env.RUNNER_TEMP,'release-oci-'+f+'.json'));
+          const indexBytes=read('index'),provBytes=read('provenance'),sbomBytes=read('sbom');
+          const index=JSON.parse(indexBytes),provenance=JSON.parse(provBytes),sbom=JSON.parse(sbomBytes);
+          const sha=/^sha256:[0-9a-f]{64}$/;
+          const digest=process.env.IMAGE_DIGEST,source=process.env.RELEASE_SHA;
+          if(!sha.test(digest)||!/^[0-9a-f]{40}$/.test(source)||!Array.isArray(index.manifests))
+            throw Error('Invalid immutable OCI index or release source identity');
+          const platforms=['amd64','arm64'];
+          const imageManifests=index.manifests.filter(m=>m.platform?.os==='linux'&&platforms.includes(m.platform?.architecture));
+          const attests=index.manifests.filter(m=>m.annotations?.['vnd.docker.reference.type']==='attestation-manifest');
+          const attestTargets=new Set(attests.map(m=>m.annotations?.['vnd.docker.reference.digest']));
+          if(imageManifests.length!==2 || new Set(imageManifests.map(m=>m.platform.architecture)).size!==2 ||
+            !imageManifests.every(m=>sha.test(m.digest)&&attestTargets.has(m.digest)) ||
+            !attests.every(m=>sha.test(m.digest)) || !provenance?.SLSA || !sbom?.SPDX)
+            throw Error('Both platform-specific BuildKit provenance and SBOM records are required');
+          const sha256=b=>crypto.createHash('sha256').update(b).digest('hex');
+          const evidence={schemaVersion:1,sourceSha:source,imageRef:process.env.IMAGE_REF,
+            imageDigest:digest,platforms,attestationType:'digest-bound-buildkit-not-signed-identity',
+            ociIndexSha256:sha256(indexBytes),provenanceSha256:sha256(provBytes),
+            sbomSha256:sha256(sbomBytes),
+            signedReleaseAttestation:'must-be-verified-after-publication'};
+          fs.writeFileSync('BUILD_EVIDENCE.json',JSON.stringify(evidence,null,2)+'\n',{flag:'wx',mode:0o600});
+          console.log('Verified BuildKit provenance and SBOM for linux/amd64 and linux/arm64 at exact image digest');
+          NODE
+
+      - name: Explain private publisher attestation capability
+        if: ${{ github.event.repository.private }}
+        shell: bash
+        run: echo 'GitHub Actions Artifact Attestations API is unavailable to user-owned private repos. OCI BuildKit evidence is digest-bound, not an independent identity signature; the immutable GitHub Release auto-attestation must be verified by downstream Release Integrity.' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Attest canonical OCI image
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ steps.image.outputs.ref }}
@@ -309,15 +366,17 @@ jobs:
           printf '%s@%s\n' "$IMAGE_REF" "$IMAGE_DIGEST" > IMAGE_DIGEST.txt
           awk -v image="${IMAGE_REF}@${IMAGE_DIGEST}" '{if($1=="image:"){$0="    image: " image} print}' deploy/docker/compose.yaml > compose.release.yaml
           grep -F "${IMAGE_REF}@${IMAGE_DIGEST}" compose.release.yaml >/dev/null
-          sha256sum "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml CONSUMER_CI_RECEIPT.json > SHA256SUMS
+          sha256sum "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt BUILD_EVIDENCE.json compose.release.yaml CONSUMER_CI_RECEIPT.json > SHA256SUMS
 
       - name: Attest immutable release files
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             codex-review-service-${{ needs.prepare.outputs.version }}.tgz
             SBOM.spdx.json
             IMAGE_DIGEST.txt
+            BUILD_EVIDENCE.json
             compose.release.yaml
             CONSUMER_CI_RECEIPT.json
             SHA256SUMS
@@ -329,6 +388,7 @@ jobs:
             codex-review-service-${{ needs.prepare.outputs.version }}.tgz
             SBOM.spdx.json
             IMAGE_DIGEST.txt
+            BUILD_EVIDENCE.json
             compose.release.yaml
             CONSUMER_CI_RECEIPT.json
             SHA256SUMS
@@ -347,4 +407,4 @@ jobs:
             echo "Release ${RELEASE_TAG} already exists; immutable assets will not be overwritten." >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt compose.release.yaml CONSUMER_CI_RECEIPT.json SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
+          gh release create "$RELEASE_TAG" "$tgz" SBOM.spdx.json IMAGE_DIGEST.txt BUILD_EVIDENCE.json compose.release.yaml CONSUMER_CI_RECEIPT.json SHA256SUMS --title "Codex Review Service ${version}" --generate-notes --verify-tag
