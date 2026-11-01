@@ -39,7 +39,11 @@ jobs:
           set -euo pipefail
           publish=true
           if [[ "$GITHUB_EVENT_NAME" == "issue_comment" ]]; then
-            git fetch --force --tags origin
+            # Private checkout deliberately persists no Git credentials.
+            # Query immutable Tag by authenticated GitHub REST, not git fetch.
+            tag_sha_remote() {
+              RELEASE_TAG="$1" node -e 'const {getTag}=require("./scripts/ensure-immutable-release-tag");getTag(process.env.RELEASE_TAG,process.env.GH_TOKEN).then(sha=>process.stdout.write(sha||"")).catch(e=>{console.error(String(e.code||"ETAGREAD")+": remote tag lookup failed");process.exitCode=2;});'
+            }
             request="${RELEASE_RETRY_REQUEST:-}"
             retry_tag=""
             explicit_tag=""
@@ -59,9 +63,8 @@ jobs:
               fi
               tag="$explicit_tag"
               version="${tag#v}"
-              if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
-                release_sha=$(git rev-list -n 1 "$tag")
-              else
+              release_sha=$(tag_sha_remote "$tag")
+              if [[ -z "$release_sha" ]]; then
                 release_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
                 echo "Recovering pre-tag release ${tag} from current main ${release_sha}; same-SHA CI Gate and Release tests remain mandatory." >> "$GITHUB_STEP_SUMMARY"
               fi
@@ -79,8 +82,13 @@ jobs:
               [[ -n "$retry_tag" ]] || { echo 'No unreleased immutable tag exists for /release-retry.' >&2; exit 1; }
               tag="$retry_tag"
               version="${tag#v}"
-              release_sha=$(git rev-list -n 1 "$tag")
+              release_sha=$(tag_sha_remote "$tag")
+              [[ -n "$release_sha" ]] || { echo "Source tag ${tag} disappeared before retry." >&2; exit 2; }
             fi
+            [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${release_sha}^{commit}" || {
+              echo "Exact immutable source commit ${release_sha} is unavailable in the checkout." >&2
+              exit 2
+            }
             package_version=$(git show "${release_sha}:package.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).version||''))")
             contract_version=$(git show "${release_sha}:product-contract.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).serviceVersion||''))")
             test "$package_version" = "$version"
