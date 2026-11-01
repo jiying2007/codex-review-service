@@ -39,7 +39,31 @@ jobs:
           }
           NODE
 
+  code-scanning-capability:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: read
+    outputs:
+      enabled: ${{ steps.detect.outputs.enabled }}
+    steps:
+      - id: detect
+        name: Detect repository Code Scanning capability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=1" >/dev/null 2>&1; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo 'GitHub Code Scanning is unavailable for this private repository; CodeQL upload is skipped while dependency, product, provider, migration and release-image security gates remain active.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   codeql:
+    needs: code-scanning-capability
+    if: needs.code-scanning-capability.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: read
