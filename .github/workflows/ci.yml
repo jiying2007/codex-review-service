@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 0
           submodules: recursive
       - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
         with:
@@ -30,7 +30,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - if: github.event_name == 'pull_request'
-        run: git diff --check origin/${{ github.base_ref }}...HEAD
+        run: git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
       - if: github.event_name != 'pull_request'
         run: git diff --check HEAD^ HEAD
       - run: npm run ci
