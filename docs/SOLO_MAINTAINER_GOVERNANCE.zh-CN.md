@@ -31,6 +31,12 @@
 
 这些检查失败可以阻止正式发布，但不应让一个独立维护者因为“缺第二个人”而无法进行普通开发。
 
+对于 GitHub 账户/私仓本身未提供的可选平台能力，必须区分“代码失败”和“能力不可用”：
+
+- Code Scanning API 可用时运行 CodeQL；私仓未启用该能力时，记录 capability 状态并跳过 CodeQL 上传，不制造失败。dependency audit、产品安全回归、真实 Provider/迁移测试以及 Release 的 SBOM/Trivy/Provenance 继续有效。
+- OpenSSF Scorecard 依赖 GitHub API/GraphQL 能力；私仓无法访问时记录显式说明，不作为产品或发布失败。
+- 这些降级只针对平台能力，不允许把真实扫描 finding、依赖漏洞、测试失败或发布验证失败改成成功。
+
 ## 正式 Release
 
 `.github/workflows/release.yml` 继续独立执行两个支持 Node 版本的完整 CI、npm package、SBOM、multi-arch OCI、Critical 漏洞阻断、OCI/文件 provenance 和不可变 GitHub Release。
