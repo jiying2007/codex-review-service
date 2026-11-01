@@ -227,16 +227,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha' 2>/dev/null || true)"
-          if [ -n "$existing_sha" ]; then
-            test "$existing_sha" = "$RELEASE_SHA"
-          else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="$RELEASE_SHA" >/dev/null
-          fi
-
+        run: node scripts/ensure-immutable-release-tag.js
       - name: Login to GHCR
         env:
           GHCR_TOKEN: ${{ github.token }}
