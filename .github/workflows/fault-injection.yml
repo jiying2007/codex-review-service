@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22.22.2
       - name: Exercise durable SQLite crash/reopen boundaries
