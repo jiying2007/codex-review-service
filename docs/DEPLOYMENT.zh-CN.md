@@ -2,9 +2,9 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 7.6.1** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 9、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 7.6.2** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 9、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
-Safe Core 精确固定到 `190651770a444b0693d82228afc66879dd57b0c0`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
+Safe Core 精确固定到 `59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
 GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provider CI 覆盖 GitLab CE 14.6.1、17.11.7、19.3.0。
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.6.2
+
+- Repin to Codex Safe Core 4.18.2 because the shipped Core runtime digest changed to `d50d065c716dcb5b70f9cdd832ea05e6a9d49617bc6582567b3c69a7fb133d6e`; publish a new immutable product release and required distribution evidence.
+- Refresh Product Contract v2 and generated/current-state Family identity for the exact Core pin.
+
 ## 7.6.1
 
 - Fix the strict structured-output schema used for review findings: all declared properties are now required, while unknown semantic identity is represented by explicit empty strings.

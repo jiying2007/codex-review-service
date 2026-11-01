@@ -2,9 +2,9 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.6.1** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 9 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.6.2** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 9 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
 
-Safe Core is exact-pinned to `190651770a444b0693d82228afc66879dd57b0c0`. Do not replace the gitlink or copy another Core runtime into a release package.
+Safe Core is exact-pinned to `59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b`. Do not replace the gitlink or copy another Core runtime into a release package.
 
 GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real provider CI covers GitLab CE 14.6.1, 17.11.7 and 19.3.0.
 
