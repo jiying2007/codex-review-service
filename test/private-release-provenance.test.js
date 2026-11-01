@@ -26,8 +26,12 @@ function manifests(){
           'vnd.docker.reference.digest':sha[i]}}))
     ]};
 }
-function fixture(t,{index=manifests(),provenance={SLSA:{builder:{id:'test'}}},
-  sbom={SPDX:{spdxVersion:'SPDX-2.3'}},digest=DIGEST}={}){
+const platformProvenance=()=>Object.fromEntries(['amd64','arm64'].map(arch=>
+  ['linux/'+arch,{SLSA:{builder:{id:'buildkit'},buildType:'https://mobyproject.org/buildkit@v1'}}]));
+const platformSBOM=()=>Object.fromEntries(['amd64','arm64'].map(arch=>
+  ['linux/'+arch,{SPDX:{SPDXID:'SPDXRef-DOCUMENT',spdxVersion:'SPDX-2.3'}}]));
+function fixture(t,{index=manifests(),provenance=platformProvenance(),
+  sbom=platformSBOM(),digest=DIGEST}={}){
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'service-oci-evidence-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const values={index,provenance,sbom};
@@ -55,6 +59,7 @@ test('valid multiarch BuildKit provenance and SBOM yields bounded evidence',t=>{
   assert.equal(evidence.sourceSha,SHA);
   assert.equal(evidence.imageDigest,DIGEST);
   assert.deepEqual(evidence.platforms,['amd64','arm64']);
+  assert.deepEqual(evidence.verifiedEvidencePlatforms,['linux/amd64','linux/arm64']);
   assert.equal(evidence.attestationType,'digest-bound-buildkit-not-signed-identity');
   assert.equal(evidence.signedReleaseAttestation,'must-be-verified-after-publication');
   for(const key of ['ociIndexSha256','provenanceSha256','sbomSha256'])assert.match(evidence[key],/^[a-f0-9]{64}$/);
@@ -94,4 +99,39 @@ test('frozen prerelease tag and ordinary main push require explicit release-retr
   assert.match(release,/Version \$tag is already pinned to prior commit/);
   assert.match(release,/use explicit \/release-retry \$tag/);
   assert.match(release,/test "\$contract_version" = "\$version"/);
+});
+
+test('a top-level single-platform SLSA/SPDX cannot impersonate multiarch evidence',t=>{
+  const f=fixture(t,{provenance:{SLSA:{buildType:'https://mobyproject.org/buildkit@v1'}},
+    sbom:{SPDX:{SPDXID:'SPDXRef-DOCUMENT',spdxVersion:'SPDX-2.3'}}});
+  const result=run(f);
+  assert.notEqual(result.status,0);
+  assert.match(result.stderr,/linux\/amd64 SLSA=false SPDX=false/);
+});
+test('Buildx v1 platform-specific SLSA schema is recognized for both architectures',t=>{
+  const provenance=Object.fromEntries(['amd64','arm64'].map(arch=>
+    ['linux/'+arch,{SLSA:{buildDefinition:{buildType:'https://mobyproject.org/buildkit@v1'}}}]));
+  const f=fixture(t,{provenance}),result=run(f);
+  assert.equal(result.status,0,result.stderr);
+});
+test('losing either platform-specific provenance or SPDX blocks the release',t=>{
+  for(const arch of ['amd64','arm64']){
+    for(const kind of ['provenance','sbom']){
+      const input={provenance:platformProvenance(),sbom:platformSBOM()};
+      delete input[kind]['linux/'+arch];
+      const f=fixture(t,input),result=run(f);
+      assert.notEqual(result.status,0,arch+' '+kind);
+      assert.match(result.stderr,new RegExp('linux/'+arch));
+      assert.equal(fs.existsSync(path.join(f.dir,'BUILD_EVIDENCE.json')),false);
+    }
+  }
+});
+test('empty or malformed per-platform SLSA/SPDX is not a valid release receipt',t=>{
+  for(const kind of ['provenance','sbom']){
+    const input={provenance:platformProvenance(),sbom:platformSBOM()};
+    input[kind]['linux/amd64']=kind==='provenance'?{SLSA:{}}:{SPDX:{spdxVersion:'SPDX-2.3'}};
+    const f=fixture(t,input),result=run(f);
+    assert.notEqual(result.status,0,kind);
+    assert.match(result.stderr,/linux\/amd64/);
+  }
 });

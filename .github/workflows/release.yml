@@ -337,11 +337,29 @@ jobs:
           const attestTargets=new Set(attests.map(m=>m.annotations?.['vnd.docker.reference.digest']));
           if(imageManifests.length!==2 || new Set(imageManifests.map(m=>m.platform.architecture)).size!==2 ||
             !imageManifests.every(m=>sha.test(m.digest)&&attestTargets.has(m.digest)) ||
-            !attests.every(m=>sha.test(m.digest)) || !provenance?.SLSA || !sbom?.SPDX)
+            !attests.every(m=>sha.test(m.digest)))
             throw Error('Both platform-specific BuildKit provenance and SBOM records are required');
+          // Buildx multi-platform inspect returns .Provenance and .SBOM maps
+          // keyed by linux/amd64 and linux/arm64, not top-level SLSA/SPDX.
+          // Every platform must carry independent, meaningful records.
+          const evidencePlatforms=[];
+          for(const arch of platforms){
+            const key='linux/'+arch;
+            const slsa=provenance?.[key]?.SLSA;
+            const spdx=sbom?.[key]?.SPDX;
+            const hasSlsa=slsa&&typeof slsa==='object'&&!Array.isArray(slsa)&&
+              (typeof slsa.buildType==='string'||typeof slsa.buildDefinition?.buildType==='string');
+            const hasSpdx=spdx&&typeof spdx==='object'&&!Array.isArray(spdx)&&
+              spdx.SPDXID==='SPDXRef-DOCUMENT'&&/^SPDX-2\./.test(String(spdx.spdxVersion||''));
+            if(!hasSlsa||!hasSpdx)
+              throw Error('Both platform-specific BuildKit provenance and SBOM records are required: '+key+
+                ' SLSA='+(!!hasSlsa)+' SPDX='+(!!hasSpdx));
+            evidencePlatforms.push(key);
+          }
           const sha256=b=>crypto.createHash('sha256').update(b).digest('hex');
           const evidence={schemaVersion:1,sourceSha:source,imageRef:process.env.IMAGE_REF,
-            imageDigest:digest,platforms,attestationType:'digest-bound-buildkit-not-signed-identity',
+            imageDigest:digest,platforms,verifiedEvidencePlatforms:evidencePlatforms,
+            attestationType:'digest-bound-buildkit-not-signed-identity',
             ociIndexSha256:sha256(indexBytes),provenanceSha256:sha256(provBytes),
             sbomSha256:sha256(sbomBytes),
             signedReleaseAttestation:'must-be-verified-after-publication'};

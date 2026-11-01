@@ -104,3 +104,5 @@
 修正后不为 checkout 持久化 Git 凭据、不注入 PAT 进 `git remote`，仅通过现有受控 `GH_TOKEN` 向 GitHub API 查询真实 Tag 对应 commit SHA，使用 checkout `fetch-depth: 0` 的**本地**对象校验 `git cat-file -e SHA^{commit}`。若私有远端 Tag 不可读或本地未包含源码对象，直接失败，不会匿名猜测最新 main、替换 Tag 或继续发布；Tag 真不存在时，只允许之前明确支持的首次 pre-tag 补发，再经过同 SHA CI Gate、双 Node、OCI、安全与不可变发行验收。
 
 本规则只修复恢复路径的身份与网络使用方式，不修改正常 main push 的无版本发布判断。任一发行必须保留精确发行 SHA 和实际 Release Integrity 证明。
+
+**Buildx 多架构对象结构说明（2026-11-02）**：在 `--platform linux/amd64,linux/arm64` 生成的镜像上，`imagetools inspect --format '{{json .Provenance}}'` 与 `--format '{{json .SBOM}}'` 返回按 `linux/amd64`、`linux/arm64` 分组的对象，不能用顶层 `Provenance.SLSA`/`SBOM.SPDX` 判断两平台均已提供证据。发行脚本逐平台要求 SLSA 构建类型和 SPDX 文档身份，并要求每个镜像 manifest 都能找到匹配的 digest 绑定证明；缺失任何一侧必须失败。检查日志只报告平台与缺失类别，不输出 provenance 内可能包含的构建参数或 Secret。该结果依然是 digest-bound、未独立身份签署的构建元数据，发行级签名需后续独立验收。
