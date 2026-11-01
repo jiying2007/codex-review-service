@@ -44,3 +44,18 @@
 - 生产镜像、Compose、卷或回滚路径。
 
 独立维护者可以自行合并开发变更；生产发布仍由机器证据、精确 SHA/digest 和可回滚操作边界约束。
+
+## Release Integrity：区分发布与无发布
+
+`Release` 工作流既支持真正的不可变版本发布，也会在已发布版本、无新产品版本的普通 `main` push 上完成一次**无发布**的检查。过去仅凭父工作流 `conclusion=success` 就按新 SHA 检查旧版 tag，会把合法的无发布推送误报为 Release Integrity 失败。
+
+现在 `Prepare release` 在同一个 GitHub run/attempt 下保存严格的发布意图（repo/run ID/attempt/source HEAD/source event/tag/release SHA/publish 布尔值）。`Release Integrity` 必须从**原始 Release 作业**读取真正的 `Package / OCI / attest / publish` 结论和最终发布步骤，并重新绑定该意图：
+
+- `prepare=skipped`、`publish=skipped`：无匹配的有效发布请求；正常结束且不伪造发行记录
+- `prepare=success`、`publish=skipped`，并且原始意图 `publish=false`：普通无发布推送；完整性检查标记不适用
+- `prepare=success`、`publish=success`，并且最终 `Publish immutable GitHub Release` 步骤真的成功且原始意图 `publish=true`：调用原 Core `consumer-release-integrity.yml`，以**实际发行源码 SHA**校验 immutable tag、assets 与来源证明
+- 来源 Job 缺失、重复、失败、签名意图缺失/不一致、验证失败：`Release Integrity Gate` 必须失败；不能返回绿色的“无发布”
+
+对于受支持的 `/release-retry`，原始 Release workflow 的 HEAD 与实际被恢复的 immutable tag SHA 可能不同，必须使用**来源作业记录的发行 SHA**，不能拿当前 main SHA 硬套旧 tag。保留产品版本、Node 全量、OCI、SBOM、provenance、Trivy Critical、签名/不可变资产和生产回滚要求，不修改批准边界。
+
+此项仅改变 Release Integrity 对**实际成功出版还是普通无发布推送**的判定，不会让 PR CI 的局部结果代替真正 Release CI，也不表示私仓主线已有 GitHub 原生 Ruleset。
