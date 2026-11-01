@@ -10,8 +10,8 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **7.6.2**
-- Database Schema: **9**
+- Service: **7.6.3**
+- Database Schema: **11**
 - Config Schema: **8**
 - Policy Schema: **4**
 - Review Receipt: **5**
@@ -51,7 +51,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-7.6.2.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-7.6.3.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -185,7 +185,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 9 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 11 verification pass.
 
 ## Failure semantics
 
