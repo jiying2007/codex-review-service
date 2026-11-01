@@ -36,3 +36,15 @@ test('private CodeQL has the minimal workflow metadata permission it requires',(
   assert.match(caller,/permissions:\n\s+actions: read\n\s+contents: read\n\s+security-events: write/);
   assert.doesNotMatch(caller,/actions: write/);
 });
+
+test('private-only GitHub security features degrade to explicit capability states',()=>{
+  const security=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+  assert.match(security,/code-scanning-capability:/);
+  assert.match(security,/code-scanning\/alerts\?per_page=1/);
+  assert.match(security,/if: needs\.code-scanning-capability\.outputs\.enabled == 'true'/);
+  assert.match(security,/Code Scanning is unavailable for this private repository/);
+  const scorecard=fs.readFileSync(path.join(root,'.github/workflows/scorecard.yml'),'utf8');
+  assert.match(scorecard,/private-repository-note:/);
+  assert.match(scorecard,/github\.event\.repository\.private == true/);
+  assert.match(scorecard,/github\.event\.repository\.private == false/);
+});
