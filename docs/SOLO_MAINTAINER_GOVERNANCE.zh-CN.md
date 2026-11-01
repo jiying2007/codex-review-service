@@ -96,3 +96,11 @@
 以上**发行级签名不能冒充 Actions 构建级签名**。如未来私仓具备 GitHub Enterprise Artifact Attestations 资格，公共/受支持仓库保留原 `actions/attest-build-provenance` 的额外两层身份签发。私有当前模式通过显式 `if` 跳过不可用的构建证明，但始终运行真实 BuildKit/安全/签名后验门禁；版本 Tag 已存在且对应旧精确 SHA 时，新 main push 不得偷偷 retarget，必须通过有管理员权限的 `/release-retry v7.6.2` 对原 SHA 进行新流程验收。
 
 正式上线仍要求管理员核验 GHCR manifest digest、GitHub Release 签名、真实部署镜像与备份/回滚；该方案只解决受限制平台能力下的**发行路径**，不为私有 GitHub main 创造不存在的分支保护。
+
+## 私有仓库发行恢复：禁用无凭据 git fetch
+
+2026-11-01 实际 [Release 41270767791](https://github.com/jiying2007/codex-review-service/actions/runs/41270767791) 是 OWNER 显式发起的 `/release-retry v7.6.2`；此前同 SHA 主线 CI 已通过且 `v7.6.2` Tag 固定在原始 `26b540d0...`。该次 Prepare 失败并非权限不足或模型问题，而是原工作流在 `persist-credentials:false` 下继续执行 `git fetch --force --tags origin`，实际日志报 `fatal: could not read Username for 'https://github.com'`（exit 128）。
+
+修正后不为 checkout 持久化 Git 凭据、不注入 PAT 进 `git remote`，仅通过现有受控 `GH_TOKEN` 向 GitHub API 查询真实 Tag 对应 commit SHA，使用 checkout `fetch-depth: 0` 的**本地**对象校验 `git cat-file -e SHA^{commit}`。若私有远端 Tag 不可读或本地未包含源码对象，直接失败，不会匿名猜测最新 main、替换 Tag 或继续发布；Tag 真不存在时，只允许之前明确支持的首次 pre-tag 补发，再经过同 SHA CI Gate、双 Node、OCI、安全与不可变发行验收。
+
+本规则只修复恢复路径的身份与网络使用方式，不修改正常 main push 的无版本发布判断。任一发行必须保留精确发行 SHA 和实际 Release Integrity 证明。

@@ -17,7 +17,9 @@ test('release retry is anchored to an explicit or uniquely unreleased immutable 
   assert.match(release,/same-SHA CI Gate and Release tests remain mandatory/);
   assert.match(release,/Multiple unreleased immutable tags exist; use \/release-retry vMAJOR\.MINOR\.PATCH/);
   assert.match(release,/No unreleased immutable tag exists for \/release-retry/);
-  assert.match(release,/git rev-list -n 1 "\$tag"/);
+  assert.match(release,/release_sha=\$\(tag_sha_remote "\$tag"\)/);
+  assert.match(release,/git cat-file -e/);
+  assert.doesNotMatch(release,/git fetch --force --tags origin/);
   assert.match(release,/ref: \$\{\{ needs\.prepare\.outputs\.release_sha \}\}/);
   assert.match(release,/VCS_REF="\$RELEASE_SHA"/);
   assert.match(release,/org\.opencontainers\.image\.revision/);
@@ -41,7 +43,8 @@ test('release tag uses authenticated, exact-SHA idempotent API with fail-closed 
 });
 
 test('explicit release retry may recover a cancelled pre-tag publication without weakening gates',()=>{
-  assert.match(release,/if git rev-parse --verify --quiet "refs\/tags\/\$\{tag\}"/);
+  assert.match(release,/getTag\(process\.env\.RELEASE_TAG,process\.env\.GH_TOKEN\)/);
+  assert.match(release,/release_sha=\$\(tag_sha_remote "\$tag"\)/);
   assert.match(release,/release_sha=\$\(gh api "repos\/\$\{GITHUB_REPOSITORY\}\/git\/ref\/heads\/main"/);
   assert.match(release,/test "\$package_version" = "\$version"/);
   assert.match(release,/test "\$contract_version" = "\$version"/);
