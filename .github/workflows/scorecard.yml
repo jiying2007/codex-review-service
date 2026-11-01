@@ -10,7 +10,15 @@ on:
 permissions: read-all
 
 jobs:
+  private-repository-note:
+    if: ${{ github.event.repository.private == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: echo 'OpenSSF Scorecard GitHub API collection is skipped for this private repository; production security is enforced by CI/Release gates.' >> "$GITHUB_STEP_SUMMARY"
+
   analysis:
+    if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
