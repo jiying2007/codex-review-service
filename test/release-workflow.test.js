@@ -33,11 +33,11 @@ test('release retains immutable tag, artifact and image guards',()=>{
 });
 
 test('release tag uses authenticated, exact-SHA idempotent API with fail-closed fallback',()=>{
-  assert.match(release,/gh release view "\\$tag" --repo "\\$GITHUB_REPOSITORY"/);
-  assert.match(release,/run: node scripts\\/ensure-immutable-release-tag\\.js/);
-  assert.match(release,/GH_TOKEN: \\$\\{\\{ github\\.token \\}\\}/);
-  assert.match(release,/RELEASE_SHA: \\$\\{\\{ needs\\.prepare\\.outputs\\.release_sha \\}\\}/);
-  assert.doesNotMatch(release,/git ls-remote --exit-code --refs origin "refs\\/tags\\//);
+  assert.match(release,/gh release view "\$tag" --repo "\$GITHUB_REPOSITORY"/);
+  assert.match(release,/run: node scripts\/ensure-immutable-release-tag\.js/);
+  assert.match(release,/GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(release,/RELEASE_SHA: \$\{\{ needs\.prepare\.outputs\.release_sha \}\}/);
+  assert.doesNotMatch(release,/git ls-remote --exit-code --refs origin "refs\/tags\//);
 });
 
 test('explicit release retry may recover a cancelled pre-tag publication without weakening gates',()=>{
