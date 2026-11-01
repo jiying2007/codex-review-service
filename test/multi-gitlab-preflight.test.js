@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
 const {runPreflight,preflightInstance,checkResponse}=require('../src/multi-gitlab-preflight');
+const {loadMultiManifest}=require('../src/multi-gitlab-config');
 const jsonResponse=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
 
 function fixture(){
@@ -233,7 +234,8 @@ test('preflight transport: real local HTTP covers identity, scopes, cancellation
     const configFile=path.join(dir,'config.json'),tokenFile=path.join(dir,'token');
     fs.writeFileSync(configFile,JSON.stringify({gitlab:{projects:[113],groups:[{id:48}]}}),{mode:0o600});
     fs.writeFileSync(tokenFile,'local-fixture-token',{mode:0o600});
-    const result=await preflightInstance({id:'local',origin,configFile,
+    const result=await preflightInstance({id:'local',origin,
+      preflightScope:{projects:[113],groups:[{id:48}]},
       secretFiles:{GITLAB_API_TOKEN_FILE:tokenFile}},{timeoutMs:1000});
     assert.equal(result.authenticated,true);
     assert.equal(result.apiReadable,true);
@@ -260,4 +262,32 @@ test('preflight transport: real local HTTP covers identity, scopes, cancellation
     await new Promise(resolve=>server.close(resolve));
     fs.rmSync(dir,{recursive:true,force:true});
   }
+});
+
+test('preflight scope binds the validated manifest even if its source file changes',async()=>{
+  const f=fixture();
+  try{
+    const manifest=loadMultiManifest(f.file);
+    const legacy=manifest.instances.find(item=>item.id==='legacy');
+    assert.deepEqual(legacy.preflightScope.projects,[113]);
+    assert.deepEqual(legacy.preflightScope.groups,[{id:48,includeSubgroups:true}]);
+    assert.equal(Object.isFrozen(legacy.preflightScope),true);
+    assert.equal(Object.isFrozen(legacy.preflightScope.projects),true);
+    const altered=JSON.parse(fs.readFileSync(legacy.configFile,'utf8'));
+    altered.gitlab.projects=[99999];
+    altered.gitlab.groups=[{id:99999,includeSubgroups:true}];
+    fs.writeFileSync(legacy.configFile,JSON.stringify(altered),{mode:0o600});
+    const calls=[];
+    const result=await preflightInstance(legacy,{fetchImpl:async url=>{
+      calls.push(url);
+      return jsonResponse(url.endsWith('/user')?{id:101}:{version:'17.11.7'});
+    }});
+    assert.equal(result.apiReadable,true);
+    assert.ok(calls.some(url=>url.endsWith('/projects/113')));
+    assert.ok(calls.some(url=>url.endsWith('/groups/48')));
+    assert.equal(calls.some(url=>url.includes('/99999')),false);
+    await assert.rejects(preflightInstance({...legacy,preflightScope:null},{
+      fetchImpl:async()=>{throw Error('network must not be reached');}
+    }),error=>error.code==='EGITLABSCOPE');
+  }finally{f.close();}
 });

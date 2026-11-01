@@ -187,7 +187,10 @@ function validateInstance(raw, allFiles, identities) {
     }
     secretFiles[name] = file;
   }
-  return Object.freeze({id, configFile, homeDir, dataDir, origin, secretFiles:Object.freeze(secretFiles)});
+  const preflightScope=Object.freeze({projects:Object.freeze([...projects]),
+    groups:Object.freeze(groups.map(group=>Object.freeze({...group})))});
+  return Object.freeze({id, configFile, homeDir, dataDir, origin,
+    preflightScope,secretFiles:Object.freeze(secretFiles)});
 }
 function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
   const pathname = absolute(file, 'CODEX_REVIEW_MULTI_CONFIG_FILE');

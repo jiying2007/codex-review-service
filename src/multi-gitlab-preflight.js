@@ -2,7 +2,6 @@
 
 // Credential-safe, READ-ONLY GitLab acceptance preflight. This module does
 // not start Service workers, use Codex, publish statuses or process webhooks.
-const fs=require('node:fs');
 const {readSecretFile}=require('./secrets');
 
 const MAX_JSON_BYTES=1024*1024;
@@ -82,7 +81,10 @@ async function checkResponse(url,token,{fetchImpl=fetch,timeoutMs=8000,
   }
 }
 async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
-  const cfg=JSON.parse(fs.readFileSync(instance.configFile,'utf8'));
+  // Capture the manifest-validated scope rather than reopen a mutable file.
+  const cfg=instance.preflightScope;
+  if(!cfg || !Array.isArray(cfg.projects) || !Array.isArray(cfg.groups))
+    throw readError('EGITLABSCOPE','Validated preflight scope is missing');
   const token=readSecretFile(instance.secretFiles.GITLAB_API_TOKEN_FILE,'GITLAB_API_TOKEN');
   const base=instance.origin+'/api/v4';
   const context={fetchImpl,timeoutMs};
@@ -108,9 +110,9 @@ async function preflightInstance(instance,{fetchImpl=fetch,timeoutMs=8000}={}){
     error.code='EGITLABVERSION';
     throw error;
   }
-  const projects=cfg.gitlab.projects||[];
+  const projects=cfg.projects;
   for(const id of projects)await checkResponse(base+'/projects/'+encodeURIComponent(id),token,context);
-  const groups=cfg.gitlab.groups||[];
+  const groups=cfg.groups;
   for(const group of groups)await checkResponse(base+'/groups/'+encodeURIComponent(group.id),token,context);
   return {id:instance.id,apiReadable:true,authenticated:true,version:value,
     checkedProjects:projects.length,checkedGroups:groups.length,
