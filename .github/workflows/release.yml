@@ -103,16 +103,7 @@ jobs:
                   # No published Release yet. A pre-existing tag may already bind
                   # this version to an earlier commit. Never retarget it from a
                   # later ordinary main push; require explicit frozen-tag retry.
-                  tag_sha=$(RELEASE_TAG="$tag" node - <<'NODE'
-const {getTag}=require('./scripts/ensure-immutable-release-tag');
-getTag(process.env.RELEASE_TAG,process.env.GH_TOKEN).then(sha=>{
-  process.stdout.write(sha||'');
-}).catch(error=>{
-  console.error(String(error.code||'ETAGREAD')+': source tag lookup failed');
-  process.exitCode=2;
-});
-NODE
-                  )
+                  tag_sha=$(RELEASE_TAG="$tag" node -e 'const {getTag}=require("./scripts/ensure-immutable-release-tag");getTag(process.env.RELEASE_TAG,process.env.GH_TOKEN).then(sha=>process.stdout.write(sha||"")).catch(e=>{console.error(String(e.code||"ETAGREAD")+": source tag lookup failed");process.exitCode=2;});')
                   if [[ -n "$tag_sha" && "$tag_sha" != "$GITHUB_SHA" ]]; then
                     publish=false
                     echo "Version $tag is already pinned to prior commit $tag_sha; use explicit /release-retry $tag after required validation." >> "$GITHUB_STEP_SUMMARY"
