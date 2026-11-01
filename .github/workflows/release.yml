@@ -53,15 +53,18 @@ jobs:
             fi
 
             if [[ -n "$explicit_tag" ]]; then
-              git rev-parse --verify --quiet "refs/tags/${explicit_tag}" >/dev/null || {
-                echo "Requested immutable tag ${explicit_tag} does not exist." >&2
-                exit 1
-              }
               if gh release view "$explicit_tag" >/dev/null 2>&1; then
                 echo "Release ${explicit_tag} already exists; refusing retry." >&2
                 exit 1
               fi
-              retry_tag="$explicit_tag"
+              tag="$explicit_tag"
+              version="${tag#v}"
+              if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+                release_sha=$(git rev-list -n 1 "$tag")
+              else
+                release_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+                echo "Recovering pre-tag release ${tag} from current main ${release_sha}; same-SHA CI Gate and Release tests remain mandatory." >> "$GITHUB_STEP_SUMMARY"
+              fi
             else
               while IFS= read -r candidate; do
                 [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
@@ -74,11 +77,10 @@ jobs:
                 fi
               done < <(git tag --list 'v*' --sort=-version:refname)
               [[ -n "$retry_tag" ]] || { echo 'No unreleased immutable tag exists for /release-retry.' >&2; exit 1; }
+              tag="$retry_tag"
+              version="${tag#v}"
+              release_sha=$(git rev-list -n 1 "$tag")
             fi
-
-            tag="$retry_tag"
-            version="${tag#v}"
-            release_sha=$(git rev-list -n 1 "$tag")
             package_version=$(git show "${release_sha}:package.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).version||''))")
             contract_version=$(git show "${release_sha}:product-contract.json" | node -e "let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(s).serviceVersion||''))")
             test "$package_version" = "$version"
