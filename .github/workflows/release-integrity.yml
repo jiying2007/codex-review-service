@@ -10,8 +10,34 @@ permissions:
   attestations: read
 
 jobs:
-  integrity:
+  detect:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      verify: ${{ steps.decision.outputs.verify }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+          fetch-depth: 2
+      - id: decision
+        name: Distinguish a new product release from a no-version main change
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          previous_version="$(git show HEAD^:package.json 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)"
+          if [ "${{ github.event.workflow_run.event }}" = "push" ] && [ -n "$previous_version" ] && [ "$previous_version" = "$version" ]; then
+            echo 'verify=false' >> "$GITHUB_OUTPUT"
+            echo "Release workflow completed as a no-version main change (v${version}); immutable-release verification is not applicable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'verify=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  integrity:
+    needs: detect
+    if: needs.detect.outputs.verify == 'true'
     uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@e962826ee6556fd8ffa74ab1994bf43d62826f10
     with:
       expected_sha: ${{ github.event.workflow_run.head_sha }}
