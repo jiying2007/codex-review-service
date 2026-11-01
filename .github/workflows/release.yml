@@ -96,8 +96,28 @@ jobs:
               if [[ "$GITHUB_EVENT_BEFORE" =~ ^[0-9a-f]{40}$ && ! "$GITHUB_EVENT_BEFORE" =~ ^0+$ ]]; then
                 previous_version=$(git show "${GITHUB_EVENT_BEFORE}:package.json" 2>/dev/null | node -e "let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(s).version||'')}catch{}})" || true)
               fi
-              if [[ "$previous_version" == "$version" ]] && gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                publish=false
+              if [[ "$previous_version" == "$version" ]]; then
+                if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                  publish=false
+                else
+                  # No published Release yet. A pre-existing tag may already bind
+                  # this version to an earlier commit. Never retarget it from a
+                  # later ordinary main push; require explicit frozen-tag retry.
+                  tag_sha=$(RELEASE_TAG="$tag" node - <<'NODE'
+const {getTag}=require('./scripts/ensure-immutable-release-tag');
+getTag(process.env.RELEASE_TAG,process.env.GH_TOKEN).then(sha=>{
+  process.stdout.write(sha||'');
+}).catch(error=>{
+  console.error(String(error.code||'ETAGREAD')+': source tag lookup failed');
+  process.exitCode=2;
+});
+NODE
+                  )
+                  if [[ -n "$tag_sha" && "$tag_sha" != "$GITHUB_SHA" ]]; then
+                    publish=false
+                    echo "Version $tag is already pinned to prior commit $tag_sha; use explicit /release-retry $tag after required validation." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+                fi
               fi
             fi
           fi
