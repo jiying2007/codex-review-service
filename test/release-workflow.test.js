@@ -32,9 +32,11 @@ test('release retains immutable tag, artifact and image guards',()=>{
   assert.match(release,/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8/);
 });
 
-test('private repository release tag checks use authenticated GitHub APIs',()=>{
+test('release tag uses authenticated, exact-SHA idempotent API with fail-closed fallback',()=>{
   assert.match(release,/gh release view "\$tag" --repo "\$GITHUB_REPOSITORY"/);
-  assert.match(release,/gh api "repos\/\$\{GITHUB_REPOSITORY\}\/git\/ref\/tags\/\$\{RELEASE_TAG\}"/);
+  assert.match(release,/run: node scripts\/ensure-immutable-release-tag\.js/);
+  assert.match(release,/GH_TOKEN: \$\{\{ github\.token \}\}/);
+  assert.match(release,/RELEASE_SHA: \$\{\{ needs\.prepare\.outputs\.release_sha \}\}/);
   assert.doesNotMatch(release,/git ls-remote --exit-code --refs origin "refs\/tags\//);
 });
 
