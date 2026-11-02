@@ -1,8 +1,14 @@
 # Changelog
 
+## 7.6.4
+
+- **Database inspection safety**: `node src/admin-cli.js db-check` validates the existing SQLite file in read-only mode before any `Store()` is opened, so old, missing and incompatible databases are never initialized/migrated by a diagnostic check.
+- Add regression coverage for preservation of an older Schema 10 database and missing-file noncreation; keep the stricter multi-GitLab cutover verifier for active workflow / status uncertainty and physical tenant isolation.
+- Refresh v7.6.4 release identity and cutover guidance. Existing immutable v7.6.3 release stays frozen; actual production rollout still requires validated backup, sole writer, two-instance credentials and rollback proof.
+
 ## 7.6.3
 
-- **Candidate, not released.** Forward-port the Schema 9 -> 10 -> 11 durable status-write and original GitLab MR source/target/base identity migration from #113 onto the currently published Core 4.18.2 contract.
+- **Released on 2026-11-02** (immutable GitHub Release with independent Release Integrity). Forward-port the Schema 9 -> 10 -> 11 durable status-write and original GitLab MR source/target/base identity migration from #113 onto the currently published Core 4.18.2 contract.
 - Preserve every new solo-maintainer CI Gate, immutable v7.6.2 release and private BuildKit/Release Integrity control. No production database, Tag, GHCR image or remote GitLab ref is changed by this candidate.
 - Require fresh Node 22/24 qualification, lossless backup/rollback and true GitLab integration before accepting any Schema 11 cutover.
 
