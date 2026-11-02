@@ -1,6 +1,6 @@
 # 单进程多 GitLab：Legacy + Sensor 上线与回滚
 
-本指南适用于 native multi-GitLab 候选分支。现有 Service 7.6.1 镜像不包含此功能，绝不能直接将旧实例切换为多实例模式；本文件也不表示已经在 192.168.1.22 部署或验证成功。
+本指南适用于已发布、不可变的 **Service v7.6.3（Database Schema 11 / Core 4.18.2）** 的多 GitLab 运行时。GitHub 发行与源代码资格已通过，但**不表示**它已经部署在内网生产主机 `192.168.1.22`。旧服务器当前实际运行的版本、卷和数据库 Schema 必须由管理员在现场核查；旧 v7.6.1/v7.6.2 镜像均不具备这套多实例能力，禁止用旧镜像直接切换。
 
 ## 结构与身份隔离
 
@@ -19,7 +19,7 @@
 
     npm run test:multi-offline
 
-此命令只运行 8 组原生多实例单元/本地 HTTP/SQLite/Worker 模拟与实际 Worker Thread 测试，所有 GitLab API 调用使用 mock，禁止与生产中的旧 GitLab 共享数据库；不启动 Codex CLI、不请求 OpenAI API、不访问真实 GitLab。支持的正式测试运行时仍为 Node 22.22.2 或 Node 24.19.0。正式发布还必须完成 Service 全部 CI、CodeQL、GitLab CE Provider 与故障注入验收；离线通过不替代这些证据。
+此命令只运行 8 组原生多实例单元/本地 HTTP/SQLite/Worker 模拟与实际 Worker Thread 测试，所有 GitLab API 调用使用 mock，禁止与生产中的旧 GitLab 共享数据库；不启动 Codex CLI、不请求 OpenAI API、不访问真实 GitLab。支持的正式测试运行时仍为 Node 22.22.2 或 Node 24.19.0。正式 v7.6.3 的 Node 22/24、完整 CI、GitLab CE Provider、故障注入、OCI 构建、Trivy Critical 和独立 Release Integrity 已在 GitHub 取得实际成功证据；私有仓库不具备的 CodeQL/构建级签名能力须明确记录为不适用，绝不伪造扫描或签名通过。离线测试不替代这些发行证据，也不替代真实内网验收。
 
 ## 凭据与安全
 
@@ -52,7 +52,7 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
        docker compose -f compose.multi.yaml config --quiet
        ss -ltnp | grep -E ':(8787|8788)' || true
 
-**只读预检（允许在 10 月执行，不启动服务/模型、不调用 Codex）：**
+**只读预检（不会启动服务/模型，也不调用 Codex）：**
 
        CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-preflight.js
 
@@ -63,13 +63,13 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
        CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-admin.js legacy status
        CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json node src/multi-gitlab-admin.js sensor db-check
 
-备份、drain、notifications、reconcile 等仍使用已有 admin 命令，但必须显式指定实例；正式上线时用现有配置的受控路径操作。禁止用同一个数据目录执行双实例 admin 写操作，且 10 月不触发任何可能运行 Codex 的 reconcile/Review。
+备份、drain、notifications、reconcile 等仍使用已有 admin 命令，但必须显式指定实例；正式上线时用现有配置的受控路径操作。禁止用同一个数据目录执行双实例 admin 写操作，且在共享 Codex/Work 额度限制未明确解除前，不触发任何可能调用模型的 reconcile、Review 或可执行 Codex 的后台 Worker。
 
 **镜像能力预检：** IMAGE 必须是通过验签的真实 digest，并在不启动应用的前提下，确认镜像包含本功能：
 
        docker run --rm --entrypoint node "ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST}" -e "require('./src/multi-gitlab-config');require('./src/multi-gitlab-gateway');require('./src/multi-gitlab')"
 
-旧 v7.6.1 镜像会因缺少模块而非零退出；即使能力检查通过，也不能替代受保护 CI、SBOM、GitLab 真机与独立审核。
+旧 v7.6.1/v7.6.2 镜像会因缺少模块而非零退出；即使能力检查通过，也不能替代已发行 v7.6.3 的真实 SHA/digest、SBOM、GitLab 真机和独立完整性验收。单人维护不要求虚构第二人批准。
 
 容器内部单个 HTTP 端口继续为 8787；主机若使用 8788 进行其他隔离验证，只修改 CODEX_REVIEW_PORT 映射，不必修改每个实例 Config Schema 的 server.port。默认 Compose 只绑定本机 127.0.0.1；反向代理需要接收 GitLab 外部回调，推荐可信 HTTPS 入口及源地址限制。网页登录 200 不证明 API Token 有权限，也不证明新 GitLab 能反向访问 Webhook。
 
@@ -81,7 +81,7 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 
 **启动期强制检查**：多实例进程在打开公共 HTTP 入口以及启动任何 GitLab Worker 之前，会调用同一只读检查器，要求**每个实例**已经具备完整且与当前产品一致的数据库 Schema；如果缺失、损坏或仍为旧 Schema 9，直接报 `EMULTIDBPREP`，不让新服务自动迁移旧数据库。正常崩溃恢复若数据库 Schema 已准备完成而队列非空，仍允许原有 durable recovery 接管，避免遗失待处理任务。首次切换依然要求人工在停止旧 Writer 后确认队列已排空，自动启动门禁不代表能自动识别其它进程是否还在写同一卷。
 
-**这不是数据库锁或备份**：即使返回 READY，旧进程也可能继续收到 Webhook、reconcile 或 Outbox 写入。因此操作前必须实际排空、暂停入口、停止原 Writer 并完成 SQLite 在线一致性备份。对于 7.6.1 → 7.6.2（Schema 9 → 11），该检查会**明确返回 EDBSCHEMA**，不能用修改 JSON 或关闭检查强行放行。应在停旧实例并保存不可变备份后，用有版本资格的升级程序在**受控复制数据库**上完成正式迁移、`backup-verify` 与读写边界核验，再将经验证的数据放入新实例的独立卷，并重新执行只读门禁。新 sensor 的空库也必须在**隔离维护操作**中，由正式 7.6.2 镜像的单实例 `src/admin-cli.js db-check` 完成新建和校验，执行时要把 `CODEX_REVIEW_CONFIG_FILE` 与受保护的 `GITLAB_API_TOKEN_FILE` / `GITLAB_WEBHOOK_SIGNING_TOKEN_FILE` 指向 **sensor** 的独立文件，不能继承旧服务凭据；任何缺失 DB 不代表已验收。
+**这不是数据库锁或备份**：即使返回 READY，旧进程也可能继续收到 Webhook、reconcile 或 Outbox 写入。因此操作前必须实际排空、暂停入口、停止原 Writer 并完成 SQLite 在线一致性备份。对于现场确认仍为 Schema 9 的旧数据库，升级到 **v7.6.3 / Schema 11** 时，只读检查会明确返回 `EDBSCHEMA`；必须在经过验证的受控副本中进行 **9 → 10 → 11** 两段迁移，不能修改 JSON、关闭检查或让两个 Writer 并行操作活库。应在停旧实例并保存不可变备份后，用有版本资格的升级程序在**受控复制数据库**上完成正式迁移、`backup-verify` 与读写边界核验，再将经验证的数据放入新实例的独立卷，并重新执行只读门禁。新 Sensor 的空库必须在**隔离暂存环境**中使用经过验证的 v7.6.3 镜像和 Sensor 专属配置、密钥，由正式单实例 Storage 初始化/迁移，再独立执行只读 `multi-gitlab-cutover-check.js` 验证。特别注意：**`src/admin-cli.js db-check` 会先调用 `openStore()`，可能创建或升级数据库，不是只读命令**；绝不能在仍由旧 Writer 使用的卷上运行它，也不能拿它对活库做只读预检。真正无副作用的检查使用 `src/multi-gitlab-cutover-check.js`，并要求预建 Schema 11 DB 后通过检查。不能继承 Legacy Token、Webhook 密钥或 Codex Home；任何缺失 DB 不代表已验收。
 
 **不要使用 `src/multi-gitlab-admin.js` 来创建或迁移数据库。** 该命令现会先只读检查目标 SQLite 的当前 Schema 与完整性，拒绝 Schema 9、缺失 DB 或腐坏状态；只有在明确隔离的**受控暂存副本**中才允许使用正式单实例 Admin 的建库/迁移能力。旧 Legacy 迁移亦必须在停止旧 Writer、持有验证过的在线备份后，使用暂存副本升级至 Schema 11，并核对反向回滚备份是否可读后，再接入多实例入口。
 
@@ -91,22 +91,22 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 
 不可在旧单实例容器写旧 SQLite 的同时启动读取相同卷的新 Legacy Worker。即使旧 Webhook 暂停，旧进程的周期 reconcile / outbox 也可能写 DB，因此必须先 drain、备份并停止原容器。若 sensor 之前已经由独立 8788 服务运行，也需要先停、排空并备份其数据库卷。
 
-1. 先验证真实的新 GitLab API 鉴权、版本兼容与反向网络，再确认所有配置、卷、Secret、镜像/签名及资源容量；10 月仍禁止任何 Codex CLI/Cloud/Work 与共享额度调用，不执行真实模型 Review。
+1. 先验证真实的新 GitLab API 鉴权、版本兼容与反向网络，再确认所有配置、卷、Secret、镜像/签名及资源容量；共享 Codex/Work 额度禁令未明确解除前，禁止任何会消耗该额度的模型审查或真实 Codex CLI/Cloud/Work 任务，只允许独立的只读/合成数据预检。
 2. 排空旧实例审查与 Publication/Notification Outbox，验证在线备份；暂停写入并停止旧容器，在受控维护窗口启动新多实例容器。旧原始配置、原镜像和备份保持不变。
 3. 检查 /health/live、/health/ready、/health/dependencies、/instances/legacy/health/ready、/instances/sensor/health/dependencies、/version、/metrics。任一实例异常时先修复，不把其他实例被动判为成功。每实例完整指标位于 /instances/<id>/metrics。
 4. 旧 GitLab 仍发到原入口 192.168.1.22:8787/webhooks/gitlab；新 sensor Webhook 发到统一入口 192.168.1.22:8787/webhooks/gitlab/sensor。启用 Merge request events 和 Note events，用新服务器独立密钥与实际 GitLab webhook auth profile；先验证签名、错误签名拒绝、重放和路由。
-5. 在允许真实模型调用的时间窗口，分别对旧、新 GitLab 的可丢弃 MR 做完整验收：状态更新、Summary、Discussion、推送新 SHA 后重审、重复 Webhook 去重、Project ID 113 不交叉、独立通知、GitLab Server 中断和恢复、CPU/内存与队列预算。不能把 webhook 202 等同于审查成功。
-6. 任一门禁失败，停止多实例与新 Webhook，保留数据一致性证据；如未发生任何 DB schema 迁移可在确认旧镜像仍能读取旧 DB 后恢复原单实例。若 Service #113 / Schema 11 等已造成数据库升级，则必须恢复已验证的迁移前备份，不可强行用 7.6.1 打开新 DB。
+5. 只有模型调用额度禁令明确解除且获准后，才分别对旧、新 GitLab 的可丢弃 MR 做真实模型审查验收：状态更新、Summary、Discussion、推送新 SHA 后重审、重复 Webhook 去重、Project ID 113 不交叉、独立通知、GitLab Server 中断和恢复、CPU/内存与队列预算。不能把 webhook 202 等同于审查成功。
+6. 任一门禁失败，停止多实例与新 Webhook，保留数据一致性证据；如未发生任何 DB schema 迁移可在确认旧镜像仍能读取旧 DB 后恢复原单实例。若 Schema 11 已造成数据库升级，则必须恢复经验证的迁移前备份，不可强行使用旧镜像打开新版数据库。
 
 ## 发布与资源边界
 
 - 新功能独立于现有 Service PR #113 及 Issue #114 的权威 Git ref 事务保护；不得对未通过的 CI、暂缺私有 Ruleset entitlement、未验证的部署回执造假。
 - Worker 独立保留旧任务队列、重试、API 限流、Token 预算、通知/告警；单容器总 CPU/RSS 是各 Worker 累计值，须独立容量审查与监控。健康检查为保守的聚合 fail-closed，但单个 GitLab 宕机不能使另一台 GitLab 的合法 Webhook 停止服务。
 - 无需整体 SQL Schema 改写即可在同一个 OS 服务进程内支持多个 GitLab；物理 DB 独立也意味着按不同版本执行 DB Schema 迁移和备份，不能让两个服务指向同一个 dbPath。
-- 该 README 仅定义候选交付与人工切换步骤，不宣称用户主机已改动。自动模型审查须在用户正式解除 2026-10 Codex/Work 额度禁令后才可启用与验收。
+- 该运行手册定义 v7.6.3 已发行软件的人工切换与回滚步骤，**不宣称**生产主机已部署。自动模型审查须在共享 Codex/Work 额度禁令明确解除、真实账户权限与资金来源确认后才能启用和验收。
 
-## 7.6.3 新主线候选的高风险 PR 资格
+## v7.6.3 已完成的高风险代码资格与剩余现场验收
 
 在独立维护仓库中，普通 PR 保持轻量 Node24 + Docker + 恢复 + 依赖审查；但以 `port/` 开头的高风险候选 PR 将额外触发 Node22、Linux/Windows/macOS 数据库迁移兼容矩阵、故障注入，以及 GitLab CE 14.6.1/17.11.7/19.3.0 的**真实临时本地 Provider 环境**。此时使用的是 GitHub Actions 的一次性 GitLab 容器和测试令牌，不调用在线 Codex/ChatGPT 模型，不访问 `192.168.1.4` 或 `192.168.2.50` 内网实例，也不触碰旧生产 SQLite 卷。CI Gate 必须对所有实际运行的工作作业 fail closed，不能把某一个作业绿灯当作矩阵完成。
 
-安全与 Family 跨仓 Secret 仍只在主线检查/实际 Release 中使用，不对候选 PR 暴露；任何 PR 全矩阵成功也仅证明候选代码在临时测试环境资格，**不意味着真实生产 GitLab 上的权限/网络/Webhook/状态回写/备份/回滚已经通过**。运行时只在显式指定多实例清单的情况下启用。PR #132 的 Schema11 新基线与本 PR 是堆叠关系，禁止将当前 Draft 不经完整验收合并到已发行 7.6.2 产品，亦不能自动将 GitHub 仓库发行等同内网生产部署。
+安全与 Family 跨仓 Secret 只在主线检查/实际 Release 中使用，不对候选 PR 暴露。原 Schema 11 + 多 GitLab 代码已通过 [PR #133](https://github.com/jiying2007/codex-review-service/pull/133) 高风险矩阵并合并为 `ba734330be8eb2909ef668aa38b7edfc63abad42`；[v7.6.3 正式发行](https://github.com/jiying2007/codex-review-service/releases/tag/v7.6.3) 的主线 CI、OCI、SBOM、不可变资产与独立 Release Integrity 均成功。**这些证据只能证明代码与发行资格，不能证明内网 GitLab 的实际权限、网络、Webhook、状态回写、备份及回滚通过。** 运行时仍只在显式提供合法多实例清单时启用；不允许把 GitHub 发行自动等同内网生产切换。
