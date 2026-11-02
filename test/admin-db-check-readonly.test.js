@@ -32,7 +32,7 @@ test('old Schema 10 db-check fails non-mutating and preserves bytes',async()=>{
   const f=fixture();
   try{
     const db=new DatabaseSync(f.file);
-    db.exec('CREATE TABLE legacy(id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy(value) VALUES("historical"); PRAGMA user_version=10;');
+    db.exec("CREATE TABLE legacy(id INTEGER PRIMARY KEY, value TEXT NOT NULL); INSERT INTO legacy(value) VALUES('historical'); PRAGMA user_version=10;");
     db.close();
     const hash=digest(f.file);
     const result=await checked(f.file);
