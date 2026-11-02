@@ -137,7 +137,16 @@ test('Schema 10 to 11 injected failure rolls back DDL, retains historical data a
   assert.equal(db.prepare('PRAGMA table_info(review_jobs)').all().some(row=>row.name==='target_branch'),false);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations WHERE version=11').get().n,0);
   assert.equal(verifyMigrationBackup(backupPath,10),true);
-  assert.equal(fs.statSync(backupPath).mode & 0o777,0o600);
+  // On Windows stat.mode is a POSIX compatibility projection, not ACL proof.
+  // POSIX must still enforce 0600; Windows keeps strict backup content/shape.
+  if(process.platform!=='win32')
+    assert.equal(fs.statSync(backupPath).mode & 0o777,0o600);
+  else {
+    const backup=fs.lstatSync(backupPath);
+    assert.equal(backup.isFile(),true);
+    assert.equal(backup.isSymbolicLink(),false);
+    assert.equal(backup.nlink,1);
+  }
   const committed=migrate10To11(db,file);
   assert.equal(committed.to,11);
   assert.equal(db.prepare('SELECT target_branch FROM review_jobs WHERE id=1').get().target_branch,'');
