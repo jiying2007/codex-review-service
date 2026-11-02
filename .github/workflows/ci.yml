@@ -38,7 +38,7 @@ jobs:
 
   compatibility-node22:
     name: Main qualification / Node 22.22.2
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'port/') }}
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +54,7 @@ jobs:
       - run: npm run ci
 
   migration-portability:
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'port/') }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -131,11 +131,11 @@ jobs:
     uses: ./.github/workflows/security.yml
 
   fault-injection:
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'port/') }}
     uses: ./.github/workflows/fault-injection.yml
 
   gitlab-system:
-    if: github.event_name != 'pull_request'
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'port/') }}
     uses: ./.github/workflows/gitlab-system.yml
 
   dependency-review:
