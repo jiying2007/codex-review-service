@@ -55,3 +55,17 @@ test('repository ignores active multi-tenant config and secret files',()=>{
    'deploy/docker/sensor.json','deploy/docker/secrets/'])
    assert.ok(text.includes(item),item);
 });
+
+test('Sensor runbook does not misrepresent disabled notifications or trigger flags as a no-model switch',()=>{
+ const sensor=JSON.parse(fs.readFileSync('deploy/docker/sensor.config.example.json','utf8'));
+ const guide=fs.readFileSync('docs/MULTI_GITLAB.zh-CN.md','utf8');
+ assert.equal(sensor.review.triggerAssignment.mode,'always');
+ assert.equal(sensor.notifications.enabled,false);
+ assert.match(guide,/notifications\.enabled=false[^\n]*不代表模型不会调用/);
+ assert.match(guide,/triggerOnOpen[^\n]*triggerOnPush[^\n]*triggerOnReopen[^\n]*false/);
+ assert.match(guide,/source_branch[^\n]*target_branch/);
+ assert.match(guide,/\/codex review/);
+ assert.match(guide,/不要执行[^\n]*docker compose up/);
+ assert.match(guide,/multi-gitlab-preflight\.js/);
+ assert.match(guide,/不是产品内新增的强制无模型开关/);
+});
