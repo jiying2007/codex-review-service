@@ -3,9 +3,19 @@
 
 const admin=require('./admin');
 function output(value){process.stdout.write(`${JSON.stringify(value,null,2)}\n`);}
-function usage(){throw admin.adminError('Usage: node src/admin-cli.js <status|jobs|publications|notifications|retry-publication ID|retry-notification ID|resolve-finding ID RESOLUTION [NOTE]|resolution-metrics [SINCE]|drain [SECONDS]|reconcile|smoke-feishu-card ROUTE [--send]|db-check|backup PATH|backup-verify PATH|restore-check PATH|diagnostics>');}
+function usage(){throw admin.adminError('Usage: node src/admin-cli.js <status|jobs|publications|publication-evidence PROJECT_ID MR_IID|publication-evidence-live PROJECT_ID MR_IID|notifications|retry-publication ID|retry-notification ID|resolve-finding ID RESOLUTION [NOTE]|resolution-metrics [SINCE]|drain [SECONDS]|reconcile|smoke-feishu-card ROUTE [--send]|db-check|backup PATH|backup-verify PATH|restore-check PATH|diagnostics>');}
 async function main(argv=process.argv.slice(2)){
   const [command,arg,arg2,...rest]=argv;
+  if(command==='publication-evidence'||command==='publication-evidence-live'){
+    try{
+      if(!arg||!arg2||rest.length)throw admin.adminError('publication-evidence requires exactly PROJECT_ID and MR_IID','EADMININPUT');
+      const result=command==='publication-evidence-live'?await admin.publicationEvidenceLive(arg,arg2):admin.publicationEvidence(arg,arg2);output(result);process.exitCode=result.decision==='blocked'?2:3;
+    }catch(error){
+      const allowed=new Set(['EADMININPUT','ECONFIGFILE','EDBSCHEMA','EPUBLICATIONEVIDENCE','EGITLABHTTP','EGITLABNETWORK']);
+      output({...admin.evidenceBase(),decision:'error',errorCode:allowed.has(error?.code)?error.code:'EPUBLICATIONEVIDENCE'});process.exitCode=1;
+    }
+    return;
+  }
   if(command==='reconcile')return output(await admin.reconcile());
   if(command==='smoke-feishu-card'){if(!arg||(arg2&&arg2!=='--send'))usage();return output(await admin.smokeFeishuCard(arg,{send:arg2==='--send'}));}
   if(['backup-verify','restore-check'].includes(command)){if(!arg)usage();const result=admin.verifyDatabase(arg);output(result);if(!result.compatible)process.exitCode=2;return;}

@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.6.2** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 9 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.6.3** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 11 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real pro
 
 ## Config Schema 8 + Model Routing Contract v1 boundary
 
-Service 7.4.3 keeps Config Schema 7 and Runtime/Provider Contract v3 while adding bounded structured/external response handling. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account Family or Codex runtime; explicit provider fields remain advanced overrides. Runtime does not translate older Config Schema versions. The Service 7.2.0 Config Schema 5 -> 6 responsibility-notification boundary and the prior `review.incrementalReviewEnabled` retirement remain historical upgrade boundaries.
+Service 7.6.3 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Current configuration must set `schemaVersion: 8`; runtime does not translate older configurations, and `codex.model`/`codex.fastModel` are retired. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account's machine runtime. `codex.credentialSource` supports `auto|env|auth-json`; `codex.allowInsecureHttp` defaults to `false`, and explicit non-loopback HTTP overrides require operator authorization for a trusted relay. Historical configuration boundaries are listed under Upgrade and rollback.
 
 The quality surface is now:
 
@@ -104,7 +104,7 @@ cd /opt/codex-review-service
 sudo -u codex-review /usr/bin/node --env-file=/etc/codex-review-service.env src/doctor.js
 ```
 
-Doctor validates product/config identity, SQLite Schema 9/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
+Doctor validates product/config identity, SQLite Schema 11/integrity, Codex Runtime, GitLab version/profile and complete Project/Group scope.
 
 ## Start and health
 
@@ -173,9 +173,9 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Service 7.5.5 introduced Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced the historical **Config Schema 5 -> 6** responsibility identity boundary, and Service 7.0.0 introduced the historical **Config Schema 4 -> 5** boundary and retired `review.incrementalReviewEnabled`. Runtime translates none of these configuration versions.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Current Service 7.6.3 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Historically, Service 7.5.5 introduced Config Schema 7 -> 8 and retired `codex.model`/`codex.fastModel`; Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced Config Schema 5 -> 6 responsibility identity, and Service 7.0.0 introduced Config Schema 4 -> 5 and retired `review.incrementalReviewEnabled`. Runtime translates none of these historical configuration versions.
 
-The historic Database Schema 9 -> 6, 6 -> 7, and 7 -> 8 startup migrations remain explicit and tested. Schema 8 -> 9 creates and verifies a Schema 8 backup before adding Finding Claim projection and lifecycle state. Rollback requires restoring the backup matching the target release; do not attempt an in-place Schema 9 downgrade.
+Historical Database Schema 5 -> 6, 6 -> 7, 7 -> 8 and 8 -> 9 migrations remain explicit and tested; 8 -> 9 introduced Finding Claim projection and lifecycle state. Schema 9 -> 10 adds the status-write attempt and uncertainty ledger with verified backups and transactional migration. The current database version is 11. Rollback must preserve the current uncertainty ledger, control outstanding remote writes and restore a backup matching the target release; in-place downgrade is unsupported. See [Storage and migrations](STORAGE_AND_MIGRATIONS.md).
 
 Upgrade sequence:
 

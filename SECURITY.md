@@ -2,9 +2,9 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.6.2** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.6.3** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 9, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 11, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 
@@ -62,9 +62,9 @@ Codex runs with the exact Safe Core capability contract, bounded output/time, re
 
 ## Storage, backup, migration and rollback
 
-The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 9.
+The Admin CLI is the supported mutation boundary. Current backup acceptance requires `quick_check=ok`, zero foreign-key violations and exact Database Schema 11.
 
-The historical **Schema 5 -> 6**, **Schema 6 -> 7**, and **Schema 7 -> 8** database migrations remain explicit and tested. **Schema 8 -> 9** adds Finding Claim projection and immutable lifecycle state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. Config Schema 6 -> 7 is the historical Provider Contract hard cut; Config Schema 7 -> 8 is the Model Routing Contract v1 hard cut that retires `codex.model`/`codex.fastModel`. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
+The historical **Schema 5 -> 6**, **Schema 6 -> 7**, and **Schema 7 -> 8** database migrations remain explicit and tested. **Schema 8 -> 9** adds Finding Claim projection and immutable lifecycle state with the same source-integrity, mode-0600 verified-backup, transactional-DDL and post-migration verification boundary. **Schema 9 -> 10** adds durable status-write attempts and target uncertainty under the same verified additive migration process; unknown outcomes survive restart, retention and backup, and rollback must preserve their ledger and control outstanding remote writes. Config Schema 6 -> 7 is the historical Provider Contract hard cut; Config Schema 7 -> 8 is the Model Routing Contract v1 hard cut that retires `codex.model`/`codex.fastModel`. Any DB/Config schema change requires explicit migration fixtures and a documented rollback boundary.
 
 Service 7.0.0 introduced a Config Schema 4 -> 5 configuration hard cut; Service 7.2.0 introduced Config Schema 5 -> 6; Service 7.3.0 introduced Config Schema 6 -> 7; Service 7.5.5 introduced Config Schema 7 -> 8. Rollback to an older configuration schema requires restoring the matching release configuration. Never assume an older binary can translate a newer configuration or irreversible database schema.
 

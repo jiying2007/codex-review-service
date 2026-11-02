@@ -9,14 +9,22 @@ function verifySignedWebhook(headers,rawBody,config,webhookId,nowMs){const times
 function classicWebhookId(headers,rawBody){const event=String(headers['x-gitlab-event']||'unknown').trim().slice(0,128);return`classic:${event}:${crypto.createHash('sha256').update(String(rawBody)).digest('hex')}`;}
 function verifyClassicWebhook(headers,rawBody,config){const token=String(headers['x-gitlab-token']||'').trim();if(!token)return{ok:false,reason:'missing_classic_token'};if(!safeEqual(token,config.webhookSigningToken))return{ok:false,reason:'bad_classic_token'};return{ok:true,webhookId:classicWebhookId(headers,rawBody),mode:'classic-token'};}
 function verifyWebhook(headers,rawBody,config,nowMs=Date.now()){
-  if(config.webhookAuthMode==='classic-token')return verifyClassicWebhook(headers,rawBody,config);
+  if(config.webhookAuthMode==='classic-token'){
+    // Older GitLab releases may not send an instance header. A header that is
+    // present must never identify another tenant, even with a valid token.
+    if(headers['x-gitlab-instance']){
+      const instance=verifyInstance(headers,config);
+      if(!instance.ok)return instance;
+    }
+    return verifyClassicWebhook(headers,rawBody,config);
+  }
   const webhookId=String(headers['webhook-id']||headers['idempotency-key']||headers['x-gitlab-event-uuid']||'').trim();if(!webhookId)return{ok:false,reason:'missing_webhook_id'};if(webhookId.length>255||/[\r\n\0]/.test(webhookId))return{ok:false,reason:'invalid_webhook_id'};const instance=verifyInstance(headers,config);if(!instance.ok)return instance;return verifySignedWebhook(headers,rawBody,config,webhookId,nowMs);
 }
 function normalizeEvent(payload,headers,config){
   const event=String(headers['x-gitlab-event']||payload.event_type||payload.object_kind||'unknown'),projectId=Number(payload.project?.id||payload.project_id||0)||null,projectAllowed=Boolean(projectId&&config.gitlabProjectAllowlist.has(projectId));
   if(payload.object_kind==='merge_request'){
-    const attrs=payload.object_attributes||{},iid=Number(attrs.iid||0)||null,action=String(attrs.action||''),headSha=String(attrs.last_commit?.id||attrs.diff_refs?.head_sha||attrs.sha||'').trim(),baseSha=String(attrs.diff_refs?.base_sha||'').trim(),startSha=String(attrs.diff_refs?.start_sha||'').trim(),sourceBranch=String(attrs.source_branch||'').trim(),codeUpdate=action==='update'&&typeof attrs.oldrev==='string'&&attrs.oldrev.length>0,assignments=currentAssignments(payload,attrs),eligible=assignmentMatch(assignments,config.triggerAssignment),assignmentUpdate=action==='update'&&assignmentChangeRelevant(payload.changes,config.triggerAssignment?.mode||'reviewer'),shouldReview=projectAllowed&&iid&&eligible&&((action==='open'&&config.triggerOnOpen)||(action==='reopen'&&config.triggerOnReopen)||(codeUpdate&&config.triggerOnPush)||assignmentUpdate);
-    return{event,kind:'merge_request',projectId,iid,action,headSha,baseSha,startSha,sourceBranch,shouldReview:Boolean(shouldReview),shouldCancel:Boolean(projectAllowed&&iid&&['close','merge'].includes(action)),projectAllowed};
+    const attrs=payload.object_attributes||{},iid=Number(attrs.iid||0)||null,action=String(attrs.action||''),headSha=String(attrs.last_commit?.id||attrs.diff_refs?.head_sha||attrs.sha||'').trim(),baseSha=String(attrs.diff_refs?.base_sha||'').trim(),startSha=String(attrs.diff_refs?.start_sha||'').trim(),sourceBranch=String(attrs.source_branch||'').trim(),targetBranch=String(attrs.target_branch||'').trim(),targetUpdate=action==='update'&&Object.hasOwn(payload.changes||{},'target_branch'),sourceUpdate=action==='update'&&Object.hasOwn(payload.changes||{},'source_branch'),codeUpdate=action==='update'&&typeof attrs.oldrev==='string'&&attrs.oldrev.length>0,assignments=currentAssignments(payload,attrs),eligible=assignmentMatch(assignments,config.triggerAssignment),assignmentUpdate=action==='update'&&assignmentChangeRelevant(payload.changes,config.triggerAssignment?.mode||'reviewer'),shouldReview=projectAllowed&&iid&&eligible&&((action==='open'&&config.triggerOnOpen)||(action==='reopen'&&config.triggerOnReopen)||(codeUpdate&&config.triggerOnPush)||assignmentUpdate||targetUpdate||sourceUpdate);
+    return{event,kind:'merge_request',projectId,iid,action,headSha,baseSha,startSha,sourceBranch,targetBranch,targetUpdate,sourceUpdate,shouldReview:Boolean(shouldReview),shouldCancel:Boolean(projectAllowed&&iid&&['close','merge'].includes(action)),projectAllowed};
   }
   if(payload.object_kind==='note'&&payload.merge_request){
     const attrs=payload.object_attributes||{},author=String(payload.user?.username||'').trim(),userId=Number(payload.user?.id||attrs.author_id||0)||null,note=String(attrs.note||'').trim(),action=String(attrs.action||''),iid=Number(payload.merge_request?.iid||0)||null,command=action==='create'&&/^\/codex\s+review\s*$/i.test(note),self=Boolean(config.botUsername)&&author.toLowerCase()===config.botUsername.toLowerCase();

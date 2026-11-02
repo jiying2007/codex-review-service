@@ -8,7 +8,7 @@ test('SQLite remains the single shipped backend behind an explicit replacement b
   const caps=storageCapabilities();
   assert.equal(caps.backend,'sqlite');
   assert.equal(caps.migrations,true);
-  assert.equal(caps.currentSchemaVersion,6);
+  assert.equal(caps.currentSchemaVersion,require('../src/db').SCHEMA_VERSION);
   assert.equal(caps.multiControllerHa,false);
   assert.equal(caps.replacementBoundary,'createStorage');
 });

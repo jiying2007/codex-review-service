@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const { migrateDatabase, migrate7To8, migrate8To9, integrityCheck, verifyMigrationBackup, CURRENT_SCHEMA_VERSION } = require('../src/db-migrations');
+const { migrateDatabase, migrate7To8, migrate8To9, migrate10To11, integrityCheck, verifyMigrationBackup, CURRENT_SCHEMA_VERSION } = require('../src/db-migrations');
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-db5-'));
@@ -42,7 +42,7 @@ function fixture() {
   return { dir, file };
 }
 
-test('Schema 5 migrates transactionally through 9 with verified backups and preserved data', () => {
+test('Schema 5 migrates transactionally through 11 with verified backups and preserved data', () => {
   const { dir, file } = fixture();
   const db = new DatabaseSync(file);
   try {
@@ -58,7 +58,7 @@ test('Schema 5 migrates transactionally through 9 with verified backups and pres
     finally { backup.close(); }
     assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='finding_resolutions'").get().count, 1);
     assert.equal(db.prepare("SELECT COUNT(*) count FROM sqlite_master WHERE type='table' AND name='flow_state'").get().count, 1);
-    assert.deepEqual(result.applied.map(step => [step.from, step.to]), [[5,6],[6,7],[7,8],[8,9]]);
+    assert.deepEqual(result.applied.map(step => [step.from, step.to]), [[5,6],[6,7],[7,8],[8,9],[9,10],[10,11]]);
     assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=6').get().version, 6);
     assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=7').get().version, 7);
     assert.equal(db.prepare('SELECT version FROM schema_migrations WHERE version=8').get().version, 8);
@@ -107,4 +107,48 @@ test('Schema 7 to 8 migration creates indexed status-card and aggregation state 
 
 test('Schema 8 to 9 migration adds claim projection and preserves legacy findings',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-db8-')),file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);try{db.exec("CREATE TABLE review_runs(id INTEGER PRIMARY KEY);CREATE TABLE review_findings(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,severity TEXT NOT NULL,category TEXT NOT NULL,file TEXT NOT NULL,line INTEGER NOT NULL,end_line INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,suggestion TEXT NOT NULL,confidence REAL NOT NULL,discussion_id TEXT,side TEXT NOT NULL DEFAULT 'new',anchor_hash TEXT NOT NULL DEFAULT '',UNIQUE(run_id,fingerprint));INSERT INTO review_runs(id) VALUES(1);INSERT INTO review_findings(run_id,fingerprint,severity,category,file,line,end_line,title,description,suggestion,confidence) VALUES(1,'legacy','high','correctness','a.c',1,1,'t','d','',1);CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT '');PRAGMA user_version=8;");const result=migrate8To9(db,file);assert.equal(result.to,9);const finding=db.prepare('SELECT claim_state,claim_fingerprint FROM review_findings WHERE id=1').get();assert.equal(finding.claim_state,'legacy');assert.equal(finding.claim_fingerprint,'');assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='finding_claim_projection'").get().name,'finding_claim_projection');assert.equal(verifyMigrationBackup(result.backupPath,8),true);}finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}});
 
-test('Store startup accepts Schema 8 and routes it through the verified migration plan',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-store-db8-')),file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);db.exec("CREATE TABLE review_runs(id INTEGER PRIMARY KEY);CREATE TABLE review_findings(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,severity TEXT NOT NULL,category TEXT NOT NULL,file TEXT NOT NULL,line INTEGER NOT NULL,end_line INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,suggestion TEXT NOT NULL,confidence REAL NOT NULL,discussion_id TEXT,side TEXT NOT NULL DEFAULT 'new',anchor_hash TEXT NOT NULL DEFAULT '',UNIQUE(run_id,fingerprint));CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT '');PRAGMA user_version=8;");db.close();const {Store}=require('../src/db'),store=new Store(file);try{assert.equal(store.schemaVersion(),9);assert.equal(store.lastMigration.from,8);assert.equal(store.lastMigration.to,9);assert.equal(store.lastMigration.applied.length,1);assert.equal(verifyMigrationBackup(store.lastMigration.applied[0].backupPath,8),true);}finally{store.close();fs.rmSync(dir,{recursive:true,force:true});}});
+test('Store startup accepts Schema 8 and routes it through the verified migration plan',()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-store-db8-')),file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);db.exec("CREATE TABLE review_jobs(id INTEGER PRIMARY KEY,source_branch TEXT NOT NULL DEFAULT '');CREATE TABLE review_runs(id INTEGER PRIMARY KEY);CREATE TABLE review_findings(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,severity TEXT NOT NULL,category TEXT NOT NULL,file TEXT NOT NULL,line INTEGER NOT NULL,end_line INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,suggestion TEXT NOT NULL,confidence REAL NOT NULL,discussion_id TEXT,side TEXT NOT NULL DEFAULT 'new',anchor_hash TEXT NOT NULL DEFAULT '',UNIQUE(run_id,fingerprint));CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT '');PRAGMA user_version=8;");db.close();const {Store}=require('../src/db'),store=new Store(file);try{assert.equal(store.schemaVersion(),CURRENT_SCHEMA_VERSION);assert.equal(store.lastMigration.from,8);assert.equal(store.lastMigration.to,CURRENT_SCHEMA_VERSION);assert.equal(store.lastMigration.applied.length,3);assert.equal(verifyMigrationBackup(store.lastMigration.applied[0].backupPath,8),true);}finally{store.close();fs.rmSync(dir,{recursive:true,force:true});}});
+
+test('Schema 10 migration preserves old rows without falsely backfilling target branch',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-db10-target-'));
+ const file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);
+ try{
+  db.exec("CREATE TABLE review_jobs(id INTEGER PRIMARY KEY,source_branch TEXT NOT NULL DEFAULT ''); INSERT INTO review_jobs(id,source_branch) VALUES(1,'feature'); CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT ''); PRAGMA user_version=10;");
+  const migration=migrate10To11(db,file);
+  assert.equal(migration.from,10);
+  assert.equal(migration.to,11);
+  assert.equal(Number(db.prepare('PRAGMA user_version').get().user_version),11);
+  assert.deepEqual({...db.prepare('SELECT source_branch,target_branch FROM review_jobs WHERE id=1').get()},{source_branch:'feature',target_branch:''});
+  assert.equal(verifyMigrationBackup(migration.backupPath,10),true);
+ }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('Schema 10 to 11 injected failure rolls back DDL, retains historical data and a verified backup',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'codex-review-db10-injected-'));
+ const file=path.join(dir,'review-service.sqlite'),db=new DatabaseSync(file);
+ let backupPath='';
+ try{
+  db.exec("CREATE TABLE review_jobs(id INTEGER PRIMARY KEY,source_branch TEXT NOT NULL DEFAULT ''); INSERT INTO review_jobs(id,source_branch) VALUES(1,'legacy-feature'); CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at TEXT NOT NULL,backup_path TEXT NOT NULL DEFAULT ''); PRAGMA user_version=10;");
+  assert.throws(()=>migrate10To11(db,file,{
+   afterDdl(info){backupPath=info.backupPath;throw new Error('injected cut between DDL and commit');}
+  }),error=>error?.code==='EDBMIGRATION');
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version,10);
+  assert.equal(db.prepare('SELECT source_branch FROM review_jobs WHERE id=1').get().source_branch,'legacy-feature');
+  assert.equal(db.prepare('PRAGMA table_info(review_jobs)').all().some(row=>row.name==='target_branch'),false);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM schema_migrations WHERE version=11').get().n,0);
+  assert.equal(verifyMigrationBackup(backupPath,10),true);
+  // On Windows stat.mode is a POSIX compatibility projection, not ACL proof.
+  // POSIX must still enforce 0600; Windows keeps strict backup content/shape.
+  if(process.platform!=='win32')
+    assert.equal(fs.statSync(backupPath).mode & 0o777,0o600);
+  else {
+    const backup=fs.lstatSync(backupPath);
+    assert.equal(backup.isFile(),true);
+    assert.equal(backup.isSymbolicLink(),false);
+    assert.equal(backup.nlink,1);
+  }
+  const committed=migrate10To11(db,file);
+  assert.equal(committed.to,11);
+  assert.equal(db.prepare('SELECT target_branch FROM review_jobs WHERE id=1').get().target_branch,'');
+ }finally{db.close();fs.rmSync(dir,{recursive:true,force:true});}
+});

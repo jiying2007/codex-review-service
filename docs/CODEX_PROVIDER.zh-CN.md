@@ -1,6 +1,6 @@
 # Codex Provider 与中转站配置
 
-Codex Review Service 7.4.0 使用 Codex Safe Core 4.13.0 Runtime/Provider Contract v3。正常路径是 **Auto**：只要 Service 操作系统用户、隔离 Runner 用户或容器里的 `codex` 已经可用，Review Service 就直接复用这台机器的 Runtime，不再要求重复填写中转站 URL。
+Codex Review Service 7.6.2 使用 Codex Safe Core 4.18.1 Runtime/Provider Contract v3。正常路径是 **Auto**：只要 Service 操作系统用户、隔离 Runner 用户或容器里的 `codex` 已经可用，Review Service 就直接复用这台机器的 Runtime，不再要求重复填写中转站 URL。
 
 ## Runtime Contract v3 — 零配置
 
@@ -22,7 +22,7 @@ Provider 凭据仍来自 Provider 指定的环境变量或 Codex `auth.json`。S
 
 ## 高级显式覆盖
 
-只有当本 Service 实例确实需要和机器 Codex Runtime 不同时才使用显式覆盖：
+只有当本 Service 实例确实需要和机器 Codex Runtime 不同时才使用显式覆盖。将以下 `codex` 对象合并到基于 `config.example.json` 的当前 Config Schema 8 文件中；这是配置片段，不是完整配置文件：
 
 ```json
 {

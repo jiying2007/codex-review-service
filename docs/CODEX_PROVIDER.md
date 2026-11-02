@@ -1,6 +1,6 @@
 # Codex Provider and Relay Configuration
 
-Codex Review Service 7.4.0 consumes Codex Safe Core 4.13.0 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
+Codex Review Service 7.6.2 consumes Codex Safe Core 4.18.1 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
 
 ## Runtime Contract v3 — zero-config
 
@@ -22,7 +22,7 @@ HTTPS remains preferred. A literal private-IP HTTP relay already present in mach
 
 ## Advanced explicit override
 
-Use an explicit override only when this Service instance intentionally differs from the machine Codex runtime:
+Use an explicit override only when this Service instance intentionally differs from the machine Codex runtime. Merge this `codex` object into the current Config Schema 8 file based on `config.example.json`; it is a configuration fragment, not a standalone file:
 
 ```json
 {

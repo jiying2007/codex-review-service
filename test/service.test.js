@@ -20,7 +20,7 @@ test('retry classifier protects non-retryable safety failures',()=>{assert.equal
 test('draft detection accepts both GitLab fields',()=>{assert.equal(isDraft({draft:true}),true);assert.equal(isDraft({work_in_progress:true}),true);assert.equal(isDraft({draft:false,work_in_progress:false}),false);});
 test('reconcile enqueue uses the same Reviewer assignment policy as webhooks',()=>{const enqueued=[],service=new ReviewService({config:config({triggerAssignment:{mode:'reviewer',userIds:[8]}}),store:{enqueue:value=>(enqueued.push(value),1)},gitlab:{},logger:{}}),base=mr();assert.equal(service.enqueueHydratedMr(7,{...base,assignees:[{id:8}],reviewers:[]}),null);assert.equal(service.enqueueHydratedMr(7,{...base,assignees:[],reviewers:[{id:8}]}),1);assert.equal(enqueued.length,1);});
 
-test('review run and GitLab publication plan are persisted separately',async()=>{const db=tempStore();const currentMr=mr();const gitlab={getMergeRequest:async()=>currentMr,getProjectMember:async()=>({access_level:40}),resolveStatusPipeline:async()=>123,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@ fn\n-old\n+new'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true,reason:'complete'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],bytes:0,complete:true}),runCodexFn:async()=>({version:'test',model:'model-x',usage:{inputTokens:100,outputTokens:20},parsed:{findings:[{severity:'high',category:'correctness',file:'a.js',side:'new',line:1,endLine:1,title:'Regression',description:'The new line regresses behavior.',suggestion:'Fix it.',confidence:0.95}]}})});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());assert.equal(db.store.getJob(id).status,'blocked');const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.input_tokens,100);assert.equal(run.output_tokens,20);assert.equal(run.codex_model,'model-x');const actions=outbox(db.store);assert.deepEqual(actions.map(a=>a.action_type),['status','summary','finding','status']);assert.equal(actions[0].payload.state,'running');assert.equal(actions.at(-1).payload.state,'failed');assert.equal(actions.at(-1).payload.pipelineId,123);}finally{db.close();}});
+test('review run and GitLab publication plan are persisted separately',async()=>{const db=tempStore();const currentMr=mr();const gitlab={getMergeRequest:async()=>currentMr,getProjectMember:async()=>({access_level:40}),resolveStatusPipeline:async()=>123,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@ fn\n-old\n+new'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true,reason:'complete'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],bytes:0,complete:true}),runCodexFn:async()=>({version:'test',model:'model-x',usage:{inputTokens:100,outputTokens:20},parsed:{findings:[{severity:'high',category:'correctness',file:'a.js',side:'new',line:1,endLine:1,title:'Regression',description:'The new line regresses behavior.',suggestion:'Fix it.',confidence:0.95}]}})});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());assert.equal(db.store.getJob(id).status,'blocked');const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.input_tokens,100);assert.equal(run.output_tokens,20);assert.equal(run.codex_model,'model-x');const actions=outbox(db.store);assert.deepEqual(actions.map(a=>a.action_type),['status','summary','finding','status']);for(const action of actions){assert.equal(action.payload.snapshotIdentityVersion,1);assert.equal(action.payload.sourceProjectId,7);assert.equal(action.payload.targetProjectId,7);assert.equal(action.payload.sourceBranch,'feat');assert.equal(action.payload.targetBranch,'main');assert.equal(action.payload.baseSha,BASE_SHA);}assert.equal(actions[0].payload.state,'running');assert.equal(actions.at(-1).payload.state,'failed');assert.equal(actions.at(-1).payload.pipelineId,123);}finally{db.close();}});
 
 test('fork MR final status is planned for source project and pipeline',async()=>{const db=tempStore();const currentMr=mr({source_project_id:99,source_branch:'fork-feature'});const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>456,listMergeRequestDiffs:async()=>({complete:true,items:[]}),validateMergeRequestDiffCoverage:async()=>({complete:true,reason:'complete'})};const service=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{throw new Error('should not run');}});try{db.store.enqueue({projectId:7,mrIid:9,baseSha:'b',startSha:'s',headSha:'h',sourceBranch:'fork-feature',trigger:'open',dedupeKey:'snapshot:s:h',maxQueueDepth:10});await service.processJob(db.store.claimNext());const statuses=outbox(db.store).filter(a=>a.action_type==='status');assert.equal(statuses.length,2);for(const status of statuses){assert.equal(status.payload.statusProjectId,99);assert.equal(status.payload.pipelineId,456);assert.equal(status.payload.ref,'fork-feature');}}finally{db.close();}});
 
@@ -31,3 +31,67 @@ test('MR token budget blocks the next Core evidence chunk before Codex execution
 test('fresh review never carries historical model findings into a new run',async()=>{const db=tempStore();const previousHead='e'.repeat(40),currentHead='f'.repeat(40),currentMr=mr({diff_refs:{base_sha:BASE_SHA,start_sha:START_SHA,head_sha:currentHead}}),p=policy();const oldJob=db.store.enqueue({projectId:7,mrIid:9,baseSha:BASE_SHA,startSha:START_SHA,headSha:previousHead,sourceBranch:'feat',trigger:'open',dedupeKey:'event:old',maxQueueDepth:10}),oldReview={verdict:'needs_attention',summary:'old',coverageComplete:true,codexVersion:'test',codexModel:'model',chunkCount:1,rejectedFindingCount:0,truncatedFindingCount:0,usage:{inputTokens:100,outputTokens:10},findings:[{fingerprint:'carry-fp',severity:'medium',category:'correctness',file:'b.js',side:'new',line:1,endLine:1,title:'Historical issue',description:'Historical judgment only.',suggestion:'Fix it.',confidence:.95,anchorHash:'anchor-b'}]};db.store.saveRunWithOutbox(oldJob,oldReview,1,p,[]);db.store.finishJob(oldJob,'needs_attention');const fullItems=[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-old-a\n+new-a'},{old_path:'b.js',new_path:'b.js',diff:'@@ -1 +1 @@\n-old-b\n+new-b'}],gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:fullItems}),validateMergeRequestDiffCoverage:async()=>({complete:true})};let calls=0,promptText='';const reviewService=new ReviewService({config:config(),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>p,contextFn:async()=>({blocks:[],bytes:0,complete:true}),runCodexFn:async prompt=>{calls++;promptText+=prompt;return{version:'test',model:'model',usage:{inputTokens:20,outputTokens:2},parsed:{findings:[]}};}});try{const id=db.store.enqueue({projectId:7,mrIid:9,baseSha:BASE_SHA,startSha:START_SHA,headSha:currentHead,sourceBranch:'feat',trigger:'update',dedupeKey:'event:new',maxQueueDepth:10});await reviewService.processJob(db.store.claimNext());assert.ok(calls>=1);assert.match(promptText,/a\.js/);assert.match(promptText,/b\.js/);const run=db.store.db.prepare('SELECT * FROM review_runs WHERE job_id=?').get(id);assert.equal(run.finding_count,0);assert.equal(db.store.db.prepare('SELECT COUNT(*) n FROM review_findings WHERE run_id=? AND fingerprint=?').get(run.id,'carry-fp').n,0);}finally{db.close();}});
 
 test('review processing persists status-card create and final update actions',async()=>{const db=tempStore(),currentMr=mr({title:'Status card'}),route={name:'team',provider:'feishu_app',secretRef:'team',statusCard:true,projectIds:[7],events:['review.completed'],branches:[],severities:[],authors:[],reviewers:[],language:'zh-CN',diagnosticsUrl:''},gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:[]}),validateMergeRequestDiffCoverage:async()=>({complete:true})},service=new ReviewService({config:config({notificationEnabled:true,notificationRoutesResolved:[route],notificationEvents:['review.completed'],notificationTopFindings:3}),store:db.store,gitlab,logger:{info(){},warn(){},error(){}},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>({version:'test',model:'model',usage:{},parsed:{findings:[]}})});try{const id=db.store.enqueue({projectId:7,mrIid:9,headSha:'h',sourceBranch:'feat',trigger:'open',dedupeKey:'status-e2e',maxQueueDepth:10});await service.processJob(db.store.claimNext());const rows=db.store.db.prepare('SELECT event_type,payload_json FROM notification_outbox ORDER BY id').all();assert.deepEqual(rows.map(row=>row.event_type),['review.started','review.completed']);assert.equal(JSON.parse(rows[1].payload_json)._statusCardOperation,'update');assert.equal(db.store.reviewStatusCard(id,'team').status,'pending');}finally{db.close();}});
+
+test('same-SHA retarget changes reconcile generation and aborts old active job',()=>{
+ const entries=[],service=new ReviewService({config:config(),store:{enqueue:entry=>(entries.push(entry),entries.length)},gitlab:{},logger:{}});
+ const original=mr(),retargeted=mr({target_branch:'release'});
+ assert.equal(service.enqueueHydratedMr(7,original),1);
+ assert.equal(service.enqueueHydratedMr(7,retargeted),2);
+ assert.notEqual(entries[0].dedupeKey,entries[1].dedupeKey);
+ let aborted=false;
+ service.active.set(service.key(7,9),{headSha:HEAD_SHA,startSha:START_SHA,targetBranch:'main',controller:{abort:()=>aborted=true}});
+ service.handleEvent({projectAllowed:true,shouldReview:true,shouldCancel:false,kind:'merge_request',projectId:7,iid:9,action:'update',targetBranch:'release',startSha:START_SHA,headSha:HEAD_SHA,sourceBranch:'feat'},'retarget-webhook');
+ assert.equal(aborted,true);
+ assert.equal(entries.length,3);
+});
+
+test('same-head reconciliation is a different generation after base SHA or source-branch drift',()=>{
+ const enqueued=[],service=new ReviewService({config:config(),store:{enqueue:item=>(enqueued.push(item),enqueued.length)},gitlab:{},logger:{}});
+ const first=mr(),movedBase=mr({diff_refs:{...first.diff_refs,base_sha:'e'.repeat(40)}}),movedSource=mr({source_branch:'other'});
+ service.enqueueHydratedMr(7,first);
+ service.enqueueHydratedMr(7,movedBase);
+ service.enqueueHydratedMr(7,movedSource);
+ assert.equal(enqueued.length,3);
+ assert.equal(new Set(enqueued.map(item=>item.dedupeKey)).size,3);
+ let interrupted=false;
+ service.active.set(service.key(7,9),{headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,sourceBranch:'feat',targetBranch:'main',controller:{abort:()=>interrupted=true}});
+ service.enqueueHydratedMr(7,movedBase);
+ assert.equal(interrupted,true,'base_sha changed even when HEAD is unchanged');
+});
+
+test('publication precommit rejects retargets with identical head and start SHAs',async()=>{
+ const original=mr(),freeze={
+  projectId:7,sourceProjectId:7,targetProjectId:7,iid:9,
+  headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,
+  sourceBranch:'feat',targetBranch:'main'
+ };
+ let current=original,reads=0;
+ const service=new ReviewService({config:config(),store:{},gitlab:{getMergeRequest:async()=>{reads++;return current;}},logger:{}});
+ const job={project_id:7,mr_iid:9};
+ await assert.doesNotReject(()=>service.assertCurrentSnapshot(job,freeze));
+ for(const changed of [
+  {target_branch:'release'},
+  {source_branch:'different'},
+  {source_project_id:8},
+  {target_project_id:8},
+  {diff_refs:{...original.diff_refs,base_sha:'e'.repeat(40)}},
+  {diff_refs:{...original.diff_refs,start_sha:'e'.repeat(40)}},
+  {diff_refs:{...original.diff_refs,head_sha:'e'.repeat(40)}},
+  {state:'closed'},
+  {draft:true},
+  {sha:'e'.repeat(40)}
+ ]){
+  current={...original,...changed};
+  await assert.rejects(()=>service.assertCurrentSnapshot(job,freeze),error=>error.code==='ESUPERSEDED',JSON.stringify(changed));
+ }
+ assert.equal(reads,11);
+});
+test('precommit snapshot requires complete frozen MR and provider identities',async()=>{
+ const current=mr(),job={project_id:7,mr_iid:9};
+ const service=new ReviewService({config:config(),store:{},gitlab:{getMergeRequest:async()=>current},logger:{}});
+ for(const field of ['iid','sourceProjectId','targetProjectId','headSha','startSha','baseSha','sourceBranch','targetBranch']){
+  const complete={iid:9,sourceProjectId:7,targetProjectId:7,headSha:HEAD_SHA,startSha:START_SHA,baseSha:BASE_SHA,sourceBranch:'feat',targetBranch:'main'};
+  delete complete[field];
+  await assert.rejects(()=>service.assertCurrentSnapshot(job,complete),error=>error.code==='ESUPERSEDED',field);
+ }
+});

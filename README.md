@@ -10,8 +10,8 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **7.6.2**
-- Database Schema: **9**
+- Service: **7.6.3**
+- Database Schema: **11**
 - Config Schema: **8**
 - Policy Schema: **4**
 - Review Receipt: **5**
@@ -51,7 +51,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-7.6.2.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-7.6.3.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
@@ -70,7 +70,7 @@ OPENAI_API_KEY_FILE=/etc/codex-review/secrets/openai-api-key   # optional
 
 For an OpenAI-compatible relay, Runtime v3 normally reuses the Service account/container Family/Codex runtime and credential source. Use explicit `codex.provider*` fields only as advanced overrides. See [Codex Provider and Relay Configuration](docs/CODEX_PROVIDER.md).
 
-Configure `schemaVersion: 7`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
+Configure `schemaVersion: 8`, `gitlab.baseUrl`, `gitlab.projects` and/or `gitlab.groups`, then validate:
 
 ```bash
 cd /opt/codex-review-service
@@ -144,8 +144,12 @@ GitLab remains the Review system of record. SQLite is service durable state. IM 
 One instance can manage explicit Projects, a Group hierarchy, or both. Group discovery is paginated and fail-closed; incomplete refresh keeps the last complete scope.
 
 ```json
-"projects": [101, 102, 103],
-"groups": [{ "id": 20, "includeSubgroups": true }]
+{
+  "gitlab": {
+    "projects": [101, 102, 103],
+    "groups": [{ "id": 20, "includeSubgroups": true }]
+  }
+}
 ```
 
 **One Service instance is one administrative/security trust domain.** Projects in materially different credential, confidentiality or OpenAI data-policy domains should use separate instances rather than introducing hidden multi-tenant behavior.
@@ -185,7 +189,7 @@ npm run admin -- backup-verify /secure-backup/review.sqlite
 npm run admin -- diagnostics
 ```
 
-Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 9 verification pass.
+Backups use the SQLite online backup API available on both supported Node lines and are rejected unless `quick_check`, foreign-key validation and Schema 11 verification pass.
 
 ## Failure semantics
 
@@ -194,7 +198,7 @@ Review, GitLab publication and IM notification are independent durable failure d
 ## Configuration ownership
 
 ```text
-/etc/codex-review/config.json      non-secret Config Schema 7
+/etc/codex-review/config.json      non-secret Config Schema 8
 /etc/codex-review/secrets/*        protected secret files
 /var/lib/codex-review              SQLite/state
 ```
@@ -226,4 +230,4 @@ MIT
 
 ## GitLab Flow Tracking
 
-Optional Config Schema 7 Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.
+First introduced in Config Schema 7, optional Flow Tracking observes Pipeline terminal transitions, MR lifecycle, Tags and Branch create/delete events and routes them through the existing durable notification outbox. It is deterministic, disabled by default, and never invokes Codex. See `docs/FLOW_TRACKING.md`.
