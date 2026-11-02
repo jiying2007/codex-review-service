@@ -27,8 +27,8 @@ test('operator instructions distinguish read-only cutover from mutating admin DB
 test('non-model advisory rollout does not impersonate merge authority or production signoff',()=>{
   assert.match(runbook,/mergeAuthorized:false/);
   assert.match(runbook,/refTransactionBound:false/);
-  assert.match(runbook,/Bot.*Merge\/Approve/);
+  assert.match(runbook,/没有任何自动 Merge\/Approve 权限/);
   assert.match(runbook,/不要求虚构第二人批准/);
   assert.match(runbook,/禁令明确解除/);
-  assert.match(runbook,/CodeQL.*不适用/);
+  assert.match(runbook,/CodeQL\/构建级签名能力须明确记录为不适用/);
 });
