@@ -19,8 +19,17 @@ async function main(argv=process.argv.slice(2)){
   if(command==='reconcile')return output(await admin.reconcile());
   if(command==='smoke-feishu-card'){if(!arg||(arg2&&arg2!=='--send'))usage();return output(await admin.smokeFeishuCard(arg,{send:arg2==='--send'}));}
   if(['backup-verify','restore-check'].includes(command)){if(!arg)usage();const result=admin.verifyDatabase(arg);output(result);if(!result.compatible)process.exitCode=2;return;}
+  if(command==='db-check'){
+    // Checking an old or missing DB must never open Store(), whose constructor
+    // may apply migrations and alter the very database being inspected.
+    if(arg!==undefined||arg2!==undefined||rest.length)usage();
+    const result=admin.verifyDatabase(admin.requireDbPath());
+    output(result);
+    if(!result.compatible)process.exitCode=2;
+    return;
+  }
   const store=admin.openStore();
-  try{if(command==='status')return output(admin.status(store));if(command==='jobs')return output(admin.rows(store,'review_jobs',arg));if(command==='publications')return output(admin.rows(store,'publication_outbox',arg));if(command==='notifications')return output(admin.rows(store,'notification_outbox',arg));if(command==='retry-publication'){if(!arg)usage();return output(admin.retryTerminal(store,'publication',arg));}if(command==='retry-notification'){if(!arg)usage();return output(admin.retryTerminal(store,'notification',arg));}if(command==='resolve-finding'){if(!arg||!arg2)usage();return output(admin.resolveFinding(store,arg,arg2,rest.join(' ')));}if(command==='resolution-metrics')return output(admin.resolutionMetrics(store,arg||''));if(command==='drain')return output(await admin.drain(store,arg||60));if(command==='db-check')return output(admin.verifyDatabase(admin.requireDbPath()));if(command==='backup'){if(!arg)usage();return output(await admin.createBackup(store,arg));}if(command==='diagnostics')return output(admin.diagnostics(store));return usage();}finally{store.close();}
+  try{if(command==='status')return output(admin.status(store));if(command==='jobs')return output(admin.rows(store,'review_jobs',arg));if(command==='publications')return output(admin.rows(store,'publication_outbox',arg));if(command==='notifications')return output(admin.rows(store,'notification_outbox',arg));if(command==='retry-publication'){if(!arg)usage();return output(admin.retryTerminal(store,'publication',arg));}if(command==='retry-notification'){if(!arg)usage();return output(admin.retryTerminal(store,'notification',arg));}if(command==='resolve-finding'){if(!arg||!arg2)usage();return output(admin.resolveFinding(store,arg,arg2,rest.join(' ')));}if(command==='resolution-metrics')return output(admin.resolutionMetrics(store,arg||''));if(command==='drain')return output(await admin.drain(store,arg||60));if(command==='backup'){if(!arg)usage();return output(await admin.createBackup(store,arg));}if(command==='diagnostics')return output(admin.diagnostics(store));return usage();}finally{store.close();}
 }
 if(require.main===module)main().catch(error=>{process.stderr.write(`${JSON.stringify({error:error.code||'EADMIN',message:error.message})}\n`);process.exitCode=1;});
 module.exports={main};

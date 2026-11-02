@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const contract=require('../product-contract.json');
 const runbook=fs.readFileSync('docs/MULTI_GITLAB.zh-CN.md','utf8');
 test('multi-GitLab operations use current immutable Service and Schema identity',()=>{
-  assert.equal(contract.serviceVersion,'7.6.3');
+  assert.equal(contract.serviceVersion,'7.6.4');
   assert.equal(contract.databaseSchemaVersion,11);
   assert.ok(runbook.includes('v'+contract.serviceVersion));
   assert.ok(runbook.includes('Schema 11'));
@@ -18,8 +18,10 @@ test('operator instructions distinguish read-only cutover from mutating admin DB
   const admin=fs.readFileSync('src/admin-cli.js','utf8');
   const preflight=fs.readFileSync('src/multi-gitlab-cutover-check.js','utf8');
   assert.match(admin,/const store=admin\.openStore\(\)/);
+  assert.ok(admin.indexOf("if(command==='db-check')")<admin.indexOf('const store=admin.openStore()'),'db-check must run before Store');
   assert.match(preflight,/new DatabaseSync\(file,\{readOnly:true\}\)/);
-  assert.match(runbook,/db-check.*可能创建或升级数据库，不是只读命令/);
+  assert.match(runbook,/旧 v7\.6\.3 和更早版本.*可能打开 Store 并迁移数据库/);
+  assert.match(runbook,/v7\.6\.4 起.*只读校验数据库/);
   assert.match(runbook,/multi-gitlab-cutover-check\.js/);
   assert.match(runbook,/停止原 Writer/);
   assert.match(runbook,/9 → 10 → 11/);
