@@ -32,6 +32,21 @@ HTTP 路由只决定内部 Worker，不能代替安全认证。每个 Worker 独
 sensor.config.example.json 默认 review.triggerAssignment = always、projects = [113]、groups = []，notifications.enabled = false。always 仅取消用户指派过滤，不能越过项目白名单、签名、Bot 自触发等安全规则。原 Legacy assignee 用户 ID 8 不应复制给 sensor；若需要新服务器按人员触发，请重新查询新服务器的用户 ID。飞书/企业微信路由和用户身份映射也应单独审核。
 
 
+## 额度保护期：Sensor 只读预检≠启用模型审查
+
+**默认不把 Sensor 的实际 Webhook 接入正在运行的服务。** `deploy/docker/sensor.config.example.json` 是未来经授权启用 Review 的示例，**不是无模型运行配置**：当前 `review.triggerAssignment.mode=always`，`triggerOnOpen/triggerOnPush/triggerOnReopen=true`，收到合法 MR 事件可能创建真正的 Codex 审查任务，消耗模型额度。`notifications.enabled=false` **只关闭通知，不代表模型不会调用**。
+
+**不能仅将三个 `triggerOnOpen`、`triggerOnPush`、`triggerOnReopen` 改成 `false`，就宣称模型调用被完全禁用。** `src/webhook.js` 的实际规则还会因 Reviewer/Assignee 变更、`source_branch` / `target_branch` 更新创建审查任务；有权限的用户发送 `/codex review` Note 也能走手动审查路径。启动后的恢复队列和定期 reconcile 也必须单独评估，不能用关闭通知或关闭新事件代替已有任务的处理控制。
+
+在共享 Codex/Work 额度限制未明确解除前，管理员**只执行不启动 Worker、不投递真实 MR Webhook、不调用模型**的预备动作：
+
+1. 核对 Service v7.6.4 精确发行和 GHCR digest，`docker inspect` 读取旧容器信息（不输出 Env 或 Secret），验证旧实例备份及唯一 Writer。
+2. 在独立暂存环境按经许可的配置/Secret 文件运行 `src/multi-gitlab-preflight.js`：这会对真实 GitLab 执行只读 API 请求，但不运行 Codex。对已存在的、经过授权的 SQLite 副本，使用 `src/multi-gitlab-cutover-check.js` 进行只读 Schema/队列检查。
+3. **不要执行 `docker compose up`、开放 Sensor Webhook、启动 Review Worker、调用 reconcile 或创建可触发审查的真实 MR/Note**；先由现场管理员记录脱敏回执。Legacy 在线服务继续沿用原配置，不得为了测试 Sensor 停止或切换它。
+4. 需要执行真实 Review 时，单独确认授权的模型/额度、项目 Bot 非 Required/无 Merge 权限、备份/回滚和现场维护窗口，再遵循下文 Advisory 验收；这不包含在当前无模型预检范围。
+
+这是一项**操作边界**，而不是产品内新增的强制无模型开关。即使将示例字段设为 false，也不能把正在运行的 Review 服务视作被技术隔离的无模型沙箱。
+
 ## 单人维护分级验收：建议先 Advisory，再启用权威合并门禁
 
 **阶段 A：只做非强制的审查建议。** 允许在已有准确的产品 Release/运行时测试、每实例密钥与物理隔离、旧 SQLite 在线备份和迁移回滚、唯一 Writer、Webhook 路由/签名/重放与真实 GitLab 双端只读+写入沙箱 MR 验收之后，以非强制 Advisory 方式逐步接入新 Sensor。此模式必须由项目管理员在每台 GitLab 实际核验并保存设置证据：机器人状态不在 Required/Must-pass 合并检查内，服务没有任何自动 Merge/Approve 权限，所有 `mergeAuthorized:false` 和 `refTransactionBound:false` 保持诚实，任何延迟/未知写入只作为待核对观察结果而不是允许合并的授权。若无法证明非强制性，则**禁止以 Advisory 名义上线并提供合并门禁**。
