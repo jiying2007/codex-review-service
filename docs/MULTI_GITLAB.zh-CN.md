@@ -104,3 +104,9 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 - Worker 独立保留旧任务队列、重试、API 限流、Token 预算、通知/告警；单容器总 CPU/RSS 是各 Worker 累计值，须独立容量审查与监控。健康检查为保守的聚合 fail-closed，但单个 GitLab 宕机不能使另一台 GitLab 的合法 Webhook 停止服务。
 - 无需整体 SQL Schema 改写即可在同一个 OS 服务进程内支持多个 GitLab；物理 DB 独立也意味着按不同版本执行 DB Schema 迁移和备份，不能让两个服务指向同一个 dbPath。
 - 该 README 仅定义候选交付与人工切换步骤，不宣称用户主机已改动。自动模型审查须在用户正式解除 2026-10 Codex/Work 额度禁令后才可启用与验收。
+
+## 7.6.3 新主线候选的高风险 PR 资格
+
+在独立维护仓库中，普通 PR 保持轻量 Node24 + Docker + 恢复 + 依赖审查；但以 `port/` 开头的高风险候选 PR 将额外触发 Node22、Linux/Windows/macOS 数据库迁移兼容矩阵、故障注入，以及 GitLab CE 14.6.1/17.11.7/19.3.0 的**真实临时本地 Provider 环境**。此时使用的是 GitHub Actions 的一次性 GitLab 容器和测试令牌，不调用在线 Codex/ChatGPT 模型，不访问 `192.168.1.4` 或 `192.168.2.50` 内网实例，也不触碰旧生产 SQLite 卷。CI Gate 必须对所有实际运行的工作作业 fail closed，不能把某一个作业绿灯当作矩阵完成。
+
+安全与 Family 跨仓 Secret 仍只在主线检查/实际 Release 中使用，不对候选 PR 暴露；任何 PR 全矩阵成功也仅证明候选代码在临时测试环境资格，**不意味着真实生产 GitLab 上的权限/网络/Webhook/状态回写/备份/回滚已经通过**。运行时只在显式指定多实例清单的情况下启用。PR #132 的 Schema11 新基线与本 PR 是堆叠关系，禁止将当前 Draft 不经完整验收合并到已发行 7.6.2 产品，亦不能自动将 GitHub 仓库发行等同内网生产部署。
