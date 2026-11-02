@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 8,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "dataDir": "/var/lib/codex-review/sensor"
+  },
+  "gitlab": {
+    "baseUrl": "http://192.168.2.50",
+    "projects": [
+      113
+    ],
+    "groups": [],
+    "requestTimeoutMs": 30000,
+    "maxPages": 200,
+    "statusRetries": 5,
+    "requestsPerSecond": 20,
+    "circuitFailureThreshold": 8,
+    "circuitResetMs": 30000,
+    "statusName": "codex-review-sensor",
+    "statusTargetUrl": "",
+    "bindStatusPipeline": true,
+    "botUsername": "codex-review-bot",
+    "manualMinAccessLevel": 30
+  },
+  "webhook": {
+    "expectedInstance": "http://192.168.2.50",
+    "requireInstanceHeader": true,
+    "maxSkewSeconds": 300,
+    "maxBodyBytes": 1048576
+  },
+  "review": {
+    "language": "zh-CN",
+    "timeoutSeconds": 180,
+    "jobTimeoutSeconds": 900,
+    "maxJobAttempts": 3,
+    "retryBaseDelayMs": 1000,
+    "retryMaxDelayMs": 60000,
+    "maxDiffBytes": 1048576,
+    "maxTotalDiffBytes": 1048576,
+    "maxReviewChunks": 8,
+    "maxFindings": 40,
+    "maxPublishedFindings": 40,
+    "minConfidence": 0.7,
+    "blockingSeverity": "high",
+    "contextEnabled": true,
+    "adaptiveContextEnabled": true,
+    "maxContextBytes": 262144,
+    "maxContextFiles": 12,
+    "contextLines": 20,
+    "blockUnreviewableFiles": false,
+    "skipGeneratedFiles": true,
+    "reviewDraftMergeRequests": false,
+    "debounceMs": 3000,
+    "mrMaxTokenBudget": 250000,
+    "projectDailyTokenBudget": 5000000,
+    "concurrency": 2,
+    "pollIntervalMs": 1000,
+    "maxQueueDepth": 200,
+    "projectPolicyEnabled": true,
+    "projectPolicyMaxBytes": 65536,
+    "autoResolveObsolete": true,
+    "triggerOnOpen": true,
+    "triggerOnPush": true,
+    "triggerOnReopen": true,
+    "profile": "general",
+    "analyzerReports": [],
+    "testImpactEnabled": true,
+    "testPathPrefixes": [
+      "test/",
+      "tests/"
+    ],
+    "maxTestCandidates": 200,
+    "maxRecommendedTests": 40,
+    "triggerAssignment": {
+      "mode": "always",
+      "userIds": []
+    }
+  },
+  "flowTracking": {
+    "enabled": false,
+    "pipeline": {
+      "enabled": true,
+      "statuses": [
+        "failed"
+      ],
+      "refs": [
+        "*"
+      ],
+      "sources": [
+        "push",
+        "merge_request_event",
+        "web"
+      ],
+      "jobs": {
+        "mode": "failed-only",
+        "patterns": [
+          "*"
+        ],
+        "maxItems": 10
+      }
+    },
+    "mergeRequest": {
+      "enabled": true,
+      "actions": [
+        "merge"
+      ]
+    },
+    "push": {
+      "enabled": false,
+      "actions": [
+        "delete"
+      ],
+      "patterns": [
+        "*"
+      ]
+    },
+    "tag": {
+      "enabled": true,
+      "actions": [
+        "create"
+      ],
+      "patterns": [
+        "v*"
+      ]
+    },
+    "commitPush": {
+      "enabled": false,
+      "refs": [
+        "main",
+        "release/*",
+        "hotfix/*"
+      ],
+      "excludeRefs": [],
+      "maxCommits": 8,
+      "includeMergeCommits": true,
+      "includeCommitMessage": true,
+      "ignoreUsers": []
+    }
+  },
+  "codex": {
+    "path": "codex",
+    "selectionStrategy": "auto",
+    "fixedModel": "",
+    "candidates": [],
+    "compatibilityPolicy": "strict",
+    "scoutEnabled": false,
+    "adjudicatorEnabled": false,
+    "adjudicatorMinSeverity": "high",
+    "shadowCandidate": "",
+    "home": "/home/codex-review/sensor",
+    "versionPolicy": "warn",
+    "allowedVersionPattern": "",
+    "providerMode": "auto",
+    "providerBaseUrl": "",
+    "apiKeyEnv": "OPENAI_API_KEY",
+    "connectTimeoutSeconds": 15,
+    "requestTimeoutSeconds": 180,
+    "streamIdleTimeoutSeconds": 60,
+    "credentialSource": "auto",
+    "allowInsecureHttp": false
+  },
+  "runner": {
+    "mode": "inline"
+  },
+  "publication": {
+    "concurrency": 2,
+    "pollIntervalMs": 500,
+    "maxAttempts": 8
+  },
+  "notifications": {
+    "enabled": false,
+    "concurrency": 2,
+    "pollIntervalMs": 500,
+    "maxAttempts": 8,
+    "retryBaseDelayMs": 5000,
+    "retryMaxDelayMs": 1800000,
+    "requestTimeoutMs": 10000,
+    "topFindings": 3,
+    "events": [
+      "review.blocked",
+      "review.failed",
+      "service.degraded"
+    ],
+    "routes": [],
+    "identities": []
+  },
+  "lifecycle": {
+    "dataRetentionDays": 30,
+    "webhookRetentionDays": 7,
+    "maintenanceIntervalMs": 3600000,
+    "reconcileIntervalMs": 300000,
+    "readinessCacheMs": 5000
+  },
+  "observability": {
+    "otelEndpoint": "",
+    "serviceName": "codex-review-sensor",
+    "exportTimeoutMs": 3000
+  }
+}
