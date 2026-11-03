@@ -5,7 +5,7 @@ const fs=require('node:fs');
 const contract=require('../product-contract.json');
 const runbook=fs.readFileSync('docs/MULTI_GITLAB.zh-CN.md','utf8');
 test('multi-GitLab operations use current immutable Service and Schema identity',()=>{
-  assert.equal(contract.serviceVersion,'7.6.4');
+  assert.equal(contract.serviceVersion,'7.6.5');
   assert.equal(contract.databaseSchemaVersion,11);
   assert.ok(runbook.includes('v'+contract.serviceVersion));
   assert.ok(runbook.includes('Schema 11'));
