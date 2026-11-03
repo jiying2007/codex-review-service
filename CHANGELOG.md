@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.6.5
+
+- **Operator cutover safety**: ship the no-model Sensor preflight boundary and its regression assertions in the actual immutable distribution. The example deliberately remains a future real-review template, not a model-disabled runtime switch; do not connect its webhook while shared model quotas are restricted.
+- **Release workflow maintenance**: upgrade the two immutable `actions/upload-artifact` pins in `.github/workflows/release.yml` to v7.0.2, retaining normal publisher and independent release-integrity requirements.
+- Preserve Database Schema 11, Config Schema 8, Core 4.18.2 and the exact consumer release identity; this code-only release does not claim on-prem Legacy/Sensor cutover, SQLite backup/migration, a live MR review or a merge-authorizing final-ref fence.
+
 ## 7.6.4
 
 - **Database inspection safety**: `node src/admin-cli.js db-check` validates the existing SQLite file in read-only mode before any `Store()` is opened, so old, missing and incompatible databases are never initialized/migrated by a diagnostic check.
