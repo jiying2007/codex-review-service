@@ -3,7 +3,23 @@
 Schema 6 establishes the production migration framework. Schema 5 upgrades run `integrity_check`, create a mode-0600 SQLite `VACUUM INTO` backup, execute one `BEGIN IMMEDIATE` migration, set `user_version=6`, commit, then run another integrity check. Failure rolls the live DB transaction back and reports the verified backup path. Unsupported historical versions fail closed.
 
 SQLite WAL + FULL remains the only shipped backend. `src/storage.js` is the explicit replacement boundary. HA is recommended only after governed thresholds (over 100 repositories, over 20 Codex workers, over 100k reviews/day, cross-AZ requirement, or zero single-node downtime requirement). PostgreSQL/Redis/Kafka are intentionally not bundled before those requirements exist.
-## Schema 11
+## Schema 12
+
+Schema 12 adds `model_calls`, identified by job, attempt and call index. The Controller commits a call intent before inference and records numeric usage as soon as a result returns, before result validation or publication. Failed, cancelled and superseded jobs retain observed usage. Historical `review_runs` remain the accounting fallback only when a job has no per-call records, preventing double counting.
+
+Missing usage is stored as unknown (nullable counters), not observed zero. Metrics expose `codex_review_model_usage_unknown_calls` and `codex_review_model_usage_unknown_estimated_tokens` separately from observed token counters. If a project token budget is configured, completed unknown calls consume their explicit estimate for budget accounting; this is not reported as measured billing. No new global monetary cap is introduced.
+
+Startup marks interrupted call intents unknown and parks their running job as `failed / EMODELCALLUNCERTAIN`. The service does not automatically replay a model call with an unknown transport outcome. Inspect the retained attempt and provider records before sending a new explicit review command; the old call history remains intact. `node src/admin-cli.js model-calls` lists the bounded numeric ledger. Definitive Runner capacity rejection is recorded as observed zero and remains retryable. Unknown call records and their jobs outlive ordinary retention.
+
+Migration 11 -> 12 is additive, with a mode-0600 verified Schema 11 backup, transactional DDL and integrity checks. Older binaries reject Schema 12. Rollback requires stopping the Controller, retaining the current call/publication ledgers, and restoring a matching verified backup with the old release. Do not silently discard unknown calls or remote-write uncertainty during rollback.
+
+### Controller ownership and webhook acceptance
+
+Before opening or recovering the application database, each Controller holds an exclusive SQLite OS lock in `<canonical-db-path>.controller-lock.sqlite`. The sidecar contains no review payload or credentials and must not be removed while Controllers may run. Contention stops the second Controller before recovery or migration. Process exit releases the lock without a PID lease or stale-file deletion. Separate state databases remain independent; unsupported shared/network-filesystem SQLite layouts do not become multi-controller HA.
+
+Webhook dedupe, queued review intent, Flow state/notification changes and the processed marker commit together. No raw webhook payload needs to be retained. A crash before commit leaves no accepted delivery; a redelivery after commit is a duplicate. A legacy unprocessed dedupe row may finish on authenticated redelivery, preserving existing downstream job identities. The old release did not persist the original payload, so undelivered legacy events cannot be reconstructed from the dedupe row alone.
+
+## Schema 11 (historical)
 
 Schema 11 adds a durable `review_jobs.target_branch` binding for newly hydrated GitLab merge-request review generations. Migration 10 -> 11 uses an integrity-checked, mode-0600 verified Schema 10 backup and one transaction. Existing rows are **not** backfilled from a later GET: their target remains empty and publication evidence reports `source_identity_incomplete` until a new review generation binds the original target. Live MR target retargets cause `target_branch_mismatch`; this observation remains explicitly non-authorizing and does not replace a provider-side ref transaction fence.
 

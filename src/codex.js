@@ -130,7 +130,14 @@ async function probeCodexCapabilities(config, force=false) {
   const runnerCapability=assertRunnerCapability(value,config);
   return {version:value.version||'unknown',versionMatched:value.versionMatched!==false,mode:'runner',runnerCapability};
 }
+function applyRunnerCapacity(config,capability){
+  const remote=capability?.runnerCapability;
+  if(!remote)return config;
+  const maximum=Number(remote.maxConcurrency);
+  if(!Number.isSafeInteger(maximum)||maximum<1)throw Object.assign(new Error('Runner maxConcurrency is invalid'),{code:'ERUNNERCONTRACT'});
+  return Object.freeze({...config,workerConcurrency:Math.min(config.workerConcurrency,maximum)});
+}
 async function probeCodexRuntime(config,force=false){const socket=runnerSocket(config);if(!socket)return probeCodexRuntimeLocal(config,force);const value=await unixRequest(socket,'POST','/probe',{},(config.codexRequestTimeoutSeconds+15)*1000);return{...value,mode:'runner'};}
 async function runCodex(prompt,config,signal,maxFindings=config.maxFindings){const socket=runnerSocket(config);if(!socket)return runCodexLocal(prompt,config,signal,maxFindings);const result=await unixRequest(socket,'POST','/review',{prompt,maxFindings,reviewTimeoutSeconds:config.reviewTimeoutSeconds,model:config.codexModel||'',promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION},(config.reviewTimeoutSeconds+15)*1000,signal);return{...result,usage:usageShape(result.usage),mode:'runner'};}
 
-module.exports={runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,normalizeReviewError,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexRuntime,probeCodexRuntimeLocal,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};
+module.exports={applyRunnerCapacity,runCodex,runCodexLocal,filteredEnv,runtimeFromConfig,inspectRuntimeFromConfig,normalizeReviewError,parseJsonl,parseJsonlEvents,buildCodexArgs,probeCodexRuntime,probeCodexRuntimeLocal,probeCodexCapabilities,probeCodexCapabilitiesLocal,SAFE_CONFIG_OVERRIDES,REQUIRED_TOP_FLAGS,REQUIRED_EXEC_FLAGS,checkVersionPolicy,usageShape,runnerSocket,unixRequest,extractUsage,cancellationToken,assertRunnerCapability};

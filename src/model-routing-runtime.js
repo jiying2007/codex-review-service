@@ -52,7 +52,7 @@ function appendScout(prompt,validated){const findings=validated?.findings||[];if
 function appendAdjudication(prompt,validated){return `${prompt}\n\n--- REVIEWER CANDIDATES TO ADJUDICATE ---\nAct as the Adjudicator. Return only Reviewer findings that are fully supported by the supplied immutable evidence. Do not add unrelated findings and do not weaken deterministic evidence requirements.\n${JSON.stringify(validated?.findings||[])}\n--- END REVIEWER CANDIDATES ---`;}
 function shouldAdjudicate(validated,minSeverity='high'){const threshold=SEVERITY_RANK[minSeverity]??SEVERITY_RANK.high;return (validated?.findings||[]).some(item=>(SEVERITY_RANK[item.severity]??-1)>=threshold);}
 
-async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCodexFn,validateResult,router=createServiceModelRouter(config),beforeCall=null,afterCall=null}={}){
+async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCodexFn,validateResult,router=createServiceModelRouter(config),beforeCall=null,afterCall=null,onCallResult=null,onCallError=null}={}){
   if(typeof runCodexFn!=='function'||typeof validateResult!=='function')throw new TypeError('Role-aware review requires runCodexFn and validateResult.');
   const calls=[],totalUsage=usageShape(),productionModels=new Set(),optionalErrors=[];let scoutValidated=null,reviewerValidated=null,finalValidated=null,shadowComparison=null,shadowError='',productionLatencyMs=0,shadowLatencyMs=0;
   async function execute(role,route,input,{optional=false,shadow=false}={}){
@@ -63,12 +63,14 @@ async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCo
     if(budgetMeta===false){if(optional)return null;const error=new Error(`Token budget rejected required ${role} call.`);error.code='ETOKENBUDGET';throw error;}
     const started=Date.now();
     try{
-      const result=await runCodexFn(input,{...config,codexModel:route.model},signal,maxFindings),durationMs=Number(result.durationMs||Date.now()-started),validated=validateResult(result.parsed),usage=usageShape(result.usage),evidence=router.evidence(route,usage);
+      const result=await runCodexFn(input,{...config,codexModel:route.model},signal,maxFindings);
+      if(onCallResult)await onCallResult({role,route,result,optional,shadow,budgetMeta});
+      const durationMs=Number(result.durationMs||Date.now()-started),validated=validateResult(result.parsed),usage=usageShape(result.usage),evidence=router.evidence(route,usage);
       usageAdd(totalUsage,usage);if(shadow)shadowLatencyMs+=durationMs;else{productionLatencyMs+=durationMs;productionModels.add(result.model||route.model||'cli-default');}
       const call=freeze({role,shadow,managed:route.managed,model:result.model||route.model||'cli-default',version:String(result.version||''),usage,durationMs,modelEvidence:evidence,budgetMeta});calls.push(call);
       if(afterCall)await afterCall({role,route,input,result,validated,call,optional,shadow,budgetMeta});
       return{result,validated,call};
-    }catch(error){if(optional){optionalErrors.push(freeze({role,shadow,code:String(error?.code||'EOPTIONAL_ROLE')}));return{error};}throw error;}
+    }catch(error){if(onCallError)await onCallError({role,route,error,optional,shadow,budgetMeta});if(optional){optionalErrors.push(freeze({role,shadow,code:String(error?.code||'EOPTIONAL_ROLE')}));return{error};}throw error;}
   }
 
   const scoutRoute=router.scout();

@@ -73,7 +73,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify migration and Provider Contract portability
-        run: node --test test/db-migrations.test.js test/codex.test.js
+        run: node --test test/db-migrations.test.js test/model-call-store.test.js test/controller-ownership.test.js test/webhook-atomic.test.js test/runner-capacity.test.js test/codex.test.js
 
   docker-smoke:
     timeout-minutes: 15

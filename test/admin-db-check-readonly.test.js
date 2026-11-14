@@ -48,11 +48,11 @@ test('old Schema 10 db-check fails non-mutating and preserves bytes',async()=>{
     }finally{verify.close();}
   }finally{f.close();}
 });
-test('current Schema 11 db-check is read-only and successful',async()=>{
+test('current schema db-check is read-only and successful',async()=>{
   const f=fixture();
   try{
     const db=new DatabaseSync(f.file);
-    db.exec('CREATE TABLE marker(id INTEGER PRIMARY KEY); PRAGMA user_version=11;');
+    db.exec('CREATE TABLE marker(id INTEGER PRIMARY KEY); PRAGMA user_version='+require('../src/db').SCHEMA_VERSION+';');
     db.close();
     const before=digest(f.file);
     const result=await checked(f.file);

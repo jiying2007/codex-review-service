@@ -15,7 +15,7 @@ Describe the production behavior changed by this PR.
 - [ ] Finding lifecycle remains derivable as `new` / `persistent` / `resolved` / `regressed` from durable run/finding history.
 - [ ] No source diff, prompt, raw model output, or credential is added to persistent logs.
 - [ ] Schema changes are additive/migratable and tested from the previous released schema.
-- [ ] Family v4 remains pinned to Safe Core 4.0.0 and Review Receipt v4 with no legacy compatibility path.
+- [ ] Safe Core pin, runtime contracts and product metadata remain consistent.
 - [ ] Release assets remain immutable and include TGZ, SPDX SBOM, SHA256SUMS and provenance attestation.
-- [ ] Node 22.13 and Node 24 CI pass.
+- [ ] Declared Node 22/24 CI and affected platform qualification pass.
 - [ ] Operations/README/CHANGELOG are updated when behavior or deployment changes.

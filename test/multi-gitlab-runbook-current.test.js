@@ -5,10 +5,10 @@ const fs=require('node:fs');
 const contract=require('../product-contract.json');
 const runbook=fs.readFileSync('docs/MULTI_GITLAB.zh-CN.md','utf8');
 test('multi-GitLab operations use current immutable Service and Schema identity',()=>{
-  assert.equal(contract.serviceVersion,'7.6.5');
-  assert.equal(contract.databaseSchemaVersion,11);
+  assert.equal(contract.serviceVersion,require('../package.json').version);
+  assert.equal(contract.databaseSchemaVersion,require('../src/db').SCHEMA_VERSION);
   assert.ok(runbook.includes('v'+contract.serviceVersion));
-  assert.ok(runbook.includes('Schema 11'));
+  assert.ok(runbook.includes('Schema '+contract.databaseSchemaVersion));
   assert.ok(runbook.includes('9 → 10 → 11'));
   assert.match(runbook,/refs\/|digest|IMAGE_DIGEST|sha256/i);
   assert.match(runbook,/未.*生产|不宣称.*生产|不能证明内网/);

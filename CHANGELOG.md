@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.7.0
+
+- Accept webhook dedupe, Review jobs, Flow transitions and notification intents in one SQLite transaction; acknowledgement follows commit and in-memory cancellation follows acceptance.
+- Enforce the isolated Runner's advertised capacity with explicit backpressure, and cap Controller worker concurrency to the negotiated Runner capability.
+- Acquire OS-backed exclusive Controller ownership before opening or recovering the state database; independent instances retain separate locks and process death releases ownership.
+- Add verified Schema 11 -> 12 migration and durable per-attempt model-call accounting. Failed, cancelled and superseded work retains observed usage; unknown usage remains explicit, and interrupted model calls are not automatically replayed.
+- Add process-loss, migration rollback, capacity/disconnect and partial-usage regression tests. Production dual-GitLab deployment and fresh model quality evaluation remain separate operator acceptance tasks.
+
 ## 7.6.5
 
 - **Operator cutover safety**: ship the no-model Sensor preflight boundary and its regression assertions in the actual immutable distribution. The example deliberately remains a future real-review template, not a model-disabled runtime switch; do not connect its webhook while shared model quotas are restricted.

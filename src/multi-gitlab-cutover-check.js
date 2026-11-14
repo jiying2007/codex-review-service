@@ -54,10 +54,10 @@ function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:tr
     const schemaVersion=Number(db.prepare('PRAGMA user_version').get().user_version);
     const tables=new Set(db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name));
-    // Schema 11's durable uncertainty ledger is an authoritative cutover
+    // The current schema's durable uncertainty/call ledgers is an authoritative cutover
     // dependency. Never silently treat missing evidence tables as empty.
     const required=['review_jobs','publication_outbox','notification_outbox',
-      'status_write_attempts','status_publication_targets'];
+      'status_write_attempts','status_publication_targets','model_calls'];
     if(required.some(name=>!tables.has(name)))
       return{ok:false,code:'EDBTABLES',schemaVersion,drained:false};
     const active={

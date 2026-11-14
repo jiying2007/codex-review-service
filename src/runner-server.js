@@ -18,6 +18,34 @@ function json(res,status,body){const data=Buffer.from(JSON.stringify(body));res.
 function readBody(req,maxBytes){return new Promise((resolve,reject)=>{const chunks=[];let size=0;req.on('data',chunk=>{size+=chunk.length;if(size>maxBytes){reject(Object.assign(new Error('runner request too large'),{status:413}));req.destroy();return;}chunks.push(chunk);});req.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));req.on('error',reject);});}
 function bindRunnerCancellation(req,res,controller){const abort=()=>{if(!res.writableEnded&&!controller.signal.aborted)controller.abort(Object.assign(new Error('controller disconnected'),{code:'ERUNNERDISCONNECT'}));};res.once('close',abort);req.once('aborted',abort);if(req.aborted||res.destroyed)abort();return()=>{res.off('close',abort);req.off('aborted',abort);};}
 function capabilityEnvelope(config, capability){return Object.freeze({ok:true,version:capability.version,versionMatched:capability.versionMatched,safeCoreVersion:SAFE_CORE_VERSION,safeContractVersion:SAFE_CONTRACT_VERSION,reviewReceiptSchemaVersion:REVIEW_RECEIPT_SCHEMA_VERSION,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,os:process.platform,arch:process.arch,hostname:os.hostname(),model:'',maxConcurrency:1});}
-async function main(){hydrateSecretEnv();const config=runnerConfig(),socket=config.socket;const startupCapability=await probeCodexCapabilitiesLocal(config,true);fs.mkdirSync(path.dirname(socket),{recursive:true});try{fs.unlinkSync(socket);}catch(error){if(error.code!=='ENOENT')throw error;}const server=http.createServer(async(req,res)=>{try{if(req.method==='GET'&&req.url==='/health'){const capability=await probeCodexCapabilitiesLocal(config);return json(res,200,capabilityEnvelope(config,capability));}if(req.method==='POST'&&req.url==='/probe'){const runtime=await probeCodexRuntimeLocal(config,true);return json(res,200,runtime);}if(req.method!=='POST'||req.url!=='/review')return json(res,404,{error:'not_found'});const raw=await readBody(req,config.maxBodyBytes);let payload;try{payload=JSON.parse(raw);}catch{return json(res,400,{error:'invalid_json'});}const request=normalizeReviewRequest(payload,config),controller=new AbortController(),unbind=bindRunnerCancellation(req,res,controller);try{const execution={...config,reviewTimeoutSeconds:request.reviewTimeoutSeconds,codexModel:request.model},result=await runCodexLocal(request.prompt,execution,controller.signal,request.maxFindings);if(!controller.signal.aborted&&!res.destroyed)return json(res,200,result);}finally{unbind();}return;}catch(error){if(!res.destroyed&&!res.writableEnded)return json(res,error.status||500,{error:error.code||'ERUNNER',message:String(error.message||'runner failure').slice(0,300)});}});server.listen(socket,()=>{fs.chmodSync(socket,0o660);process.stdout.write(`${JSON.stringify({event:'runner_started',socket,capability:capabilityEnvelope(config,startupCapability)})}\n`);});let closing=false;const shutdown=(code=0)=>{if(closing)return;closing=true;server.close(()=>{try{fs.unlinkSync(socket);}catch{}process.exit(code);});};process.on('SIGTERM',()=>shutdown(0));process.on('SIGINT',()=>shutdown(0));process.on('unhandledRejection',error=>{process.stderr.write(`${JSON.stringify({event:'runner_fatal',kind:'unhandledRejection',code:error?.code||'EUNHANDLED'})}\n`);shutdown(1);});process.on('uncaughtException',error=>{process.stderr.write(`${JSON.stringify({event:'runner_fatal',kind:'uncaughtException',code:error?.code||'EUNHANDLED'})}\n`);shutdown(1);});}
+function createRunnerServer({config,runCodexFn=runCodexLocal,probeCapabilitiesFn=probeCodexCapabilitiesLocal,probeRuntimeFn=probeCodexRuntimeLocal}){
+  let active=0;
+  const server=http.createServer(async(req,res)=>{
+    let occupied=false,unbind=()=>{};
+    try{
+      if(req.method==='GET'&&req.url==='/health')return json(res,200,capabilityEnvelope(config,await probeCapabilitiesFn(config)));
+      if(req.method==='POST'&&req.url==='/probe')return json(res,200,await probeRuntimeFn(config,true));
+      if(req.method!=='POST'||req.url!=='/review')return json(res,404,{error:'not_found'});
+      // Reserve before reading a potentially slow body. The socket has a
+      // bounded request timeout and no unbounded in-memory waiting queue.
+      if(active>=1){req.resume();res.setHeader('Retry-After','1');return json(res,503,{error:'ERUNNERBUSY',message:'Runner capacity is occupied'});}
+      active++;occupied=true;
+      const controller=new AbortController();unbind=bindRunnerCancellation(req,res,controller);
+      const raw=await readBody(req,config.maxBodyBytes);let payload;
+      try{payload=JSON.parse(raw);}catch{return json(res,400,{error:'invalid_json'});}
+      const request=normalizeReviewRequest(payload,config);
+      if(controller.signal.aborted)throw controller.signal.reason;
+      const execution={...config,reviewTimeoutSeconds:request.reviewTimeoutSeconds,codexModel:request.model};
+      const result=await runCodexFn(request.prompt,execution,controller.signal,request.maxFindings);
+      if(!controller.signal.aborted&&!res.destroyed)return json(res,200,result);
+    }catch(error){
+      if(!res.destroyed&&!res.writableEnded)return json(res,error.status||500,{error:error.code||'ERUNNER',message:String(error.message||'runner failure').slice(0,300)});
+    }finally{unbind();if(occupied)active--;}
+  });
+  server.headersTimeout=10000;server.requestTimeout=15000;server.keepAliveTimeout=5000;
+  server.maxRequestsPerSocket=100;server.maxHeadersCount=64;
+  return server;
+}
+async function main(){hydrateSecretEnv();const config=runnerConfig(),socket=config.socket;const startupCapability=await probeCodexCapabilitiesLocal(config,true);fs.mkdirSync(path.dirname(socket),{recursive:true});try{fs.unlinkSync(socket);}catch(error){if(error.code!=='ENOENT')throw error;}const server=createRunnerServer({config});server.listen(socket,()=>{fs.chmodSync(socket,0o660);process.stdout.write(`${JSON.stringify({event:'runner_started',socket,capability:capabilityEnvelope(config,startupCapability)})}\n`);});let closing=false;const shutdown=(code=0)=>{if(closing)return;closing=true;server.close(()=>{try{fs.unlinkSync(socket);}catch{}process.exit(code);});};process.on('SIGTERM',()=>shutdown(0));process.on('SIGINT',()=>shutdown(0));process.on('unhandledRejection',error=>{process.stderr.write(`${JSON.stringify({event:'runner_fatal',kind:'unhandledRejection',code:error?.code||'EUNHANDLED'})}\n`);shutdown(1);});process.on('uncaughtException',error=>{process.stderr.write(`${JSON.stringify({event:'runner_fatal',kind:'uncaughtException',code:error?.code||'EUNHANDLED'})}\n`);shutdown(1);});}
 if(require.main===module)main().catch(error=>{process.stderr.write(`${JSON.stringify({event:'runner_startup_failed',code:error.code||'ERUNNER',message:error.message})}\n`);process.exitCode=1;});
-module.exports={runnerConfig,readBody,capabilityEnvelope,normalizeReviewRequest,bindRunnerCancellation};
+module.exports={createRunnerServer,runnerConfig,readBody,capabilityEnvelope,normalizeReviewRequest,bindRunnerCancellation};

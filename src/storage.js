@@ -1,6 +1,7 @@
 'use strict';
 
 const { Store, SCHEMA_VERSION } = require('./db');
+const { acquireControllerOwnership } = require('./controller-ownership');
 
 const STORAGE_BACKENDS = Object.freeze(['sqlite']);
 const HA_UPGRADE_THRESHOLDS = Object.freeze({
@@ -21,13 +22,18 @@ function assessHaNeed({ repositories = 0, workers = 0, reviewsPerDay = 0, crossA
   return Object.freeze({ haRecommended: reasons.length > 0, reasons: Object.freeze(reasons) });
 }
 
-function createStorage({ backend = 'sqlite', dbPath, migrationHooks } = {}) {
+function createStorage({ backend = 'sqlite', dbPath, migrationHooks, controllerOwner = false } = {}) {
   if (backend !== 'sqlite') {
     const error = new Error(`Unsupported storage backend: ${backend}. This release intentionally ships SQLite only; use the storage adapter boundary for a future HA backend.`);
     error.code = 'ESTORAGEBACKEND';
     throw error;
   }
-  return new Store(dbPath, { migrationHooks });
+  const ownership=controllerOwner?acquireControllerOwnership(dbPath):null;
+  try {
+    const store=new Store(ownership?.dbPath||dbPath, { migrationHooks });
+    if(ownership){const close=store.close.bind(store);store.close=()=>{try{close();}finally{ownership.release();}};}
+    return store;
+  } catch(error) { ownership?.release(); throw error; }
 }
 
 function storageCapabilities() {
