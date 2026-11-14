@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.7.2
+
+- Move the same Node 24.19.0 runtime to an exact-pinned official Debian 13 trixie-slim base. Require patched APT, PCRE2, zlib, gzip, SQLite, OpenSSL and Perl packages with nine explicit Debian 13 minimum versions established from real scans of both architectures. Disable APT retries during bootstrap before the package manager itself is upgraded. This addresses the six fixable High findings and the previously filtered Critical reported in the Bookworm image without a vulnerability waiver.
+- Build and scan native amd64 and arm64 images in required CI. The release scanner binds each raw report to the verified OCI index, child manifest, image config, platform and exact source/version labels, and verifies the complete installed package inventory.
+- Block every Critical vulnerability, including those without a fix, and every High with an available fix. Missing, malformed, suppressed or incomplete scan evidence cannot pass the gate; Trivy remains explicitly pinned to 0.70.0.
+- Preserve the original per-platform Trivy JSON and derived SARIF on failures, then checksum, attest and publish those reports and the OCI scan target map with every successful release. Existing CodeQL SARIF gates and immutable release controls remain mandatory.
+- Keep Core 4.18.5, Database Schema 12 and all runtime/configuration contracts unchanged; 7.7.1 remains an immutable historical release.
+
 ## 7.7.1
 
 - Repin to Codex Safe Core 4.18.5 because the shipped Core runtime digest changed to `affb2f6f680d8efcdf8ed6a3c5fbd7b009396883be543684f890a82488be2e6c`; publish a new immutable product release and required distribution evidence.

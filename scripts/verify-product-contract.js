@@ -87,7 +87,7 @@ for(const file of docs){const text=fs.readFileSync(path.join(root,file),'utf8');
 const qualityDocs=`${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.md'),'utf8')}\n${fs.readFileSync(path.join(root,'docs/QUALITY_PLATFORM.zh-CN.md'),'utf8')}`;
 for(const term of ['Analyzer Adapter','JUnit','Code Quality','Test Impact','Profile Pack'])assert.match(qualityDocs,new RegExp(term,'i'));
 const docker=fs.readFileSync(path.join(root,'deploy/docker/Dockerfile'),'utf8');
-assert.match(docker,new RegExp(`node:${contract.canonicalNodeVersion}-bookworm-slim@sha256:[0-9a-f]{64}`),'Docker base must pin canonical Node LTS image digest');
+assert.match(docker,new RegExp(`node:${contract.canonicalNodeVersion}-trixie-slim@sha256:[0-9a-f]{64}`),'Docker base must pin canonical Node LTS image digest');
 const ci=fs.readFileSync(path.join(root,'.github/workflows/ci.yml'),'utf8');
 assert.match(ci,new RegExp(contract.minimumNodeVersion.replaceAll('.','\\.')),'CI must test the Node compatibility floor');
 assert.match(ci,new RegExp(contract.canonicalNodeVersion.replaceAll('.','\\.')),'CI must test canonical Node');

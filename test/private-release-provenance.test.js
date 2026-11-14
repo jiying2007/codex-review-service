@@ -37,6 +37,16 @@ function fixture(t,{index=manifests(),provenance=platformProvenance(),
   const values={index,provenance,sbom};
   for(const [name,value] of Object.entries(values))
     fs.writeFileSync(path.join(dir,'release-oci-'+name+'.json'),JSON.stringify(value));
+  fs.mkdirSync(path.join(dir,'scripts'));
+  fs.copyFileSync(path.join(__dirname,'../scripts/oci-scan-targets.js'),path.join(dir,'scripts/oci-scan-targets.js'));
+  const imageRef='ghcr.io/jiying2007/codex-review-service:7.6.2';
+  fs.writeFileSync(path.join(dir,'OCI_SCAN_TARGETS.json'),JSON.stringify({schemaVersion:1,imageRef,indexDigest:digest,
+    platforms:['amd64','arm64'].map((arch,i)=>({platform:'linux/'+arch,imageRef:imageRef+'@'+hex(i===0?'a':'b'),
+      manifestDigest:hex(i===0?'a':'b'),configDigest:hex(i===0?'e':'f')}))}));
+  for(const arch of ['amd64','arm64']){
+    fs.writeFileSync(path.join(dir,'TRIVY-linux-'+arch+'.json'),JSON.stringify({fixture:arch}));
+    fs.writeFileSync(path.join(dir,'TRIVY-linux-'+arch+'.sarif'),JSON.stringify({version:'2.1.0',runs:[]}));
+  }
   return{dir,env:{...process.env,RUNNER_TEMP:dir,IMAGE_REF:'ghcr.io/jiying2007/codex-review-service:7.6.2',
     IMAGE_DIGEST:digest,RELEASE_SHA:SHA}};
 }
@@ -62,6 +72,12 @@ test('valid multiarch BuildKit provenance and SBOM yields bounded evidence',t=>{
   assert.deepEqual(evidence.verifiedEvidencePlatforms,['linux/amd64','linux/arm64']);
   assert.equal(evidence.attestationType,'digest-bound-buildkit-not-signed-identity');
   assert.equal(evidence.signedReleaseAttestation,'must-be-verified-after-publication');
+  assert.equal(evidence.vulnerabilityPolicy,'all-critical-and-fixable-high');
+  assert.deepEqual(Object.keys(evidence.vulnerabilityReports),['linux/amd64','linux/arm64']);
+  for(const report of Object.values(evidence.vulnerabilityReports)){
+    assert.match(report.jsonSha256,/^[a-f0-9]{64}$/);
+    assert.match(report.sarifSha256,/^[a-f0-9]{64}$/);
+  }
   for(const key of ['ociIndexSha256','provenanceSha256','sbomSha256'])assert.match(evidence[key],/^[a-f0-9]{64}$/);
 });
 test('missing attestation for either platform fails closed',t=>{
@@ -88,11 +104,11 @@ test('invalid source SHA or image digest fails closed',t=>{
   assert.equal(fs.existsSync(path.join(dir,'BUILD_EVIDENCE.json')),false);
 });
 test('published release must attach evidence to all hashes and immutable assets',()=>{
-  assert.match(release,/BUILD_EVIDENCE\.json compose\.release\.yaml CONSUMER_CI_RECEIPT\.json > SHA256SUMS/);
+  assert.match(release,/BUILD_EVIDENCE\.json compose\.release\.yaml CONSUMER_CI_RECEIPT\.json OCI_SCAN_TARGETS\.json TRIVY-linux-amd64\.json TRIVY-linux-arm64\.json TRIVY-linux-amd64\.sarif TRIVY-linux-arm64\.sarif > SHA256SUMS/);
   assert.match(release,/gh release create "\$RELEASE_TAG" "\$tgz" SBOM\.spdx\.json IMAGE_DIGEST\.txt BUILD_EVIDENCE\.json/);
   assert.match(release,/signedReleaseAttestation:'must-be-verified-after-publication'/);
   assert.match(release,/Require genuine same-SHA main CI Gate before immutable publication/);
-  assert.match(release,/Block unfixed Critical OCI vulnerabilities/);
+  assert.match(release,/Block all Critical and fixable High findings on both platforms/);
 });
 test('frozen prerelease tag and ordinary main push require explicit release-retry',()=>{
   assert.match(release,/tag_sha=\$\(RELEASE_TAG="\$tag" node -e/);

@@ -2,7 +2,7 @@
 
 ## Product and Safe Core contract
 
-Codex Review Service **7.7.1** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
+Codex Review Service **7.7.2** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
 Machine-checked security identity lives in `product-contract.json`: Database Schema 12, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `ac5203e1b65ffdca26064c0887537f64d2a8a6cb`.
 
@@ -80,7 +80,7 @@ For Classic webhook mode, network controls are particularly important because th
 
 ## Supply chain
 
-Every PR runs Node 24.19.0 unit/governance checks, Docker build/smoke, recovery checks, dependency review/audit and CodeQL. `port/` PRs and main qualification additionally run Node 22.22.2, the Linux/macOS/Windows migration matrix, fault injection and real GitLab CE 14.6.1/17.11.7/19.3.0 provider tests. Release gates also verify OCI vulnerabilities, SBOM, checksums and provenance attestations.
+Every PR runs Node 24.19.0 unit/governance checks, native amd64/arm64 Docker build/smoke and vulnerability gates, recovery checks, dependency review/audit and CodeQL. `port/` PRs and main qualification additionally run Node 22.22.2, the Linux/macOS/Windows migration matrix, fault injection and real GitLab CE 14.6.1/17.11.7/19.3.0 provider tests. Release scans each digest-bound platform manifest with Trivy 0.70.0 and complete package inventories. Every Critical vulnerability and every High with a fix blocks, and malformed, filtered or mismatched evidence fails closed. Original JSON and derived SARIF are retained on failure and included in release checksums and provenance attestations alongside SBOM and exact OCI scan targets.
 
 CodeQL writes its actual SARIF output to `codeql-results`, and CI executes Safe Core's shared findings gate on those files. Missing, invalid or unsuccessful analysis and high/critical findings block CI Gate. GitHub Code Scanning upload availability only controls the optional dashboard upload; it never skips local analysis or its required findings gate. The SARIF artifact is preserved for review, including when the findings gate fails. A skipped Security workflow cannot satisfy the PR CI Gate.
 
