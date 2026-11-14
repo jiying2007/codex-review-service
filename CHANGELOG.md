@@ -2,7 +2,7 @@
 
 ## 7.7.2
 
-- Upgrade the three Debian packages behind the six High findings observed in the actual 7.7.1 image: `apt` / `libapt-pkg6.0` >=2.6.2 and `libpcre2-8-0` >=10.42-1+deb12u2. Disable APT retries during bootstrap to close the vulnerable install path before the package manager itself is upgraded; retain the exact Node 24.19.0 base digest.
+- Move the same Node 24.19.0 runtime to an exact-pinned official Debian 13 trixie-slim base. Require patched APT, PCRE2, zlib, gzip, SQLite, OpenSSL and Perl packages with nine explicit Debian 13 minimum versions established from real scans of both architectures. Disable APT retries during bootstrap before the package manager itself is upgraded. This addresses the six fixable High findings and the previously filtered Critical reported in the Bookworm image without a vulnerability waiver.
 - Build and scan native amd64 and arm64 images in required CI. The release scanner binds each raw report to the verified OCI index, child manifest, image config, platform and exact source/version labels, and verifies the complete installed package inventory.
 - Block every Critical vulnerability, including those without a fix, and every High with an available fix. Missing, malformed, suppressed or incomplete scan evidence cannot pass the gate; Trivy remains explicitly pinned to 0.70.0.
 - Preserve the original per-platform Trivy JSON and derived SARIF on failures, then checksum, attest and publish those reports and the OCI scan target map with every successful release. Existing CodeQL SARIF gates and immutable release controls remain mandatory.

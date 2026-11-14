@@ -72,7 +72,7 @@ Expected release properties:
 - OCI image is multi-architecture and produced with BuildKit SBOM/provenance;
 - both platform-specific manifests are scanned with pinned Trivy 0.70.0 and complete package inventories; every Critical and every High with an available fix blocks publication;
 - raw JSON and derived SARIF are bound to the OCI index, child manifest/config digests and exact source/version labels through `OCI_SCAN_TARGETS.json` and `BUILD_EVIDENCE.json`, then included in checksums and attestations;
-- both platform inventories contain `apt` and `libapt-pkg6.0` >=2.6.2 and `libpcre2-8-0` >=10.42-1+deb12u2;
+- both Debian 13 platform inventories meet all nine [minimum patched package versions](deploy/docker/README.md#security-baseline), with epoch and revision preserved;
 - GitHub provenance binds artifacts/image to this repository/workflow.
 
 Attestation proves build provenance, not semantic correctness. Deployment still requires approved CI/system-test results and operational acceptance.
@@ -138,7 +138,7 @@ tar -tzf codex-review-service-<version>.tgz | less
 
 Attestation 证明产物来自声明的仓库/工作流，但不能替代代码审查、真实 GitLab 系统测试、漏洞策略和生产验收。
 
-从 7.7.2 起，两种架构的子 manifest 分别接受固定 Trivy 0.70.0 扫描，保留完整安装包清单、原始 JSON 和对应 SARIF。所有 Critical（包括无修复版本）及已有修复版本的 High 都阻断发布；缺失、损坏、过滤过或与镜像身份不符的报告也不能通过。`OCI_SCAN_TARGETS.json` 和 `BUILD_EVIDENCE.json` 将扫描绑定到 OCI index、子 manifest/config 摘要、架构、源码提交及产品版本。两架构都验证 `apt` / `libapt-pkg6.0` >=2.6.2、`libpcre2-8-0` >=10.42-1+deb12u2，所有证据纳入校验和及签名。
+从 7.7.2 起，两种架构的子 manifest 分别接受固定 Trivy 0.70.0 扫描，保留完整安装包清单、原始 JSON 和对应 SARIF。所有 Critical（包括无修复版本）及已有修复版本的 High 都阻断发布；缺失、损坏、过滤过或与镜像身份不符的报告也不能通过。`OCI_SCAN_TARGETS.json` 和 `BUILD_EVIDENCE.json` 将扫描绑定到 OCI index、子 manifest/config 摘要、架构、源码提交及产品版本。两架构的 Debian 13 清单都验证[九个包的最低修复版本](deploy/docker/README.md#security-baseline)，完整保留 epoch 和发行修订号，所有证据纳入校验和及签名。
 
 ## SLSA v1.2 Build alignment
 

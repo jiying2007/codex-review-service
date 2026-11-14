@@ -78,7 +78,25 @@ The image:
 
 Release publishes a multi-architecture `linux/amd64,linux/arm64` image to GHCR. Required CI builds and scans both native architectures. The publisher verifies the original OCI index and child-manifest bytes, then scans each exact child digest with Trivy 0.70.0. Every Critical vulnerability and every High with an available fix blocks publication, including Critical findings without a fix. Raw JSON inventories and derived SARIF are preserved on failure and included in successful release checksums and attestations.
 
-The pinned Node base is retained, while `apt` / `libapt-pkg6.0` are upgraded to at least 2.6.2 and `libpcre2-8-0` to at least 10.42-1+deb12u2. Bootstrap APT commands disable retries before upgrading APT itself. Both the build and the actual per-platform scan inventory verify these minimum versions. These fixes follow Debian's [APT advisory](https://security-tracker.debian.org/tracker/CVE-2026-109518) and [PCRE2 advisory](https://security-tracker.debian.org/tracker/CVE-2026-103111).
+The official runtime keeps Node 24.19.0 and uses an exact-pinned Debian 13 trixie-slim base. It requires the nine patched packages in the security baseline below. Bootstrap APT commands disable retries before upgrading APT itself. Both the build and the actual per-platform scan inventory verify these minimum versions, including Debian epoch and revision fields. These fixes follow Debian's [APT advisory](https://security-tracker.debian.org/tracker/CVE-2026-109518) and [PCRE2 advisory](https://security-tracker.debian.org/tracker/CVE-2026-103111).
+
+### Security baseline
+
+Both native images and raw scan inventories must meet every Debian 13 minimum:
+
+| Package | Minimum version |
+| --- | --- |
+| `apt` | `3.0.4` |
+| `libapt-pkg7.0` | `3.0.4` |
+| `libpcre2-8-0` | `10.46-1~deb13u3` |
+| `zlib1g` | `1:1.3.dfsg+really1.3.1-1+deb13u1` |
+| `gzip` | `1.13-1+deb13u1` |
+| `libsqlite3-0` | `3.46.1-7+deb13u2` |
+| `libssl3t64` | `3.5.7-1~deb13u3` |
+| `openssl-provider-legacy` | `3.5.7-1~deb13u3` |
+| `perl-base` | `5.40.1-6+deb13u1` |
+
+Unfixed High findings remain visible in the original reports. Every Critical remains blocking regardless of fix status.
 
 BuildKit emits per-platform SBOM/provenance metadata, and GitHub build provenance is attached to the canonical image digest. `OCI_SCAN_TARGETS.json` records the index, child-manifest and config digest relationships; `BUILD_EVIDENCE.json` binds the original scans and SARIF to that same release identity.
 

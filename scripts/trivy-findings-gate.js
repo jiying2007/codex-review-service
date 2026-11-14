@@ -6,7 +6,10 @@ const { TextDecoder } = require('node:util');
 const { validateTargets } = require('./oci-scan-targets');
 const contract = require('../product-contract.json');
 
-const FIXED_PACKAGES = Object.freeze({ apt: '2.6.2', 'libapt-pkg6.0': '2.6.2', 'libpcre2-8-0': '10.42-1+deb12u2' });
+const FIXED_PACKAGES = Object.freeze({ apt: '3.0.4', 'libapt-pkg7.0': '3.0.4',
+  'libpcre2-8-0': '10.46-1~deb13u3', zlib1g: '1:1.3.dfsg+really1.3.1-1+deb13u1',
+  gzip: '1.13-1+deb13u1', 'libsqlite3-0': '3.46.1-7+deb13u2', 'libssl3t64': '3.5.7-1~deb13u3',
+  'openssl-provider-legacy': '3.5.7-1~deb13u3', 'perl-base': '5.40.1-6+deb13u1' });
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const SEVERITIES = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 function fail(message) { throw Object.assign(new Error(message), { code: 'ETRIVYREPORT' }); }
@@ -23,6 +26,14 @@ function atLeastDebianVersion(installed, minimum) {
   if (result.error || ![0, 1].includes(result.status)) fail('Debian version comparison could not be verified');
   return result.status === 0;
 }
+function debianInventoryVersion(pkg) {
+  if (typeof pkg?.Version !== 'string' || !/^[0-9][0-9A-Za-z.+~\-]*$/.test(pkg.Version) ||
+      (pkg.Release !== undefined && (typeof pkg.Release !== 'string' ||
+        (pkg.Release !== '' && !/^[0-9A-Za-z.+~]+$/.test(pkg.Release)))) ||
+      (pkg.Epoch !== undefined && (!Number.isSafeInteger(pkg.Epoch) || pkg.Epoch < 0)))
+    fail('Malformed Debian version, release or epoch in package inventory');
+  return (pkg.Epoch ? String(pkg.Epoch) + ':' : '') + pkg.Version + (pkg.Release ? '-' + pkg.Release : '');
+}
 function assess(report, { image, imageId, platform, revision }) {
   if (typeof image !== 'string' || !image || !DIGEST.test(imageId) ||
       !['linux/amd64', 'linux/arm64'].includes(platform) || !/^[0-9a-f]{40}$/.test(revision)) fail('Exact image, config, platform and source SHA are required');
@@ -33,7 +44,7 @@ function assess(report, { image, imageId, platform, revision }) {
       config?.config?.Labels?.['org.opencontainers.image.revision'] !== revision ||
       config?.config?.Labels?.['org.opencontainers.image.version'] !== contract.serviceVersion ||
       config?.config?.Labels?.['org.opencontainers.image.source'] !== 'https://github.com/jiying2007/codex-review-service' ||
-      report.Metadata?.OS?.Family !== 'debian' || !/^12(?:\.|$)/.test(String(report.Metadata.OS.Name)) ||
+      report.Metadata?.OS?.Family !== 'debian' || !/^13(?:\.|$)/.test(String(report.Metadata.OS.Name)) ||
       !Array.isArray(report.Results) || !report.Results.length) fail('Trivy report does not identify the expected image and platform');
   if (report.Trivy?.Version !== '0.70.0') fail('Missing or unexpected Trivy scanner version');
   const osResults = report.Results.filter(result => result?.Class === 'os-pkgs' && result.Type === 'debian');
@@ -42,8 +53,10 @@ function assess(report, { image, imageId, platform, revision }) {
   const packages = {};
   for (const [name, minimum] of Object.entries(FIXED_PACKAGES)) {
     const matches = osResults[0].Packages.filter(pkg => pkg?.Name === name);
-    if (matches.length !== 1 || !atLeastDebianVersion(matches[0].Version, minimum)) fail('Required Debian security fix is absent: ' + name);
-    packages[name] = matches[0].Version;
+    if (matches.length !== 1 || matches[0].Arch !== architecture) fail('Required native Debian package is absent: ' + name);
+    const installed = debianInventoryVersion(matches[0]);
+    if (!atLeastDebianVersion(installed, minimum)) fail('Required Debian security fix is absent: ' + name);
+    packages[name] = installed;
   }
   const blocking = [];
   const counts = { total: 0, critical: 0, fixableHigh: 0, unfixedHigh: 0 };
@@ -95,4 +108,4 @@ function main(args = process.argv.slice(2)) {
 if (require.main === module) {
   try { process.exitCode = main(); } catch (error) { console.error(String(error.code || 'ETRIVYREPORT') + ': ' + error.message); process.exitCode = 2; }
 }
-module.exports = { FIXED_PACKAGES, atLeastDebianVersion, assess, main };
+module.exports = { FIXED_PACKAGES, atLeastDebianVersion, debianInventoryVersion, assess, main };
