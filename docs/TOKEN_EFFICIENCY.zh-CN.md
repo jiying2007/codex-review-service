@@ -9,7 +9,7 @@ Codex Review Service 将模型 Token 视为受预算约束的生产资源。7.0 
 3. **风险评分**：安全、并发、资源生命周期、数据库/Schema、Native 代码获得更多上下文；自适应预算只能缩小，不能突破上限。
 4. **模型策略与角色路由**：Model Routing Contract v1 使用 `codex.selectionStrategy` 的 `auto|preference|fixed` 策略。可选 Scout 的假设必须经过 Reviewer 验证；同 Provider 的角色路由不会复用历史模型 Judgment。
 5. **MR 总 Diff 预算**：预算导致遗漏时 coverage 必须 incomplete。
-6. **Token 事前预检**：模型执行前检查下一有界请求。
+6. **Token 事前预检**：模型执行前读取同一 Review Job 的持久调用账本，累计此前分块、角色和重试 attempt 的消耗。已知用量取实测输入加输出，未知或 started 调用保留原估算；下一请求的估算只加入一次，通过后才写入调用意图。新接纳的 Review Job 独立使用 MR 预算。
 7. **项目 Token Reservation**：避免并发 Worker 共同穿透日预算。
 8. **确定性 Summary**：最终摘要不作为模型 Judgment 保存。
 9. **Cache-friendly Prompt**：只改善 Provider 前缀复用，不保存模型 Judgment。
@@ -24,7 +24,7 @@ Config Schema 8 的 `config.example.json` 默认 `review.maxTotalDiffBytes=10485
 
 ## 指标
 
-Prometheus 记录实际/缓存读取/缓存写入/输出/推理 Token、风险分数、请求估算、Diff 预算遗漏与 preflight 阻断。成本比较以 fresh review 为基准，不再存在“复用历史 Judgment 节省 Token”的产品语义。
+Prometheus 记录实际/缓存读取/缓存写入/输出/推理 Token、风险分数、请求估算、Diff 预算遗漏与 preflight 阻断。持久账本将未知用量及其预算估算与实测计数分开报告，只有完整合法的原始 usage 才能证明实测为零。成本比较以 fresh review 为基准，不再存在“复用历史 Judgment 节省 Token”的产品语义。
 
 ## 在线 Token 校准
 

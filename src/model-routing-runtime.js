@@ -4,6 +4,7 @@ const {resolveModelRegistry}=require('./codex-safe-core/model-registry-resolver'
 const {resolveModelSelection,buildModelEvidence}=require('./codex-safe-core/model-routing');
 const {compareShadowReview,buildModelEconomicsScorecard}=require('./codex-safe-core/model-economics');
 const {inspectRuntimeFromConfig}=require('./runtime');
+const {observedUsage,normalizeObservedCodexUsage}=require('./model-usage');
 
 const SEVERITY_RANK=Object.freeze({info:0,low:1,medium:2,high:3,critical:4});
 function freeze(value){if(Array.isArray(value))return Object.freeze(value.map(freeze));if(value&&typeof value==='object')return Object.freeze(Object.fromEntries(Object.entries(value).map(([k,v])=>[k,freeze(v)])));return value;}
@@ -65,9 +66,9 @@ async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCo
     try{
       const result=await runCodexFn(input,{...config,codexModel:route.model},signal,maxFindings);
       if(onCallResult)await onCallResult({role,route,result,optional,shadow,budgetMeta});
-      const durationMs=Number(result.durationMs||Date.now()-started),validated=validateResult(result.parsed),usage=usageShape(result.usage),evidence=router.evidence(route,usage);
-      usageAdd(totalUsage,usage);if(shadow)shadowLatencyMs+=durationMs;else{productionLatencyMs+=durationMs;productionModels.add(result.model||route.model||'cli-default');}
-      const call=freeze({role,shadow,managed:route.managed,model:result.model||route.model||'cli-default',version:String(result.version||''),usage,durationMs,modelEvidence:evidence,budgetMeta});calls.push(call);
+      const durationMs=Number(result.durationMs||Date.now()-started),validated=validateResult(result.parsed),usageKnown=observedUsage(result.usage,result.usageKnown)!==null,usage=usageKnown?normalizeObservedCodexUsage(result.usage):null,routeEvidence=router.evidence(route,usage||{}),evidence=routeEvidence?{...routeEvidence,usage,usageKnown}:null;
+      if(usageKnown)usageAdd(totalUsage,usage);if(shadow)shadowLatencyMs+=durationMs;else{productionLatencyMs+=durationMs;productionModels.add(result.model||route.model||'cli-default');}
+      const call=freeze({role,shadow,managed:route.managed,model:result.model||route.model||'cli-default',version:String(result.version||''),usage,usageKnown,durationMs,modelEvidence:evidence,budgetMeta});calls.push(call);
       if(afterCall)await afterCall({role,route,input,result,validated,call,optional,shadow,budgetMeta});
       return{result,validated,call};
     }catch(error){if(onCallError)await onCallError({role,route,error,optional,shadow,budgetMeta});if(optional){optionalErrors.push(freeze({role,shadow,code:String(error?.code||'EOPTIONAL_ROLE')}));return{error};}throw error;}
@@ -79,15 +80,15 @@ async function executeRoleAwareReview({prompt,config={},signal,maxFindings,runCo
   if(config.codexAdjudicatorEnabled&&shouldAdjudicate(reviewerValidated,config.codexAdjudicatorMinSeverity||'high')){
     const adjudicator=await execute('adjudicator',router.adjudicator(),appendAdjudication(prompt,reviewerValidated));finalValidated=adjudicator.validated;
   }
-  const productionUsage=usageShape(totalUsage);
+  const productionUsage=usageShape(totalUsage),productionUsageKnown=calls.every(call=>call.usageKnown)&&optionalErrors.length===0;
   const shadowRoute=router.shadow();
   if(shadowRoute){
     const shadow=await execute('reviewer',shadowRoute,prompt,{optional:true,shadow:true});
-    if(shadow?.validated)shadowComparison=compareShadowReview({production:{findings:finalValidated.findings||[],usage:productionUsage,latencyMs:productionLatencyMs},candidate:{findings:shadow.validated.findings||[],usage:shadow.call.usage,latencyMs:shadowLatencyMs}});
+    if(shadow?.validated){const comparison=compareShadowReview({production:{findings:finalValidated.findings||[],usage:productionUsage,latencyMs:productionLatencyMs},candidate:{findings:shadow.validated.findings||[],usage:shadow.call.usage,latencyMs:shadowLatencyMs}});shadowComparison={...comparison,production:{...comparison.production,usage:productionUsageKnown?comparison.production.usage:null,cost:productionUsageKnown?comparison.production.cost:null,usageKnown:productionUsageKnown},candidate:{...comparison.candidate,usage:shadow.call.usageKnown?comparison.candidate.usage:null,cost:shadow.call.usageKnown?comparison.candidate.cost:null,usageKnown:shadow.call.usageKnown}};}
     else if(shadow?.error)shadowError=String(shadow.error.code||shadow.error.message||'ESHADOW');
   }
-  const productionCalls=calls.filter(item=>!item.shadow),economics=buildModelEconomicsScorecard([{usage:totalUsage,verifiedFindings:(finalValidated?.findings||[]).length,verifierCalls:productionCalls.filter(item=>item.role==='reviewer').length,scoutCalls:productionCalls.filter(item=>item.role==='scout').length,adjudicatorCalls:productionCalls.filter(item=>item.role==='adjudicator').length,latencyMs:productionLatencyMs+shadowLatencyMs}]);
-  return freeze({finalValidated,reviewerValidated,scoutValidated,calls,usage:totalUsage,productionUsage,productionModels:[...productionModels],modelEvidence:productionCalls.map(item=>item.modelEvidence).filter(Boolean),shadowComparison,shadowError,optionalErrors,economics,productionLatencyMs,shadowLatencyMs,registrySource:router.registrySource,registryRevision:router.registryRevision});
+  const productionCalls=calls.filter(item=>!item.shadow),usageKnown=calls.every(call=>call.usageKnown)&&optionalErrors.length===0,economics=usageKnown?buildModelEconomicsScorecard([{usage:totalUsage,verifiedFindings:(finalValidated?.findings||[]).length,verifierCalls:productionCalls.filter(item=>item.role==='reviewer').length,scoutCalls:productionCalls.filter(item=>item.role==='scout').length,adjudicatorCalls:productionCalls.filter(item=>item.role==='adjudicator').length,latencyMs:productionLatencyMs+shadowLatencyMs}]):null;
+  return freeze({finalValidated,reviewerValidated,scoutValidated,calls,usage:totalUsage,usageKnown,productionUsage,productionUsageKnown,productionModels:[...productionModels],modelEvidence:productionCalls.map(item=>item.modelEvidence).filter(Boolean),shadowComparison,shadowError,optionalErrors,economics,productionLatencyMs,shadowLatencyMs,registrySource:router.registrySource,registryRevision:router.registryRevision});
 }
 
 module.exports={SEVERITY_RANK,parseCandidate,createServiceModelRouter,appendScout,appendAdjudication,shouldAdjudicate,executeRoleAwareReview};

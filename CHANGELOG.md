@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.7.3
+
+- Determine observed usage from the original successful Codex JSONL turn before normalization. Missing, partial, malformed, conflicting or inconsistent counters remain unknown in the durable call ledger; complete explicit zero remains observed zero. The isolated Runner preserves this observation marker, and the Controller validates it before normalizing counters.
+- Exclude unknown usage from measured token metrics, calibration samples and economics scores. Role evidence and shadow comparisons retain an explicit unknown marker and unavailable usage/cost fields while durations and budget estimates remain observable.
+- Retain completed role calls and their evidence immediately when a later required role hits token preflight. Interrupted role chains have no economics score; an initial preflight rejection before any call remains an actual zero-call result.
+- Enforce the configured MR token budget from the same review job's durable call records across chunks, roles and retry attempts. Known calls consume their observed input/output total, unknown and started calls consume their stored estimate, and each next request is counted once before its intent is persisted. The project daily budget and unknown-transport no-replay policy remain intact.
+- Automatically synchronize the multi-GitLab runbook's current release identity and include it in generated-document verification, while retaining historical migration and deployment acceptance evidence.
+- Keep Node 24.19.0, Core 4.18.5, Database Schema 12, Config Schema 8 and the 7.7.2 container security gates unchanged. No existing call history is rewritten and no production deployment is claimed.
+
 ## 7.7.2
 
 - Move the same Node 24.19.0 runtime to an exact-pinned official Debian 13 trixie-slim base. Require patched APT, PCRE2, zlib, gzip, SQLite, OpenSSL and Perl packages with nine explicit Debian 13 minimum versions established from real scans of both architectures. Disable APT retries during bootstrap before the package manager itself is upgraded. This addresses the six fixable High findings and the previously filtered Critical reported in the Bookworm image without a vulnerability waiver.
