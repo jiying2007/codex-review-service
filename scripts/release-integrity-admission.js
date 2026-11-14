@@ -85,10 +85,14 @@ function allJobs(repository,runId){
   return jobs;
 }
 function readIntent(file){
-  const stat=fs.lstatSync(file);
-  if(!stat.isFile()||stat.isSymbolicLink()||stat.size===0||stat.size>8192)
+  try{
+    // The source Prepare job writes intent before initializing submodules.
+    // Only downstream verification needs the shared secure descriptor reader.
+    const {readControlJson}=require('../src/control-file');
+    return readControlJson(file,{maxBytes:8192});
+  }catch{
     fail('ERELEASEINTENT','Missing or unsafe source Release intent artifact');
-  return JSON.parse(fs.readFileSync(file,'utf8'));
+  }
 }
 function verifyParent(env=process.env){
   const context={repository:env.GITHUB_REPOSITORY,runId:env.PARENT_RUN_ID,
@@ -123,4 +127,4 @@ if(require.main===module){try{main();}catch(error){
   console.error(String(error.code||'ERELEASEUNKNOWN')+': '+error.message);
   process.exitCode=2;
 }}
-module.exports={assertRun,assessJobs,validatedIntent,writeIntent,verifyParent};
+module.exports={assertRun,assessJobs,validatedIntent,writeIntent,readIntent,verifyParent};

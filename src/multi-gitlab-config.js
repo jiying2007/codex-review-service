@@ -8,7 +8,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { readSecretFile, allowedSecretName } = require('./secrets');
 const { CONFIG_SCHEMA_VERSION } = require('./product-contract');
-const { loadStructuredConfig, positiveIds, parseGroups, validateSigningToken } = require('./config');
+const { readControlJson } = require('./control-file');
+const { validateStructuredConfig, positiveIds, parseGroups, validateSigningToken } = require('./config');
 
 const INSTANCE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const ENV_ALLOWLIST = Object.freeze([
@@ -74,39 +75,11 @@ function normalizedUrl(raw, label) {
 }
 const MAX_CONFIG_BYTES = 1024 * 1024;
 function fileJson(file, label) {
-  let parsed, fd;
+  let parsed;
   try {
-    // Manifests and per-instance configs are privileged control-plane inputs.
-    // Reject mutable shared files and avoid lstat -> readFile path replacement.
-    const before = fs.lstatSync(file);
-    if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1 ||
-        before.size === 0 || before.size > MAX_CONFIG_BYTES ||
-        (process.platform !== 'win32' && (before.mode & 0o022) !== 0))
-      fail(label + ' must be a private, singly linked regular file of at most 1 MiB');
-    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
-    const opened = fs.fstatSync(fd);
-    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev ||
-        opened.ino !== before.ino || opened.size !== before.size ||
-        (process.platform !== 'win32' && (opened.mode & 0o022) !== 0))
-      fail(label + ' changed while opening');
-    // Bounded read from the checked descriptor, never a second path lookup.
-    const bytes = Buffer.alloc(opened.size);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const n = fs.readSync(fd, bytes, offset, bytes.length - offset, offset);
-      if (n === 0) fail(label + ' was truncated while reading');
-      offset += n;
-    }
-    const after = fs.fstatSync(fd);
-    if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs ||
-        after.ctimeMs !== opened.ctimeMs)
-      fail(label + ' changed while being read');
-    parsed = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
-  } catch (cause) {
-    if (cause.code === 'EMULTIGITLABCONFIG') throw cause;
-    fail(label + ' is missing or invalid');
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
+    parsed = readControlJson(file, { maxBytes: MAX_CONFIG_BYTES });
+  } catch {
+    fail(label + ' must be valid UTF-8 JSON in a private, singly linked regular file of at most 1 MiB');
   }
   return record(parsed, label);
 }
@@ -127,7 +100,7 @@ function validateInstance(raw, allFiles, identities) {
     fail(id + ' must use current standalone Config Schema ' + CONFIG_SCHEMA_VERSION);
   // Perform strict closed-key Schema 8 admission before any tenant worker
   // starts, so unknown/deprecated fields cannot partially start the gateway.
-  try { loadStructuredConfig(configFile); }
+  try { validateStructuredConfig(config, configFile); }
   catch { fail(id + ' has invalid standalone Config Schema ' + CONFIG_SCHEMA_VERSION + ' fields'); }
   const server = record(config.server, id + '.server');
   const gitlab = record(config.gitlab, id + '.gitlab');

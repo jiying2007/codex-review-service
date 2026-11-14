@@ -19,7 +19,7 @@ const entry = file => ({ old_path: file, new_path: file, diff: hunk });
 const finding = file => ({ severity: 'high', category: 'correctness', file, side: 'new', line: 1, endLine: 1, title: 'Lost validation', description: 'The changed statement lost input validation.', suggestion: '', confidence: 1 });
 
 test('GitLab raw paths round-trip through review chunks and quality evidence without injecting diff records', () => {
-  const paths = ['src/a b.c', 'src/中文.c', 'src/a"b.c', 'src/a\\b.c', 'src/a\tb.c', 'src/a\nb.c', 'src/x\ndiff --git a/forged b/forged\n+++ b/forged.c'];
+  const paths = [' src/leading.c', 'src/trailing.c ', '\uFEFFsrc/bom.c', 'src/a b.c', 'src/中文.c', 'src/a"b.c', 'src/a\\b.c', 'src/a\tb.c', 'src/a\nb.c', 'src/x\ndiff --git a/forged b/forged\n+++ b/forged.c'];
   const diffResult = { complete: true, items: paths.map(entry) };
   const snapshot = buildSnapshot(mr, diffResult, policy);
   assert.equal(snapshot.coverageComplete, true);
@@ -35,7 +35,7 @@ test('GitLab raw paths round-trip through review chunks and quality evidence wit
 });
 
 test('backslash and slash repository paths retain separate finding and analyzer anchors', () => {
-  const paths = ['src/a\\b.c', 'src/a/b.c', 'a/source.c', 'b/source.c'];
+  const paths = ['src/a\\b.c', 'src/a/b.c', 'a/source.c', 'b/source.c', ' source.c', 'source.c ', '\uFEFFsource.c'];
   const snapshot = buildSnapshot(mr, { complete: true, items: paths.map(entry) }, policy);
   const result = validateChunkResult({ findings: paths.map(finding) }, snapshot.chunks[0], policy);
   assert.equal(result.rejected, 0);
@@ -94,15 +94,24 @@ test('cross-review differential does not falsely align findings from different r
 });
 
 test('artifact configuration and GitLab requests preserve raw path identity at the API boundary', async () => {
-  const rawPath = 'reports/a\\b.json';
-  const [report] = parseAnalyzerReports([{ format: 'gitlab-codequality', path: rawPath }]);
-  assert.equal(report.path, rawPath);
   const calls = [];
   const client = { async request(method, url) { calls.push([method, url]); return { status: 200, data: '[]' }; } };
-  await GitLabClient.prototype.getJobArtifactFile.call(client, 7, 3, report.path);
-  assert.deepEqual(calls, [['GET', '/projects/7/jobs/3/artifacts/reports/a%5Cb.json']]);
+  const paths = ['reports/a\\b.json', ' reports/report.json ', '\uFEFFreports/report.json'];
+  for (const rawPath of paths) {
+    const [report] = parseAnalyzerReports([{ format: 'gitlab-codequality', path: rawPath }]);
+    assert.equal(report.path, rawPath);
+    await GitLabClient.prototype.getJobArtifactFile.call(client, 7, 3, report.path);
+  }
+  assert.deepEqual(calls, [
+    ['GET', '/projects/7/jobs/3/artifacts/reports/a%5Cb.json'],
+    ['GET', '/projects/7/jobs/3/artifacts/%20reports/report.json%20'],
+    ['GET', '/projects/7/jobs/3/artifacts/%EF%BB%BFreports/report.json']
+  ]);
+  for (const file of ['../private', '/absolute', 'bad\0path', 'bad\npath', '\ud800']) {
+    assert.throws(() => parseAnalyzerReports([{ format: 'gitlab-codequality', path: file }]), { code: 'ECONFIGFILE' });
+  }
   await assert.rejects(GitLabClient.prototype.getJobArtifactFile.call(client, 7, 3, '../private'), { code: 'EARTIFACTPATH' });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, paths.length);
   assert.equal(safePath('src\\..\\literal.c'), true);
   assert.equal(safePath('src/../traversal.c'), false);
 });

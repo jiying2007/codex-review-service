@@ -23,7 +23,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+          submodules: recursive
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
       - id: decision
@@ -39,7 +40,7 @@ jobs:
   integrity:
     needs: admission
     if: ${{ needs.admission.result == 'success' && needs.admission.outputs.published == 'true' }}
-    uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@31b94d4c1bddbe9988225eccf632a669d8b124f0
+    uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@ac5203e1b65ffdca26064c0887537f64d2a8a6cb
     with:
       expected_sha: ${{ needs.admission.outputs.release_sha }}
       product: codex-review-service

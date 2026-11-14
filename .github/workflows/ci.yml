@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
           cache: npm
@@ -46,7 +46,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.22.2'
           cache: npm
@@ -67,13 +67,13 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify migration, path and Provider Contract portability
-        run: node --test test/db-migrations.test.js test/model-call-store.test.js test/controller-ownership.test.js test/webhook-atomic.test.js test/runner-capacity.test.js test/gitlab-path-identity.test.js test/codex.test.js
+        run: node --test test/db-migrations.test.js test/model-call-store.test.js test/controller-ownership.test.js test/webhook-atomic.test.js test/runner-capacity.test.js test/gitlab-path-identity.test.js test/control-file.test.js test/release-integrity-admission.test.js test/codex.test.js
 
   docker-smoke:
     timeout-minutes: 15
@@ -115,7 +115,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
           cache: npm
@@ -145,7 +145,7 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - uses: actions/setup-node@94196ee1d15439c1b6651cd87ef14e88ec435966
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.19.0
       - id: graph
@@ -168,12 +168,12 @@ jobs:
 
   family-release-guard:
     if: github.event_name != 'pull_request'
-    uses: jiying2007/codex-safe-core/.github/workflows/family-release-guard.yml@31b94d4c1bddbe9988225eccf632a669d8b124f0
+    uses: jiying2007/codex-safe-core/.github/workflows/family-release-guard.yml@ac5203e1b65ffdca26064c0887537f64d2a8a6cb
     secrets:
       CODEX_SAFE_FAMILY_READ_TOKEN: ${{ secrets.CODEX_SAFE_FAMILY_READ_TOKEN }}
     with:
       product: codex-review-service
-      expected_core_sha: 31b94d4c1bddbe9988225eccf632a669d8b124f0
+      expected_core_sha: ac5203e1b65ffdca26064c0887537f64d2a8a6cb
 
   ci-gate:
     name: CI Gate
