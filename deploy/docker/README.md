@@ -76,7 +76,11 @@ The image:
 
 ## Image supply chain
 
-Release publishes a multi-architecture `linux/amd64,linux/arm64` image to GHCR. BuildKit emits OCI SBOM/provenance metadata, the release workflow performs a High/Critical vulnerability scan, and GitHub build provenance is attached to the canonical image digest.
+Release publishes a multi-architecture `linux/amd64,linux/arm64` image to GHCR. Required CI builds and scans both native architectures. The publisher verifies the original OCI index and child-manifest bytes, then scans each exact child digest with Trivy 0.70.0. Every Critical vulnerability and every High with an available fix blocks publication, including Critical findings without a fix. Raw JSON inventories and derived SARIF are preserved on failure and included in successful release checksums and attestations.
+
+The pinned Node base is retained, while `apt` / `libapt-pkg6.0` are upgraded to at least 2.6.2 and `libpcre2-8-0` to at least 10.42-1+deb12u2. Bootstrap APT commands disable retries before upgrading APT itself. Both the build and the actual per-platform scan inventory verify these minimum versions. These fixes follow Debian's [APT advisory](https://security-tracker.debian.org/tracker/CVE-2026-109518) and [PCRE2 advisory](https://security-tracker.debian.org/tracker/CVE-2026-103111).
+
+BuildKit emits per-platform SBOM/provenance metadata, and GitHub build provenance is attached to the canonical image digest. `OCI_SCAN_TARGETS.json` records the index, child-manifest and config digest relationships; `BUILD_EVIDENCE.json` binds the original scans and SARIF to that same release identity.
 
 Verify the digest/attestation as described in `VERIFY_RELEASE.md` before deployment.
 

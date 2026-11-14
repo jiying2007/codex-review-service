@@ -10,7 +10,7 @@ test('source Release retains strict immutable publisher and emits run-bound deci
   assert.match(release,/node scripts\/release-integrity-admission\.js write/);
   assert.match(release,/release-intent-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/);
   assert.match(release,/steps\.version\.outputs\.publish/);
-  for(const phrase of ['Release test / Node','Publish immutable GitHub Release','Attest immutable release files','Block unfixed Critical OCI vulnerabilities'])
+  for(const phrase of ['Release test / Node','Publish immutable GitHub Release','Attest immutable release files','Block all Critical and fixable High findings on both platforms'])
     assert.ok(release.includes(phrase));
   assert.doesNotMatch(release,/--clobber/);
 });

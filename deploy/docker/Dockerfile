@@ -7,7 +7,13 @@ LABEL org.opencontainers.image.title="Codex Review Service" \
       org.opencontainers.image.version="${SERVICE_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.licenses="MIT"
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates tini \
+# Disable retries before upgrading the vulnerable package manager itself.
+RUN apt-get -o Acquire::Retries=0 update \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends --only-upgrade apt libapt-pkg6.0 libpcre2-8-0 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge 2.6.2 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg6.0)" ge 2.6.2 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge 10.42-1+deb12u2 \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends git ca-certificates tini \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
     && useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review

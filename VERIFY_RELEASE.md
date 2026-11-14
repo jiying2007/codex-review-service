@@ -8,7 +8,14 @@ Download these files from the same immutable GitHub Release:
 codex-review-service-<version>.tgz
 SBOM.spdx.json
 IMAGE_DIGEST.txt
+BUILD_EVIDENCE.json
+CONSUMER_CI_RECEIPT.json
 compose.release.yaml
+OCI_SCAN_TARGETS.json
+TRIVY-linux-amd64.json
+TRIVY-linux-arm64.json
+TRIVY-linux-amd64.sarif
+TRIVY-linux-arm64.sarif
 SHA256SUMS
 ```
 
@@ -25,6 +32,9 @@ gh attestation verify codex-review-service-<version>.tgz -R jiying2007/codex-rev
 gh attestation verify SBOM.spdx.json -R jiying2007/codex-review-service
 gh attestation verify IMAGE_DIGEST.txt -R jiying2007/codex-review-service
 gh attestation verify compose.release.yaml -R jiying2007/codex-review-service
+for file in BUILD_EVIDENCE.json CONSUMER_CI_RECEIPT.json OCI_SCAN_TARGETS.json TRIVY-linux-*.json TRIVY-linux-*.sarif SHA256SUMS; do
+  gh attestation verify "$file" -R jiying2007/codex-review-service
+done
 ```
 
 Inspect the canonical image identity:
@@ -60,7 +70,9 @@ Expected release properties:
 - package excludes test/scripts/workflow/development-only Safe Core files;
 - package SBOM is SPDX JSON;
 - OCI image is multi-architecture and produced with BuildKit SBOM/provenance;
-- release workflow scans the image and hard-fails on unfixed policy-defined blocking vulnerabilities;
+- both platform-specific manifests are scanned with pinned Trivy 0.70.0 and complete package inventories; every Critical and every High with an available fix blocks publication;
+- raw JSON and derived SARIF are bound to the OCI index, child manifest/config digests and exact source/version labels through `OCI_SCAN_TARGETS.json` and `BUILD_EVIDENCE.json`, then included in checksums and attestations;
+- both platform inventories contain `apt` and `libapt-pkg6.0` >=2.6.2 and `libpcre2-8-0` >=10.42-1+deb12u2;
 - GitHub provenance binds artifacts/image to this repository/workflow.
 
 Attestation proves build provenance, not semantic correctness. Deployment still requires approved CI/system-test results and operational acceptance.
@@ -75,7 +87,14 @@ Attestation proves build provenance, not semantic correctness. Deployment still 
 codex-review-service-<version>.tgz
 SBOM.spdx.json
 IMAGE_DIGEST.txt
+BUILD_EVIDENCE.json
+CONSUMER_CI_RECEIPT.json
 compose.release.yaml
+OCI_SCAN_TARGETS.json
+TRIVY-linux-amd64.json
+TRIVY-linux-arm64.json
+TRIVY-linux-amd64.sarif
+TRIVY-linux-arm64.sarif
 SHA256SUMS
 ```
 
@@ -92,6 +111,9 @@ gh attestation verify codex-review-service-<version>.tgz -R jiying2007/codex-rev
 gh attestation verify SBOM.spdx.json -R jiying2007/codex-review-service
 gh attestation verify IMAGE_DIGEST.txt -R jiying2007/codex-review-service
 gh attestation verify compose.release.yaml -R jiying2007/codex-review-service
+for file in BUILD_EVIDENCE.json CONSUMER_CI_RECEIPT.json OCI_SCAN_TARGETS.json TRIVY-linux-*.json TRIVY-linux-*.sarif SHA256SUMS; do
+  gh attestation verify "$file" -R jiying2007/codex-review-service
+done
 ```
 
 读取 canonical 镜像：
@@ -115,6 +137,8 @@ tar -tzf codex-review-service-<version>.tgz | less
 ```
 
 Attestation 证明产物来自声明的仓库/工作流，但不能替代代码审查、真实 GitLab 系统测试、漏洞策略和生产验收。
+
+从 7.7.2 起，两种架构的子 manifest 分别接受固定 Trivy 0.70.0 扫描，保留完整安装包清单、原始 JSON 和对应 SARIF。所有 Critical（包括无修复版本）及已有修复版本的 High 都阻断发布；缺失、损坏、过滤过或与镜像身份不符的报告也不能通过。`OCI_SCAN_TARGETS.json` 和 `BUILD_EVIDENCE.json` 将扫描绑定到 OCI index、子 manifest/config 摘要、架构、源码提交及产品版本。两架构都验证 `apt` / `libapt-pkg6.0` >=2.6.2、`libpcre2-8-0` >=10.42-1+deb12u2，所有证据纳入校验和及签名。
 
 ## SLSA v1.2 Build alignment
 

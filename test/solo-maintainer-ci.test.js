@@ -21,7 +21,7 @@ test('main and Release keep the expensive production qualification',()=>{
     assert.match(ci,new RegExp(name));
   assert.match(release,/node: \[22\.22\.2, 24\.19\.0\]/);
   assert.match(release,/Build or recover canonical OCI image/);
-  assert.match(release,/Block unfixed Critical OCI vulnerabilities/);
+  assert.match(release,/Block all Critical and fixable High findings on both platforms/);
   assert.match(release,/Attest immutable release files/);
   assert.match(release,/Publish immutable GitHub Release/);
 });
