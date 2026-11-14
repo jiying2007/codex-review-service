@@ -10,7 +10,7 @@ test('ordinary PR CI uses the canonical runtime and all pull-request bases',()=>
   assert.match(ci,/pull_request:\s*\n\s*workflow_dispatch:/);
   assert.match(ci,/Development \/ Node 24\.19\.0/);
   assert.match(ci,/node-version: '24\.19\.0'/);
-  assert.match(ci,/releaseOnly=new Set\(\['compatibility-node22','migration-portability','security','fault-injection','gitlab-system','family-release-guard'\]\)/);
+  assert.match(ci,/releaseOnly=new Set\(\['compatibility-node22','migration-portability','fault-injection','gitlab-system','family-release-guard'\]\)/);
   assert.match(ci,/process\.env\.EVENT_NAME==='pull_request'&&releaseOnly\.has\(name\)&&value\.result==='skipped'/);
 });
 
@@ -37,12 +37,14 @@ test('private CodeQL has the minimal workflow metadata permission it requires',(
   assert.doesNotMatch(caller,/actions: write/);
 });
 
-test('private-only GitHub security features degrade to explicit capability states',()=>{
+test('dashboard capability affects upload while local CodeQL analysis remains mandatory',()=>{
   const security=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
-  assert.match(security,/code-scanning-capability:/);
   assert.match(security,/code-scanning\/alerts\?per_page=1/);
-  assert.match(security,/if: needs\.code-scanning-capability\.outputs\.enabled == 'true'/);
-  assert.match(security,/Code Scanning is unavailable for this private repository/);
+  assert.doesNotMatch(security,/needs: code-scanning-capability/);
+  assert.match(security,/upload: never/);
+  assert.match(security,/steps\.detect\.outputs\.enabled == 'true'/);
+  assert.match(security,/Local CodeQL analysis, the SARIF findings gate, and the SARIF artifact remain required/);
+  assert.ok(security.indexOf('scripts/codeql-findings-gate.js')<security.indexOf('- id: detect'));
   const scorecard=fs.readFileSync(path.join(root,'.github/workflows/scorecard.yml'),'utf8');
   assert.match(scorecard,/private-repository-note:/);
   assert.match(scorecard,/github\.event\.repository\.private == true/);

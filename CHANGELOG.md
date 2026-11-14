@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.7.1
+
+- Repin to Codex Safe Core 4.18.5 because the shipped Core runtime digest changed to `affb2f6f680d8efcdf8ed6a3c5fbd7b009396883be543684f890a82488be2e6c`; publish a new immutable product release and required distribution evidence.
+- Preserve exact repository paths across GitLab snapshots, review/quality chunks, findings, Test Impact, analyzer artifact requests and cross-review comparisons. Use Core Git C quoting so unusual file names cannot inject a diff header; reject conflicting provider headers before inference.
+- Require CodeQL analysis on every PR, execute Core's shared gate against actual SARIF, retain the scan artifact, and block skipped scans or high/critical findings. Dashboard upload capability no longer controls whether analysis runs.
+- Fix the two filesystem races exposed by the new gate: read release intent and multi-GitLab control JSON through Core's nonblocking, bounded descriptor reader, preserve strict UTF-8 and private single-link admission, and validate each tenant schema against those exact bytes without reopening its path.
+- Upgrade immutable Scorecard and CodeQL Action pins, and align the release-integrity workflow with the released Core verifier.
+- Add path collision/injection and real SARIF/CI Gate regression cases, including the cross-platform path matrix. Database Schema 12 and existing Controller, outbox and unknown-write contracts remain unchanged.
+
 ## 7.7.0
 
 - Accept webhook dedupe, Review jobs, Flow transitions and notification intents in one SQLite transaction; acknowledgement follows commit and in-memory cancellation follows acceptance.

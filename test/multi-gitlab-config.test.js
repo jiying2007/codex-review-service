@@ -253,6 +253,40 @@ test('oversized manifest is rejected before parsing even if trailing JSON whites
   }finally{f.close();}
 });
 
+test('multi-GitLab admission rejects invalid UTF-8 instead of parsing replacement characters',()=>{
+  for(const target of ['manifest','tenant']){
+    const f=fixture();try{
+      const file=target==='manifest'?f.manifestFile:f.manifest.instances[0].configFile;
+      if(target==='manifest')f.manifest.server.host='utf8-probe';
+      else f.legacy.codex.path='utf8-probe';
+      f.flush();
+      const bytes=fs.readFileSync(file),index=bytes.indexOf('utf8-probe');
+      assert.ok(index>=0);
+      // A valid replacement character is otherwise admissible. Only the raw
+      // invalid UTF-8 byte must trigger this rejection, not another schema rule.
+      fs.writeFileSync(file,bytes.toString('utf8').replace('utf8-probe','utf8-\uFFFDrobe'));
+      assert.equal(loadMultiManifest(f.manifestFile).instances.length,2);
+      bytes[index+5]=0xff;
+      fs.writeFileSync(file,bytes);
+      assert.throws(()=>loadMultiManifest(f.manifestFile),{code:'EMULTIGITLABCONFIG'});
+    }finally{f.close();}
+  }
+});
+
+test('strict tenant schema validation uses the checked object without reopening the config path',t=>{
+  const f=fixture();try{
+    const configPaths=new Set(f.manifest.instances.map(item=>item.configFile));
+    const originalRead=fs.readFileSync;
+    t.mock.method(fs,'readFileSync',(file,...args)=>{
+      assert.equal(configPaths.has(file),false,'tenant validation reopened an admitted path');
+      return originalRead(file,...args);
+    });
+    assert.equal(loadMultiManifest(f.manifestFile).instances.length,2);
+    f.legacy.gitlab.unsupported='must still be rejected';f.flush();
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/invalid standalone Config Schema/);
+  }finally{f.close();}
+});
+
 (process.platform==='win32'?test.skip:test)('control-file fixture permissions do not depend on the invoking shell umask',()=>{
   const {spawnSync}=require('node:child_process');
   // umask is process-global. Keep each case in its own bounded child instead

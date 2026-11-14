@@ -32,5 +32,7 @@ test('non-model advisory rollout does not impersonate merge authority or product
   assert.match(runbook,/没有任何自动 Merge\/Approve 权限/);
   assert.match(runbook,/不要求虚构第二人批准/);
   assert.match(runbook,/禁令明确解除/);
-  assert.match(runbook,/CodeQL\/构建级签名能力须明确记录为不适用/);
+  assert.match(runbook,/CodeQL 分析与实际 SARIF 高危门禁必须运行/);
+  assert.match(runbook,/仪表盘上传不可用时只跳过上传/);
+  assert.match(runbook,/签名能力依实际发行证据记录/);
 });

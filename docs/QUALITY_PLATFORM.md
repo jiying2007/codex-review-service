@@ -1,12 +1,16 @@
 # Quality Platform
 
-Codex Review Service 7.7.0 consumes exact-pinned Safe Core 4.18.2: Quality Platform v3, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
+Codex Review Service 7.7.1 consumes exact-pinned Safe Core 4.18.5: Quality Platform v3, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
 
 ## Review Profile Packs
 
 `review.profile` is now a versioned engineering Profile Pack rather than a low-level execution preset. Supported packs are `general`, `backend`, `frontend`, `security`, `cpp`, `embedded-linux`, `embedded-mcu`, `driver`, `kernel`, and `realtime`. The Pack is resolved by Safe Core and adds bounded trusted review emphasis to the first model chunk. It cannot grant tools, network access, SCM mutations or weaken the Safe Contract.
 
 ## Analyzer Adapter Hub
+
+Repository paths remain exact POSIX identities throughout GitLab snapshots, review chunks, analyzer anchors and Test Impact. A literal backslash is part of a file name; `src/a\\b.c` and `src/a/b.c` are different files. Diff headers use Safe Core's Git C quoting, including spaces, Unicode, quotes, tabs and newlines. Full provider diff headers must agree with GitLab's declared old/new paths; inconsistent or additional file headers fail before a model call.
+
+Analyzer reports should emit repository-relative paths. The adapters accept a leading `./`, preserve real `a/` and `b/` directories, and do not guess a Windows-to-POSIX mapping. Findings must match the exact snapshot path and a changed line before publication.
 
 Current configuration uses Config Schema 8. Historically, Config Schema 3 replaced the former repository-file-only `sarifFiles` setting with `review.analyzerReports`. Reports are acquired from the exact head pipeline through GitLab Job Artifact APIs and parsed by product-owned bounded adapters. Supported formats are:
 

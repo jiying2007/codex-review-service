@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { toUnifiedReviewBlock } = require('./gitlab-diff');
 const {
   extractImpactSignals,
   buildImpactEvidenceGraph,
@@ -16,13 +17,7 @@ const MAX_READ_CANDIDATES = 64;
 const MAX_FILE_BYTES = 96 * 1024;
 
 function unifiedDiffText(diffResult) {
-  return (diffResult?.items || []).map(entry => {
-    const oldPath = String(entry.old_path || entry.new_path || '').replace(/\\/g, '/');
-    const newPath = String(entry.new_path || entry.old_path || '').replace(/\\/g, '/');
-    const raw = String(entry.diff || '');
-    if (/^diff --git /m.test(raw)) return raw;
-    return [`diff --git a/${oldPath} b/${newPath}`, `--- a/${oldPath}`, `+++ b/${newPath}`, raw].join('\n');
-  }).join('\n');
+  return (diffResult?.items || []).map(toUnifiedReviewBlock).join('\n');
 }
 function textCandidate(file) {
   return !/(?:^|\/)(?:node_modules|dist|build|vendor)\//i.test(file) &&
@@ -105,7 +100,7 @@ async function collectAnalyzerReports(gitlab, mr, config) {
   return Object.freeze({findings:merged.findings,metadata:merged.metadata,artifacts:Object.freeze(artifacts),complete});
 }
 function testCandidatePath(file,prefixes) {
-  const normalized=String(file||'').replace(/\\/g,'/').replace(/^\.\//,'');
+  const normalized=String(file||'').replace(/^\.\//,'');
   return prefixes.some(prefix=>normalized.startsWith(prefix)) && textCandidate(normalized);
 }
 async function collectTestImpact(gitlab,mr,diffResult,config) {
@@ -139,7 +134,7 @@ async function collectServiceQualityEvidence(gitlab, mr, diffResult, config) {
   const testImpactEvidence=formatTestImpactEvidence(testImpact,{maxBytes:48*1024});
   return Object.freeze({ profile, impact, analyzerFindings, analyzerEvidence, analyzerMetadata:analyzer.metadata, analyzerArtifacts:analyzer.artifacts, analyzerComplete:analyzer.complete, testImpact, testImpactEvidence });
 }
-function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||'').replace(/\\/g,'/'),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||'').replace(/\\/g,'/'));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\n${side}\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}
+function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||''),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||''));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\n${side}\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}
 function qualityContextBlocks(evidence) {
   return Object.freeze([
     formatProfilePackEvidence(evidence?.profile),

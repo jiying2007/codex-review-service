@@ -18,6 +18,7 @@ test('downstream integrity is conditional on exact publisher job evidence, never
   const workflow=fs.readFileSync(path.join(root,'.github/workflows/release-integrity.yml'),'utf8');
   assert.match(workflow,/actions: read/);
   assert.match(workflow,/node scripts\/release-integrity-admission\.js verify/);
+  assert.match(workflow,/submodules: recursive/);
   assert.match(workflow,/needs\.admission\.outputs\.published == 'true'/);
   assert.match(workflow,/expected_sha: \$\{\{ needs\.admission\.outputs\.release_sha \}\}/);
   assert.match(workflow,/needs: \[admission, integrity\]/);

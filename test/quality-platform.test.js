@@ -38,7 +38,7 @@ test('pre-generated SARIF is acquired from exact head pipeline and normalized wi
 });
 
 test('quality evidence blocks are bounded evidence and not execution directives',()=>{
-  assert.match(unifiedDiffText(diffResult),/diff --git a\/src\/a.c b\/src\/a.c/);
+  assert.match(unifiedDiffText(diffResult),/diff --git "a\/src\/a.c" "b\/src\/a.c"/);
   assert.ok(cheapScore('src/a.h',{paths:['src/a.c'],includes:['a.h'],modules:[],changedStems:['a'],symbols:[],configs:[],labels:[]})>0);
   assert.deepEqual(qualityContextBlocks({impact:{text:'impact'},analyzerEvidence:{text:'sarif'}}),['impact','sarif']);
 });
