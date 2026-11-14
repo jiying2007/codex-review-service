@@ -15,6 +15,51 @@ const BASE_SHA='b'.repeat(40),START_SHA='c'.repeat(40),HEAD_SHA='d'.repeat(40);
 function mr(overrides={}){return{project_id:7,source_project_id:7,target_project_id:7,iid:9,state:'opened',draft:false,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:BASE_SHA,start_sha:START_SHA,head_sha:HEAD_SHA},...overrides};}
 function outbox(store){return store.db.prepare('SELECT * FROM publication_outbox ORDER BY id').all().map(row=>({...row,payload:JSON.parse(row.payload_json)}));}
 
+test('partial model failure retains prior usage and unknown attempt without automatic replay',async()=>{
+  const fixture=tempStore(),currentMr=mr();let calls=0;
+  const diff=n=>({old_path:`${n}.js`,new_path:`${n}.js`,diff:`@@ -1 +1 @@\n-${'a'.repeat(1700)}\n+${'b'.repeat(1700)}`});
+  const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:[diff(1),diff(2)]}),validateMergeRequestDiffCoverage:async()=>({complete:true})};
+  const service=new ReviewService({config:config({maxTotalDiffBytes:12000}),store:fixture.store,gitlab,logger:{},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{if(++calls===2)throw Object.assign(new Error('transport timeout'),{code:'ECODEXTIMEOUT'});return{version:'fixture',usage:{inputTokens:100,outputTokens:20},parsed:{findings:[]}};}});
+  try{
+    const id=fixture.store.enqueue({projectId:7,mrIid:9,trigger:'command',dedupeKey:'partial',requestedByUserId:1});service.authorizeManual=async()=>true;
+    await service.processJob(fixture.store.claimNext());
+    assert.equal(calls,2);assert.equal(fixture.store.getJob(id).status,'failed');assert.equal(fixture.store.getJob(id).error_code,'EMODELCALLUNCERTAIN');
+    assert.equal(fixture.store.stats().usage.input,100);assert.equal(fixture.store.stats().usage.output,20);assert.equal(fixture.store.stats().usage.unknownCalls,1);
+    assert.equal(fixture.store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
+    assert.equal(fixture.store.claimNext(),null);
+  }finally{fixture.close();}
+});
+
+test('superseded review keeps completed model usage even without a review run',async()=>{
+  const fixture=tempStore();let currentMr=mr();
+  const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-old\n+new'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true})};
+  const service=new ReviewService({config:config(),store:fixture.store,gitlab,logger:{},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{currentMr=mr({target_branch:'release'});return{version:'fixture',usage:{inputTokens:90,outputTokens:10},parsed:{findings:[]}};}});
+  try{
+    const id=fixture.store.enqueue({projectId:7,mrIid:9,trigger:'open',dedupeKey:'stale'});await service.processJob(fixture.store.claimNext());
+    assert.equal(fixture.store.getJob(id).status,'superseded');assert.equal(fixture.store.tokenUsageSince(7,'2000'),100);
+    assert.equal(fixture.store.db.prepare('SELECT COUNT(*) n FROM review_runs').get().n,0);
+  }finally{fixture.close();}
+});
+
+for(const code of ['ERUNNERBUSY','ESHUTDOWN','ECODEXOUTPUT']){
+  test(`model accounting preserves the execution boundary for ${code}`,async()=>{
+    const fixture=tempStore(),currentMr=mr();
+    const gitlab={getMergeRequest:async()=>currentMr,resolveStatusPipeline:async()=>1,listMergeRequestDiffs:async()=>({complete:true,items:[{old_path:'a.js',new_path:'a.js',diff:'@@ -1 +1 @@\n-old\n+new'}]}),validateMergeRequestDiffCoverage:async()=>({complete:true})};
+    const service=new ReviewService({config:config(),store:fixture.store,gitlab,logger:{},getPolicyFn:async()=>policy(),contextFn:async()=>({blocks:[],complete:true}),runCodexFn:async()=>{
+      if(code==='ECODEXOUTPUT')return{version:'fixture',usage:{inputTokens:100,outputTokens:20},parsed:{invalid:true}};
+      throw Object.assign(new Error('fixture'),{code});
+    }});
+    try{
+      const id=fixture.store.enqueue({projectId:7,mrIid:9,trigger:'open',dedupeKey:code});await service.processJob(fixture.store.claimNext());
+      const row=fixture.store.db.prepare('SELECT * FROM model_calls').get();
+      assert.equal(fixture.store.getJob(id).status,code==='ERUNNERBUSY'?'queued':'failed');
+      assert.equal(row.usage_known,code==='ESHUTDOWN'?0:1);
+      assert.equal(row.input_tokens,code==='ESHUTDOWN'?null:code==='ECODEXOUTPUT'?100:0);
+      if(code==='ESHUTDOWN')assert.equal(fixture.store.getJob(id).error_code,'EMODELCALLUNCERTAIN');
+    }finally{fixture.close();}
+  });
+}
+
 test('webhook event handling is local and debounced without GitLab access',()=>{let gitlabCalls=0;const enqueued=[];const service=new ReviewService({config:config({reviewDebounceMs:3000}),store:{enqueue:value=>(enqueued.push(value),1),cancelMergeRequest:()=>0},gitlab:new Proxy({},{get(){gitlabCalls++;return()=>{};}}),logger:{}});const result=service.handleEvent({projectAllowed:true,shouldReview:true,shouldCancel:false,kind:'merge_request',projectId:7,iid:9,action:'open',startSha:'s',headSha:'h',baseSha:'b',sourceBranch:'feat'},'wid');assert.equal(result.status,'queued');assert.equal(gitlabCalls,0);assert.equal(enqueued[0].dedupeKey,'event:wid');assert.equal(enqueued[0].delayMs,3000);});
 test('retry classifier protects non-retryable safety failures',()=>{assert.equal(retryable({code:'EPROJECTPOLICY'}),false);assert.equal(retryable({code:'ETOKENBUDGET'}),false);assert.equal(retryable({code:'EGITLABHTTP',status:403}),false);assert.equal(retryable({code:'EGITLABHTTP',status:429}),true);assert.equal(retryable({code:'EGITLABHTTP',status:503}),true);});
 test('draft detection accepts both GitLab fields',()=>{assert.equal(isDraft({draft:true}),true);assert.equal(isDraft({work_in_progress:true}),true);assert.equal(isDraft({draft:false,work_in_progress:false}),false);});

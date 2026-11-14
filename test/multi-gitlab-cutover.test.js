@@ -16,6 +16,7 @@ function dbFixture({schema=contract.databaseSchemaVersion}={}){
     'PRAGMA foreign_keys=ON;',
     'CREATE TABLE review_jobs(id INTEGER PRIMARY KEY,status TEXT NOT NULL);',
     'CREATE TABLE publication_outbox(id INTEGER PRIMARY KEY,status TEXT NOT NULL);',
+    'CREATE TABLE model_calls(id INTEGER PRIMARY KEY,outcome TEXT NOT NULL);',
     'CREATE TABLE notification_outbox(id INTEGER PRIMARY KEY,status TEXT NOT NULL);',
     'CREATE TABLE status_write_attempts(id INTEGER PRIMARY KEY,outcome TEXT NOT NULL);',
     'CREATE TABLE status_publication_targets(id INTEGER PRIMARY KEY,projection_state TEXT NOT NULL);',
@@ -68,7 +69,7 @@ test('cutover blocks every outstanding retry, worker claim and uncertain remote 
   }
 });
 test('cutover refuses an old or unknown SQLite schema even when no work remains',()=>{
-  for(const schema of [9,10,12,0]){
+  for(const schema of [9,10,11,contract.databaseSchemaVersion+1,0]){
     const f=dbFixture({schema});
     try{
       const result=inspectDatabase(f.file);
@@ -110,7 +111,7 @@ test('startup cutover checks use the same frozen manifest, not a second mutable 
 });
 
 test('cutover fails closed when Schema 11 status evidence tables were deleted',()=>{
-  for(const removed of ['status_write_attempts','status_publication_targets']){
+  for(const removed of ['status_write_attempts','status_publication_targets','model_calls']){
     const f=dbFixture();
     try{
       f.db.exec('DROP TABLE '+removed);
