@@ -7,7 +7,9 @@ const SEVERITY = Object.freeze({ blocker:'critical', critical:'critical', major:
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 function xmlDecode(value=''){return String(value).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');}
 function attrs(text=''){const out={};for(const match of String(text).matchAll(/([A-Za-z_:][\w:.-]*)\s*=\s*(["'])(.*?)\2/g))out[match[1]]=xmlDecode(match[3]);return out;}
-function pathValue(value=''){return String(value).replace(/\\/g,'/').replace(/^\.\//,'').replace(/^a\//,'').replace(/^b\//,'');}
+// Report paths are repository-relative POSIX paths. A raw backslash or an
+// a/ or b/ directory is part of the name, not a diff/Windows separator.
+function pathValue(value=''){return String(value).replace(/^\.\//,'');}
 function finding(raw){return normalizeAnalyzerFinding(raw);}
 function parseJson(content,label){try{return JSON.parse(content);}catch(cause){const error=new Error(`${label} artifact is not valid JSON`);error.code='EANALYZERFORMAT';error.cause=cause;throw error;}}
 function boundedContent(content,maxBytes=MAX_ARTIFACT_BYTES){const text=String(content||''),bytes=Buffer.byteLength(text,'utf8');if(bytes>Math.min(MAX_ARTIFACT_BYTES,Math.max(1024,Number(maxBytes)||MAX_ARTIFACT_BYTES))){const error=new Error(`Analyzer artifact exceeds byte limit: ${bytes}`);error.code='EANALYZERSIZE';throw error;}return text;}

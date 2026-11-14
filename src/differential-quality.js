@@ -14,7 +14,7 @@ function canonicalize(value) {
 }
 function canonicalJson(value) { return JSON.stringify(canonicalize(value)); }
 function sha256(value) { return crypto.createHash('sha256').update(String(value), 'utf8').digest('hex'); }
-function normalizePath(value) { return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/^a\//, '').replace(/^b\//, ''); }
+function normalizePath(value) { return String(value || ''); }
 function normalizeText(value, max = 256) { return String(value || '').trim().replace(/\s+/g, ' ').slice(0, max); }
 function normalizeSeverity(value) { const severity = String(value || '').toLowerCase(); return Object.prototype.hasOwnProperty.call(SEVERITY_ORDER, severity) ? severity : 'info'; }
 function normalizeCategory(value) { const category = String(value || '').toLowerCase(); return VALID_CATEGORIES.has(category) ? category : 'other'; }

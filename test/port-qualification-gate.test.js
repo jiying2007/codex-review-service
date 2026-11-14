@@ -15,8 +15,8 @@ test('port PRs run Node22, migration, crash and real GitLab qualification',()=>{
   for(const name of ['compatibility-node22','migration-portability','fault-injection','gitlab-system'])
     assert.ok(job(name).includes(gate),'risk qualification absent from '+name);
 });
-test('ordinary PR stays lightweight; main security/family and immutable release gates remain',()=>{
-  assert.match(job('security'),/if: github\.event_name != 'pull_request'/);
+test('every PR requires security while full port/main and immutable release gates remain',()=>{
+  assert.doesNotMatch(job('security'),/^    if:/m);
   assert.match(job('family-release-guard'),/if: github\.event_name != 'pull_request'/);
   assert.match(job('ci-gate'),/if: \$\{\{ always\(\) \}\}/);
   assert.match(job('ci-gate'),/value\.result==='success'/);

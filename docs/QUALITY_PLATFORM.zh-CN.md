@@ -1,12 +1,16 @@
 # 质量平台
 
-Codex Review Service 7.7.0 使用精确固定的 Safe Core 4.18.2：Quality Platform v3、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
+Codex Review Service 7.7.1 使用精确固定的 Safe Core 4.18.4：Quality Platform v3、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
 
 ## Review Profile Pack
 
 `review.profile` 现在是版本化工程 Profile Pack，不再是底层执行档。支持 `general`、`backend`、`frontend`、`security`、`cpp`、`embedded-linux`、`embedded-mcu`、`driver`、`kernel`、`realtime`。Pack 由 Safe Core 解析，并只向首个模型 chunk 加入有界、可信的 Review 关注点；不能授予工具、网络、SCM 写权限，也不能削弱 Safe Contract。
 
 ## Analyzer Adapter Hub
+
+GitLab 快照、Review Chunk、分析器锚点和 Test Impact 始终保留精确的 POSIX 仓库路径。字面反斜杠属于文件名，`src/a\\b.c` 与 `src/a/b.c` 是两个不同文件。Diff 头统一使用 Safe Core 的 Git C 引号编码，正确表达空格、中文、引号、制表符和换行；完整 Provider diff 头必须与 GitLab 声明的 old/new path 一致，冲突或额外文件头会在模型调用前失败。
+
+分析器报告应输出仓库相对路径。Adapter 接受开头的 `./`，保留真实的 `a/`、`b/` 目录，不猜测 Windows 到 POSIX 的路径映射。Finding 只有精确匹配快照路径及 changed line，才可以进入发布结果。
 
 当前配置使用 Config Schema 8。历史上，Config Schema 3 删除旧的“仓库内文件” `sarifFiles`，统一改为 `review.analyzerReports`。报告通过 GitLab Job Artifact API 从精确 head pipeline 获取，再由产品侧有界 Adapter 解析。支持：
 

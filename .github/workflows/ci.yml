@@ -72,8 +72,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Verify migration and Provider Contract portability
-        run: node --test test/db-migrations.test.js test/model-call-store.test.js test/controller-ownership.test.js test/webhook-atomic.test.js test/runner-capacity.test.js test/codex.test.js
+      - name: Verify migration, path and Provider Contract portability
+        run: node --test test/db-migrations.test.js test/model-call-store.test.js test/controller-ownership.test.js test/webhook-atomic.test.js test/runner-capacity.test.js test/gitlab-path-identity.test.js test/codex.test.js
 
   docker-smoke:
     timeout-minutes: 15
@@ -123,7 +123,6 @@ jobs:
       - run: node --test test/admin.test.js test/health.test.js test/db.test.js test/notification.test.js test/http.test.js
 
   security:
-    if: github.event_name != 'pull_request'
     permissions:
       actions: read
       contents: read
@@ -169,12 +168,12 @@ jobs:
 
   family-release-guard:
     if: github.event_name != 'pull_request'
-    uses: jiying2007/codex-safe-core/.github/workflows/family-release-guard.yml@59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b
+    uses: jiying2007/codex-safe-core/.github/workflows/family-release-guard.yml@31b94d4c1bddbe9988225eccf632a669d8b124f0
     secrets:
       CODEX_SAFE_FAMILY_READ_TOKEN: ${{ secrets.CODEX_SAFE_FAMILY_READ_TOKEN }}
     with:
       product: codex-review-service
-      expected_core_sha: 59f8a1b84158b05d0c0a5f257ffb8b2452e0b18b
+      expected_core_sha: 31b94d4c1bddbe9988225eccf632a669d8b124f0
 
   ci-gate:
     name: CI Gate
@@ -190,7 +189,7 @@ jobs:
         run: |
           node - <<'NODE'
           const needs=JSON.parse(process.env.NEEDS_JSON);
-          const releaseOnly=new Set(['compatibility-node22','migration-portability','security','fault-injection','gitlab-system','family-release-guard']);
+          const releaseOnly=new Set(['compatibility-node22','migration-portability','fault-injection','gitlab-system','family-release-guard']);
           const pullRequestOnly=new Set(['dependency-review']);
           const failed=Object.entries(needs).filter(([name,value]) => {
             if(value.result==='success')return false;
