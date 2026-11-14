@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "7.7.2",
+  "version": "7.7.3",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -86,7 +86,7 @@
     "release:check": "node scripts/release.js check",
     "release:push": "node scripts/release.js push",
     "docs:generate": "node scripts/generate-contract-docs.js && node scripts/sync-operational-docs.js",
-    "docs:verify": "npm run docs:generate && git diff --exit-code -- README.md README.zh-CN.md docs/ARCHITECTURE.md docs/PRODUCT_CONTRACT.md docs/DEPLOYMENT.md docs/DEPLOYMENT.zh-CN.md OPERATIONS.md SECURITY.md LONG_TERM_ASSET.md deploy/docker/compose.yaml",
+    "docs:verify": "npm run docs:generate && node scripts/sync-operational-docs.js --check",
     "test:offline-safety": "node --test test/db-migrations.test.js test/db.test.js test/live-ref-observation.test.js test/publication-target-identity.test.js test/publication-evidence.test.js test/publication.test.js test/service.test.js test/webhook.test.js",
     "test:multi-offline": "node --test test/multi-gitlab-admin.test.js test/multi-gitlab-config.test.js test/multi-gitlab-cutover.test.js test/multi-gitlab-deployment.test.js test/multi-gitlab-gateway.test.js test/multi-gitlab-preflight.test.js test/multi-gitlab-real-worker-env.test.js test/multi-gitlab-runtime.test.js"
   },

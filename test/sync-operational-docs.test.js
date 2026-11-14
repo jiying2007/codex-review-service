@@ -5,7 +5,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const contract=require('../product-contract.json');
-const{syncOperations,syncSecurity,syncLongTermAsset}=require('../scripts/sync-operational-docs');
+const{syncOperations,syncSecurity,syncLongTermAsset,syncMultiGitLab,CURRENT_DOCS}=require('../scripts/sync-operational-docs');
 
 test('operations sync replaces the whole prior identity sentence without leaving semver fragments',()=>{
   const input='From v5.0.0 onward. Service 7.4.3 keeps Config Schema 7 and Database Schema 8 while consuming Runtime/Provider Contract v3; no DB/config schema migration is introduced by 7.4.3. Service 7.2.x used Config Schema 6 for responsibility delivery.';
@@ -47,4 +47,18 @@ test('long-term asset sync upgrades stale product identity and is idempotent',()
   const repaired=syncLongTermAsset(stale);
   assert.equal(repaired,current);
   assert.equal(syncLongTermAsset(repaired),repaired);
+});
+
+test('multi-GitLab sync updates the current release without rewriting historical acceptance',()=>{
+  const historical='此前 v7.6.3/v7.6.4 的发行验收不能代替';
+  const input='本指南适用于 **Service v7.7.1（Database Schema 12 / Core 4.18.5）**。'+historical+' v7.7.1 的独立验收。\n'+
+    '新 v7.7.1 必须独立完成相同资格。原 Schema 11 + 多 GitLab 代码；9 → 10 → 11 → 12；不宣称生产主机已部署。';
+  const output=syncMultiGitLab(input);
+  assert.ok(output.includes(`Service v${contract.serviceVersion}（Database Schema ${contract.databaseSchemaVersion} / Core ${contract.safeCoreVersion}）`));
+  assert.ok(output.includes(historical+` v${contract.serviceVersion} 的独立验收`));
+  assert.ok(output.includes(`新 v${contract.serviceVersion} 必须独立完成相同资格`));
+  assert.ok(output.includes('原 Schema 11 + 多 GitLab 代码；9 → 10 → 11 → 12；不宣称生产主机已部署'));
+  assert.equal(syncMultiGitLab(output),output);
+  assert.ok(CURRENT_DOCS.includes('docs/MULTI_GITLAB.zh-CN.md'));
+  assert.throws(()=>syncMultiGitLab('missing baseline'),/Missing operational-doc anchor/);
 });

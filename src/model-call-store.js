@@ -1,5 +1,7 @@
 'use strict';
 
+const {observedUsage}=require('./model-usage');
+
 const MODEL_CALL_SCHEMA=`
   CREATE TABLE model_calls(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,16 +22,6 @@ const MODEL_CALL_SCHEMA=`
   CREATE INDEX idx_model_calls_job ON model_calls(job_id,attempt,id);
   CREATE INDEX idx_model_calls_started ON model_calls(started_at,outcome);
 `;
-const FIELDS=['inputTokens','cachedInputTokens','cacheWriteInputTokens','outputTokens','reasoningOutputTokens'];
-function observedUsage(usage,explicit){
-  const required=['inputTokens','outputTokens'];
-  if(explicit===false||!usage||!required.every(key=>Number.isSafeInteger(usage[key])&&usage[key]>=0))return null;
-  // Normalized all-zero provider responses do not prove that usage was reported.
-  if(explicit!==true&&usage.inputTokens+usage.outputTokens===0)return null;
-  if(!FIELDS.every(key=>usage[key]===undefined||(Number.isSafeInteger(usage[key])&&usage[key]>=0)))return null;
-  return FIELDS.map(key=>usage[key]||0);
-}
-
 class ModelCallStore{
   constructor(store){this.store=store;this.db=store.db;}
   begin({jobId,attempt,role,provider,model,estimatedTokens}){return this.store.withTransaction(()=>{
@@ -42,6 +34,12 @@ class ModelCallStore{
     return this.db.prepare("UPDATE model_calls SET outcome=?,usage_known=?,input_tokens=?,cached_input_tokens=?,cache_write_input_tokens=?,output_tokens=?,reasoning_output_tokens=?,error_code=?,model=CASE WHEN ?<>'' THEN ? ELSE model END,finished_at=? WHERE id=? AND outcome='started'").run(failed?'failed':'succeeded',values?1:0,...(values||[null,null,null,null,null]),String(errorCode),String(model),String(model),new Date().toISOString(),id).changes;
   }
   unknownForAttempt(jobId,attempt){return Number(this.db.prepare("SELECT COUNT(*) count FROM model_calls WHERE job_id=? AND attempt=? AND usage_known=0 AND outcome IN ('started','failed','unknown')").get(jobId,attempt).count);}
+  budgetUsageForJob(jobId){
+    // A retry belongs to the same review budget. Include its earlier calls and
+    // any started intent; the next intent is inserted only after preflight.
+    const row=this.db.prepare('SELECT COALESCE(SUM(CASE WHEN usage_known=1 THEN input_tokens+output_tokens ELSE estimated_tokens END),0) tokens FROM model_calls WHERE job_id=?').get(jobId);
+    return Number(row.tokens);
+  }
   recover(){return this.store.withTransaction(()=>{
     const now=new Date().toISOString();
     const jobs=this.db.prepare("UPDATE review_jobs SET status='failed',error_code='EMODELCALLUNCERTAIN',finished_at=? WHERE status='running' AND EXISTS(SELECT 1 FROM model_calls c WHERE c.job_id=review_jobs.id AND c.attempt=review_jobs.attempt AND c.outcome='started')").run(now).changes;

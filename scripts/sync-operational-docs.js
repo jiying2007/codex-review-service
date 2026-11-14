@@ -108,9 +108,19 @@ function syncQualityPlatform(text,{zh=false}={}){
 function syncProvider(text,{zh=false}={}){
   return text.replace(/^(Codex Review Service )\d+\.\d+\.\d+( (?:consumes|使用) Codex Safe Core )\d+\.\d+\.\d+( Runtime\/Provider Contract v)\d+/m,`$1${contract.serviceVersion}$2${contract.safeCoreVersion}$3${contract.providerContractVersion}`).replace(/^Use an explicit override only when[^\n]+$/m,`Use an explicit override only when this Service instance intentionally differs from the machine Codex runtime. Merge this \`codex\` object into the current Config Schema ${contract.configSchemaVersion} file based on \`config.example.json\`; it is a configuration fragment, not a standalone file:`).replace(/^只有当本 Service 实例确实需要[^\n]+$/m,`只有当本 Service 实例确实需要和机器 Codex Runtime 不同时才使用显式覆盖。将以下 \`codex\` 对象合并到基于 \`config.example.json\` 的当前 Config Schema ${contract.configSchemaVersion} 文件中；这是配置片段，不是完整配置文件：`);
 }
-const DOCUMENT_TRANSFORMS=[['docs/DEPLOYMENT.md',syncDeployment],['docs/DEPLOYMENT.zh-CN.md',text=>syncDeployment(text,{zh:true})],['OPERATIONS.md',syncOperations],['SECURITY.md',syncSecurity],['LONG_TERM_ASSET.md',syncLongTermAsset],['deploy/docker/compose.yaml',syncCompose],['docs/ARCHITECTURE.md',syncArchitecture]];
+function syncMultiGitLab(text){
+  const identity=/本指南适用于 \*\*Service v(\d+\.\d+\.\d+)（Database Schema \d+ \/ Core \d+\.\d+\.\d+）\*\*/;
+  const previous=text.match(identity);
+  if(!previous)throw new Error('Missing operational-doc anchor: multi-GitLab product identity');
+  // Only the version identified as the current baseline is updated. Historical
+  // releases and migration/acceptance evidence are retained verbatim.
+  let out=text.replace(new RegExp(`\\bv${previous[1].replaceAll('.','\\.')}\\b`,'g'),`v${contract.serviceVersion}`);
+  out=out.replace(identity,`本指南适用于 **Service v${contract.serviceVersion}（Database Schema ${contract.databaseSchemaVersion} / Core ${contract.safeCoreVersion}）**`);
+  return out;
+}
+const DOCUMENT_TRANSFORMS=[['docs/DEPLOYMENT.md',syncDeployment],['docs/DEPLOYMENT.zh-CN.md',text=>syncDeployment(text,{zh:true})],['OPERATIONS.md',syncOperations],['SECURITY.md',syncSecurity],['LONG_TERM_ASSET.md',syncLongTermAsset],['deploy/docker/compose.yaml',syncCompose],['docs/ARCHITECTURE.md',syncArchitecture],['docs/MULTI_GITLAB.zh-CN.md',syncMultiGitLab]];
 for(const[stem,fn]of [['GITLAB_SETUP',syncGitLabSetup],['NOTIFICATIONS',syncNotifications],['TOKEN_EFFICIENCY',syncTokenEfficiency],['FLOW_TRACKING',syncFlowTracking],['QUALITY_PLATFORM',syncQualityPlatform],['CODEX_PROVIDER',syncProvider]])for(const zh of [false,true])DOCUMENT_TRANSFORMS.push([`docs/${stem}${zh?'.zh-CN':''}.md`,text=>fn(text,{zh})]);
 const CURRENT_DOCS=Object.freeze([...new Set(['README.md','README.zh-CN.md','docs/PRODUCT_CONTRACT.md',...DOCUMENT_TRANSFORMS.map(([file])=>file)])]);
 function main(){if(process.argv.includes('--check')){execFileSync('git',['diff','--exit-code','--',...CURRENT_DOCS],{cwd:root,stdio:'inherit'});return;}for(const[file,fn]of DOCUMENT_TRANSFORMS){const target=path.join(root,file);fs.writeFileSync(target,fn(fs.readFileSync(target,'utf8')));}}
 if(require.main===module)main();
-module.exports={CURRENT_DOCS,routingFields,syncDeployment,syncOperations,syncSecurity,syncLongTermAsset,syncCompose,syncGitLabSetup,syncNotifications,syncTokenEfficiency,syncArchitecture,syncFlowTracking,syncQualityPlatform,syncProvider};
+module.exports={CURRENT_DOCS,routingFields,syncDeployment,syncOperations,syncSecurity,syncLongTermAsset,syncCompose,syncGitLabSetup,syncNotifications,syncTokenEfficiency,syncArchitecture,syncFlowTracking,syncQualityPlatform,syncProvider,syncMultiGitLab};

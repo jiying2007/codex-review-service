@@ -37,6 +37,21 @@ test('missing usage remains unknown; explicit observed zero is distinguishable',
   }finally{store.close();}
 });
 
+test('MR budget follows a job across attempts, includes started intents and settles once',()=>{
+  const store=new Store(':memory:');
+  try{
+    const first=job(store),id=call(store,first);
+    assert.equal(store.modelCalls.budgetUsageForJob(first),500);
+    store.modelCalls.finish(id,{usage:{inputTokens:100,outputTokens:20},usageKnown:true});
+    assert.equal(store.modelCalls.budgetUsageForJob(first),120);
+    assert.equal(store.modelCalls.finish(id,{usage:{inputTokens:900,outputTokens:900},usageKnown:true}),0);
+    store.modelCalls.finish(call(store,first,{attempt:2}),{failed:true});
+    assert.equal(store.modelCalls.budgetUsageForJob(first),620);
+    const second=store.enqueue({projectId:7,mrIid:9,trigger:'command',dedupeKey:'fresh'});
+    assert.equal(store.modelCalls.budgetUsageForJob(second),0,'a distinct fresh review has its own MR budget');
+  }finally{store.close();}
+});
+
 test('process loss keeps observed cost and parks unfinished calls instead of replaying',()=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'service-usage-crash-')),file=path.join(dir,'state.sqlite');
   try{

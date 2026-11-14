@@ -9,7 +9,7 @@ Codex Review Service treats model tokens as a bounded production resource. Versi
 3. **Risk scoring** assigns more context to security, concurrency, resource-lifetime, database/schema and native-code changes. Adaptive sizing can shrink but never exceed configured caps.
 4. **Model policy and role routing** uses Model Routing Contract v1 with `codex.selectionStrategy` set to `auto|preference|fixed`. Optional Scout hypotheses require Reviewer verification; same-provider role routing never reuses historical model judgments.
 5. **MR total diff budget** limits model-reviewed diff bytes; omissions make coverage incomplete.
-6. **Token preflight** checks the next bounded request before execution.
+6. **Token preflight** checks the next bounded request before execution against the same review job's durable call ledger, including prior chunks, roles and retry attempts. Known usage contributes observed input plus output; unknown or started calls retain their stored estimate. The next estimate is added once before its intent is persisted. A new accepted review job has its own MR budget.
 7. **Project reservation ledger** prevents concurrent workers from oversubscribing the daily token budget.
 8. **Deterministic summaries** keep final summaries outside model judgment.
 9. **Cache-friendly prompt layout** improves provider prefix reuse without persisting model judgment.
@@ -24,7 +24,7 @@ Budget-induced omissions become explicit coverage gaps. Project daily budget exh
 
 ## Metrics
 
-Prometheus reports actual/cached/cache-write/output/reasoning token usage, risk scores, request estimates, diff-budget omissions and preflight blocks. Compare fresh-review cost over time; do not infer token savings from historical Judgment reuse because that path does not exist.
+Prometheus reports actual/cached/cache-write/output/reasoning token usage, risk scores, request estimates, diff-budget omissions and preflight blocks. The durable ledger reports unknown usage and its budget estimates separately from measured counters. Only complete valid raw usage can establish observed zero. Compare fresh-review cost over time; do not infer token savings from historical Judgment reuse because that path does not exist.
 
 ## Online token calibration
 
