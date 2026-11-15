@@ -23,6 +23,7 @@ test('operator instructions distinguish read-only cutover from mutating admin DB
   assert.match(runbook,/旧 v7\.6\.3 和更早版本.*可能打开 Store 并迁移数据库/);
   assert.match(runbook,/v7\.6\.4 起.*只读校验数据库/);
   assert.match(runbook,/multi-gitlab-cutover-check\.js/);
+  assert.match(runbook,/model_calls[^\n]+started\/unknown/,'unsettled model calls must block read-only cutover');
   assert.match(runbook,/停止原 Writer/);
   assert.match(runbook,/9 → 10 → 11/);
 });
