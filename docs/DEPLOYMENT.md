@@ -2,7 +2,7 @@
 
 ## Supported baseline
 
-Read `product-contract.json` before deployment. **Codex Review Service 7.7.3** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 12 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
+Read `product-contract.json` before deployment. **Codex Review Service 7.7.4** supports native/systemd Node.js **22 LTS >=22.22.2** or **24 LTS >=24.19.0**, GitLab Self-Managed **>=14.6.1**, Database Schema 12 and **Config Schema 8**. The official Docker image uses canonical Node 24.19.0.
 
 Safe Core is exact-pinned to `ac5203e1b65ffdca26064c0887537f64d2a8a6cb`. Do not replace the gitlink or copy another Core runtime into a release package.
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 is a compatibility floor, not a lifecycle recommendation. Real pro
 
 ## Config Schema 8 + Model Routing Contract v1 boundary
 
-Service 7.7.3 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Current configuration must set `schemaVersion: 8`; runtime does not translate older configurations, and `codex.model`/`codex.fastModel` are retired. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account's machine runtime. `codex.credentialSource` supports `auto|env|auth-json`; `codex.allowInsecureHttp` defaults to `false`, and explicit non-loopback HTTP overrides require operator authorization for a trusted relay. Historical configuration boundaries are listed under Upgrade and rollback.
+Service 7.7.4 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Current configuration must set `schemaVersion: 8`; runtime does not translate older configurations, and `codex.model`/`codex.fastModel` are retired. `codex.providerMode` defaults to `auto`, reusing the Service/Runner account's machine runtime. `codex.credentialSource` supports `auto|env|auth-json`; `codex.allowInsecureHttp` defaults to `false`, and explicit non-loopback HTTP overrides require operator authorization for a trusted relay. Historical configuration boundaries are listed under Upgrade and rollback.
 
 The quality surface is now:
 
@@ -173,7 +173,7 @@ npm run admin -- drain 120
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Current Service 7.7.3 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Historically, Service 7.5.5 introduced Config Schema 7 -> 8 and retired `codex.model`/`codex.fastModel`; Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced Config Schema 5 -> 6 responsibility identity, and Service 7.0.0 introduced Config Schema 4 -> 5 and retired `review.incrementalReviewEnabled`. Runtime translates none of these historical configuration versions.
+From v5.0.0 onward, released DB/Config compatibility is an explicit product contract. Current Service 7.7.4 uses Config Schema 8, Runtime/Provider Contract v3 and Model Routing Contract v1. Historically, Service 7.5.5 introduced Config Schema 7 -> 8 and retired `codex.model`/`codex.fastModel`; Service 7.3.0 introduced the Config Schema 6 -> 7 Provider boundary, Service 7.2.0 introduced Config Schema 5 -> 6 responsibility identity, and Service 7.0.0 introduced Config Schema 4 -> 5 and retired `review.incrementalReviewEnabled`. Runtime translates none of these historical configuration versions.
 
 Historical Database Schema 5 -> 6, 6 -> 7, 7 -> 8 and 8 -> 9 migrations remain explicit and tested; 8 -> 9 introduced Finding Claim projection and lifecycle state. Schema 9 -> 10 adds the status-write attempt and uncertainty ledger with verified backups and transactional migration. The current database version is 12. Rollback must preserve the current uncertainty ledger, control outstanding remote writes and restore a backup matching the target release; in-place downgrade is unsupported. See [Storage and migrations](STORAGE_AND_MIGRATIONS.md).
 
