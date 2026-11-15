@@ -67,7 +67,12 @@ function inspectDatabase(dbPath,{open=(file)=>new DatabaseSync(file,{readOnly:tr
       uncertainStatusWrites:Number(db.prepare(
         "SELECT COUNT(*) AS count FROM status_write_attempts WHERE outcome IN ('started','uncertain')").get().count),
       uncertainStatusTargets:Number(db.prepare(
-        "SELECT COUNT(*) AS count FROM status_publication_targets WHERE projection_state='uncertain'").get().count)
+        "SELECT COUNT(*) AS count FROM status_publication_targets WHERE projection_state='uncertain'").get().count),
+      // A completed/failed parent job does not prove its model transport
+      // settled: preserve started/unknown calls across an offline cutover.
+      // Known failed calls remain terminal and their budget ledger survives.
+      unresolvedModelCalls:Number(db.prepare(
+        "SELECT COUNT(*) AS count FROM model_calls WHERE outcome IN ('started','unknown')").get().count)
     };
     const drained=Object.values(active).every(value=>value===0);
     const schemaCompatible=schemaVersion===expectedSchema;
