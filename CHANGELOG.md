@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.7.4
+
+- Fail closed in the multi-GitLab read-only cutover gate while durable model-call history contains started or unknown transport outcomes, even when the parent review job has reached a terminal state. Report unresolved model calls explicitly while retaining succeeded/failed call history.
+- Add deterministic SQLite regression tests for unsettled transport, terminal parent tasks, settled calls and non-mutating inspection. Cutover does not automatically resolve, replay, delete or rewrite model calls.
+- Keep Safe Core 4.18.5, Database Schema 12, Config Schema 8, Node 24.19.0 and release security gates unchanged. The GitHub release candidate is not evidence of internal deployment.
+
 ## 7.7.3
 
 - Determine observed usage from the original successful Codex JSONL turn before normalization. Missing, partial, malformed, conflicting or inconsistent counters remain unknown in the durable call ledger; complete explicit zero remains observed zero. The isolated Runner preserves this observation marker, and the Controller validates it before normalizing counters.
