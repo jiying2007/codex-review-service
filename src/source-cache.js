@@ -3,8 +3,9 @@
 // In-memory, per-Review-Job source reader. Never persists prompts, source,
 // tokens, or credentials, and never aliases distinct project/ref/path tuples.
 function createJobScopedGitLab(client,{maxEntries=48,maxTotalBytes=1024*1024,maxFileBytes=96*1024}={}){
- if(!client||typeof client.getRepositoryFileRaw!=='function')
-   throw new TypeError('Job source cache requires a GitLab raw-file reader');
+ if(!client)throw new TypeError('Review source client is required');
+ if(typeof client.getRepositoryFileRaw!=='function')return Object.freeze({gitlab:client,
+   stats:()=>Object.freeze({hits:0,misses:0,cachedEntries:0,cachedBytes:0})});
  const cache=new Map(),inflight=new Map();
  let bytes=0,hits=0,misses=0;
  const limits={entries:Math.max(0,Math.floor(Number(maxEntries)||0)),
