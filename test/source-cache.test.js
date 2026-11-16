@@ -54,3 +54,11 @@ test('cache enforces exact UTF-8 bounds and evicts least recently used content',
  await scope.gitlab.getRepositoryFileRaw(7,'xxxxxxxxxx','sha');
  assert.equal(counts.get('xxxxxxxxxx'),2,'oversized payload is never cached');
 });
+
+
+test('offline service fixtures without raw-file capability stay compatible',()=>{
+ const client={listMergeRequestDiffs:async()=>({complete:true,items:[]})};
+ const scope=createJobScopedGitLab(client);
+ assert.equal(scope.gitlab,client);
+ assert.deepEqual(scope.stats(),{hits:0,misses:0,cachedEntries:0,cachedBytes:0});
+});
