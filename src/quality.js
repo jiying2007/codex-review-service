@@ -37,27 +37,44 @@ function cheapScore(file, signals) {
   return score;
 }
 async function collectImpact(gitlab, mr, diffResult, profile) {
-  if (!profile || profile.impactDepth <= 0 || profile.maxImpactFiles <= 0 || typeof gitlab.listRepositoryTree !== 'function') {
-    return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: true, truncated: false });
+  if (!profile || profile.impactDepth <= 0 || profile.maxImpactFiles <= 0 || typeof gitlab.listRepositoryTree !== 'function')
+    return Object.freeze({ nodes:[],edges:[],text:'',bytes:0,complete:true,truncated:false,degradationReasons:[] });
+  const failure=reason=>Object.freeze({nodes:[],edges:[],text:'',bytes:0,complete:false,
+    truncated:true,degradationReasons:Object.freeze([reason])});
+  const sourceProjectId=Number(mr.source_project_id||mr.project_id);
+  const headSha=String(mr.diff_refs?.head_sha||mr.sha||'');
+  if(!sourceProjectId||!headSha)return failure('impact_source_identity_missing');
+  const diff=unifiedDiffText(diffResult),signals=extractImpactSignals(diff);
+  let tree;
+  try{tree=await gitlab.listRepositoryTree(sourceProjectId,headSha);}
+  catch{return failure('impact_tree_unavailable');}
+  if(!tree||!Array.isArray(tree.items))return failure('impact_tree_invalid');
+  const reasons=new Set();
+  if(tree.complete!==true)reasons.add('impact_tree_pagination');
+  if(tree.items.length>MAX_TREE_ITEMS)reasons.add('impact_tree_limit');
+  const ranked=tree.items.slice(0,MAX_TREE_ITEMS)
+    .filter(item=>item?.type==='blob'&&textCandidate(String(item.path||'')))
+    .map(item=>({path:String(item.path),score:cheapScore(String(item.path),signals)}))
+    .filter(item=>item.score>0)
+    .sort((a,b)=>b.score-a.score||a.path.localeCompare(b.path));
+  if(ranked.length>MAX_READ_CANDIDATES)reasons.add('impact_candidate_limit');
+  const candidates=[];
+  for(const item of ranked.slice(0,MAX_READ_CANDIDATES)){
+    let raw;
+    try{raw=await gitlab.getRepositoryFileRaw(sourceProjectId,item.path,headSha);}
+    catch{reasons.add('impact_candidate_read_failed');continue;}
+    if(raw===null){reasons.add('impact_candidate_missing');continue;}
+    if(Buffer.byteLength(String(raw),'utf8')>MAX_FILE_BYTES){
+      reasons.add('impact_candidate_oversized');continue;
+    }
+    candidates.push({path:item.path,content:String(raw)});
   }
-  const sourceProjectId = Number(mr.source_project_id || mr.project_id);
-  const headSha = String(mr.diff_refs?.head_sha || mr.sha || '');
-  if (!sourceProjectId || !headSha) return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true });
-  const diff = unifiedDiffText(diffResult), signals = extractImpactSignals(diff);
-  let tree; try { tree = await gitlab.listRepositoryTree(sourceProjectId, headSha); } catch { return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true }); }
-  if (!tree || !Array.isArray(tree.items)) return Object.freeze({ nodes: [], edges: [], text: '', bytes: 0, complete: false, truncated: true });
-  const ranked = tree.items.slice(0, MAX_TREE_ITEMS).filter(item => item?.type === 'blob' && textCandidate(String(item.path || '')))
-    .map(item => ({ path: String(item.path), score: cheapScore(String(item.path), signals) }))
-    .sort((a,b) => b.score - a.score || a.path.localeCompare(b.path));
-  const candidates = [];
-  for (const item of ranked.slice(0, MAX_READ_CANDIDATES)) {
-    if (item.score <= 0) break;
-    let raw; try { raw = await gitlab.getRepositoryFileRaw(sourceProjectId, item.path, headSha); } catch { continue; }
-    if (raw === null || Buffer.byteLength(String(raw), 'utf8') > MAX_FILE_BYTES) continue;
-    candidates.push({ path: item.path, content: String(raw) });
-  }
-  const graph = buildImpactEvidenceGraph({ diff, candidates, maxNodes: profile.maxImpactFiles, maxEdges: Math.max(32, profile.maxImpactFiles * 6), maxBytes: Math.min(256 * 1024, Math.max(32 * 1024, profile.maxImpactFiles * 12 * 1024)) });
-  return Object.freeze({ ...graph, complete: graph.complete && tree.complete });
+  const graph=buildImpactEvidenceGraph({diff,candidates,maxNodes:profile.maxImpactFiles,
+    maxEdges:Math.max(32,profile.maxImpactFiles*6),
+    maxBytes:Math.min(256*1024,Math.max(32*1024,profile.maxImpactFiles*12*1024))});
+  if(!graph.complete||graph.truncated)reasons.add('impact_graph_budget');
+  return Object.freeze({...graph,complete:reasons.size===0,truncated:reasons.size>0,
+    degradationReasons:Object.freeze([...reasons])});
 }
 function globMatch(value, pattern='*') {
   const escaped = String(pattern || '*').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
@@ -132,7 +149,17 @@ async function collectServiceQualityEvidence(gitlab, mr, diffResult, config) {
   const analyzerFindings=dedupeAnalyzerFindings(analyzer.findings||[]);
   const analyzerEvidence = formatAnalyzerEvidence(analyzerFindings, { maxFindings: 80, maxBytes: 64 * 1024 });
   const testImpactEvidence=formatTestImpactEvidence(testImpact,{maxBytes:48*1024});
-  return Object.freeze({ profile, impact, analyzerFindings, analyzerEvidence, analyzerMetadata:analyzer.metadata, analyzerArtifacts:analyzer.artifacts, analyzerComplete:analyzer.complete, testImpact, testImpactEvidence });
+  const degradationReasons=new Set(impact.degradationReasons||[]);
+  if(impact.complete===false)degradationReasons.add('impact_incomplete');
+  if(analyzer.complete===false)degradationReasons.add('optional_analyzer_incomplete');
+  if(analyzerEvidence.truncated)degradationReasons.add('analyzer_evidence_truncated');
+  if(testResult.status!=='fulfilled')degradationReasons.add('test_impact_unavailable');
+  if(testImpact.truncated)degradationReasons.add('test_impact_truncated');
+  if(testImpactEvidence.truncated)degradationReasons.add('test_evidence_truncated');
+  return Object.freeze({profile,impact,analyzerFindings,analyzerEvidence,
+    analyzerMetadata:analyzer.metadata,analyzerArtifacts:analyzer.artifacts,
+    analyzerComplete:analyzer.complete,testImpact,testImpactEvidence,
+    degradationReasons:Object.freeze([...degradationReasons])});
 }
 function anchorAnalyzerFindings(snapshot,findings=[]){const byPath=new Map((snapshot?.files||[]).filter(file=>!file.skipped).map(file=>[String(file.path||''),file])),out=[];for(const item of findings||[]){const file=byPath.get(String(item.file||''));if(!file)continue;const line=Number(item.line||0);let side='';if(file.changedLines?.new?.includes(line))side='new';else if(file.changedLines?.old?.includes(line))side='old';if(!side)continue;const anchor=String(file.changedLines?.anchors?.[side]?.[line]||'');out.push(Object.freeze({severity:item.severity,category:item.category,file:file.path,side,line,endLine:line,title:`${item.tool}/${item.ruleId}`.slice(0,160),description:String(item.message||'').slice(0,1200),suggestion:String(item.suggestion||'').slice(0,1200),confidence:Number(item.confidence??1),anchorHash:require('node:crypto').createHash('sha256').update(`${file.path}\n${side}\n${anchor}`).digest('hex'),fingerprint:String(item.fingerprint||'')}));}return Object.freeze(out);}
 function qualityContextBlocks(evidence) {

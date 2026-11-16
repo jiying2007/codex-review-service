@@ -7,14 +7,15 @@ const{buildSnapshot,buildPrompt,validateChunkResult,consolidateReviews,mergeCurr
 const{runCodex}=require('./codex');
 const{getEffectivePolicy}=require('./policy');
 const{buildReviewContext}=require('./context');
+const{createJobScopedGitLab}=require('./source-cache');
 const{collectServiceQualityEvidence,qualityContextForChunk,anchorAnalyzerFindings}=require('./quality');
-const{resolveReviewProfile}=require('./codex-safe-core/quality-platform');
+const{resolveReviewProfilePack}=require('./codex-safe-core/review-profile-pack');
 const{fingerprint,REVIEW_PROMPT_CONTRACT_VERSION}=require('./codex-safe-core/safe-contract');
 const{computeReviewSubjectFingerprint,shouldPersistJudgmentReceipt}=require('./codex-safe-core/judgment-lifecycle');
 const{classifyFindingLifecycle}=require('./finding-ledger');
 const{eventForReview,eventForReviewStarted,eventForFailure,planStatusCardActions,planNotificationActions}=require('./notification');
 const{currentAssignments,assignmentMatch}=require('./assignment');
-const{estimateChunkTokens,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,TokenBudgetLedger,TokenEstimatorCalibration}=require('./cost-planner');
+const{estimateChunkTokens,adaptiveContextConfig,selectChunksWithinByteBudget,allocateFindingCapacities,TokenBudgetLedger,TokenEstimatorCalibration}=require('./cost-planner');
 const{createServiceModelRouter,executeRoleAwareReview}=require('./model-routing-runtime');
 const{buildModelEconomicsScorecard}=require('./codex-safe-core/model-economics');
 const{createTokenCalibrationStore}=require('./codex-safe-core/token-calibration-store');
@@ -31,8 +32,11 @@ function isDraft(mr){return mr?.draft===true||mr?.work_in_progress===true;}
 function reviewSubject(snapshot){return{type:'gitlab-mr',projectId:Number(snapshot.projectId),mrIid:Number(snapshot.iid),startSha:snapshot.startSha,headSha:snapshot.headSha};}
 
 // Count concrete changed-line evidence, not merely submitted file names.
+// One authoritative view of planned, scheduled and actually completed evidence.
+// The initial snapshot's plannedUnits is the only retained baseline; every other
+// field is recomputed after total-diff selection and after model execution.
 function evidenceCoverageLedger(snapshot,chunks,reviewedCount=chunks.length){
- const expected=new Set(),scheduled=new Set(),modelReviewed=new Set(),files=new Set();
+ const expected=new Set(),scheduled=new Set(),modelReviewed=new Set(),scheduledFiles=new Set();
  const key=(path,side,line)=>JSON.stringify([path,side,line]);
  for(const file of snapshot.files||[])if(!file.skipped){
    for(const side of ['new','old'])for(const line of file.changedLines?.[side]||[])
@@ -40,20 +44,40 @@ function evidenceCoverageLedger(snapshot,chunks,reviewedCount=chunks.length){
  }
  chunks.forEach((chunk,index)=>{
    for(const file of chunk.files||[]){
-     files.add(file.path);
+     scheduledFiles.add(file.path);
      for(const side of ['new','old'])for(const line of file.changedLines?.[side]||[]){
        const value=key(file.path,side,line);
-       scheduled.add(value);if(index<reviewedCount)modelReviewed.add(value);
+       scheduled.add(value);
+       if(index<reviewedCount)modelReviewed.add(value);
      }
    }
  });
- return Object.freeze({changedLines:expected.size,
-   plannedForModel:[...expected].filter(value=>scheduled.has(value)).length,
-   completedByModel:[...expected].filter(value=>modelReviewed.has(value)).length,
-   unplannedChangedLines:[...expected].filter(value=>!scheduled.has(value)).length,
-   notReviewedChangedLines:[...expected].filter(value=>!modelReviewed.has(value)).length,
-   plannedChunks:chunks.length,completedChunks:Math.min(chunks.length,reviewedCount),
-   plannedFiles:files.size});
+ const countIn=set=>[...expected].filter(value=>set.has(value)).length;
+ const planned=countIn(scheduled),completed=countIn(modelReviewed);
+ const original=snapshot.coverageLedger||{};
+ const plannedUnits=Number.isSafeInteger(original.plannedEvidenceUnits)
+   ?original.plannedEvidenceUnits
+   :chunks.reduce((n,chunk)=>n+(Number(chunk.unitCount)>0?Number(chunk.unitCount):1),0);
+ return Object.freeze({
+   providerComplete:Boolean(original.providerComplete??true),
+   changedFiles:(snapshot.files||[]).length,
+   reviewableFiles:(snapshot.files||[]).filter(file=>!file.skipped).length,
+   scheduledFiles:scheduledFiles.size,
+   changedLines:expected.size,
+   scheduledChangedLines:planned,
+   unscheduledChangedLines:expected.size-planned,
+   plannedEvidenceUnits:plannedUnits,
+   scheduledEvidenceUnits:chunks.reduce((n,chunk)=>n+(Number(chunk.unitCount)>0?Number(chunk.unitCount):1),0),
+   scheduledChunks:chunks.length,
+   coverageGaps:(snapshot.coverageGaps||[]).length,
+   plannedForModel:planned,
+   completedByModel:completed,
+   unplannedChangedLines:expected.size-planned,
+   notReviewedChangedLines:expected.size-completed,
+   plannedChunks:chunks.length,
+   completedChunks:Math.min(chunks.length,Math.max(0,reviewedCount)),
+   plannedFiles:scheduledFiles.size
+ });
 }
 class ReviewService{
   constructor({config,store,gitlab,logger=console,telemetry=null,runCodexFn=runCodex,getPolicyFn=getEffectivePolicy,contextFn=buildReviewContext}){this.config=config;this.store=store;this.gitlab=gitlab;if(!('recoverClassicEmptyDiffs' in this.gitlab))Object.defineProperty(this.gitlab,'recoverClassicEmptyDiffs',{value:async(_projectId,_mr,diffResult)=>diffResult,enumerable:false});this.logger=logger;this.telemetry=telemetry;this.runCodexFn=runCodexFn;this.getPolicyFn=getPolicyFn;this.contextFn=contextFn;this.active=new Map();this.stopping=false;this.workers=[];this.tokenLedger=new TokenBudgetLedger();this.tokenCalibration=new TokenEstimatorCalibration();this.tokenCalibrationStore=null;if(config.dataDir){try{this.tokenCalibrationStore=createTokenCalibrationStore({filePath:path.join(config.dataDir,'token-calibration.json')});this.tokenCalibrationStore.restore(this.tokenCalibration);}catch(error){this.logger.warn?.({event:'token_calibration_restore_failed',code:error.code||'ECALIBRATIONSTORE'});}}}
@@ -114,31 +138,43 @@ class ReviewService{
   }
   enqueueStatus(job,state,description,type='status'){if(!job.head_sha||!job.status_project_id)return null;return this.store.enqueuePublication({runId:null,projectId:job.project_id,mrIid:job.mr_iid,type,dedupeKey:`job:${job.id}:status:${state}`,payload:{snapshotIdentityVersion:1,sourceProjectId:job.status_project_id||job.project_id,targetProjectId:job.project_id,sourceBranch:job.source_branch||'',targetBranch:job.target_branch||'',baseSha:job.base_sha||'',jobId:job.id,startSha:job.start_sha,statusName:this.config.statusName,statusProjectId:job.status_project_id,headSha:job.head_sha,state,description,ref:job.source_branch||'',pipelineId:job.pipeline_id||null}});}
   async reviewSnapshot(job,mr,fullDiffs,policy,controller){
+    const sourceScope=createJobScopedGitLab(this.gitlab);
     let qualityEvidence;
-    try{qualityEvidence=await collectServiceQualityEvidence(this.gitlab,mr,fullDiffs,this.config);}catch(error){if((this.config.analyzerReports||[]).some(spec=>spec.required))throw error;this.logger.warn?.({event:'quality_evidence_degraded',jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,code:error?.code||'EQUALITYEVIDENCE'});qualityEvidence={profile:resolveReviewProfile(this.config.reviewProfile||'standard'),impact:{nodes:[],edges:[],text:'',bytes:0,complete:false,truncated:true},analyzerFindings:[],analyzerEvidence:{text:'',included:0,total:0,bytes:0,truncated:false}};}
-    const profile=qualityEvidence.profile||resolveReviewProfile(this.config.reviewProfile||'standard');
+    try{qualityEvidence=await collectServiceQualityEvidence(sourceScope.gitlab,mr,fullDiffs,this.config);}catch(error){if((this.config.analyzerReports||[]).some(spec=>spec.required))throw error;this.logger.warn?.({event:'quality_evidence_degraded',jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,code:error?.code||'EQUALITYEVIDENCE'});qualityEvidence={profile:resolveReviewProfilePack(this.config.reviewProfile||'general'),impact:{nodes:[],edges:[],text:'',bytes:0,complete:false,truncated:true},analyzerFindings:[],analyzerEvidence:{text:'',included:0,total:0,bytes:0,truncated:false},degradationReasons:['quality_collection_failed']};}
+    const profile=qualityEvidence.profile||resolveReviewProfilePack(this.config.reviewProfile||'general');
     this.telemetry?.metrics.inc('codex_review_impact_nodes_total',qualityEvidence.impact?.nodes?.length||0);
     this.telemetry?.metrics.inc('codex_review_analyzer_findings_total',qualityEvidence.analyzerFindings?.length||0);
-    const fullSnapshot=buildSnapshot(mr,fullDiffs,policy),reviewSnapshot=fullSnapshot;fullSnapshot.rawDiffFallbacks=Object.freeze(fullSnapshot.files.map(file=>file.raw_diff_fallback?{path:file.path,...file.raw_diff_fallback}:null).filter(Boolean));if(fullSnapshot.rawDiffFallbacks.length)this.logger.info?.({event:'gitlab_raw_diff_fallback',jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,results:fullSnapshot.rawDiffFallbacks.map(item=>({path:item.path,status:item.status,oldBytes:item.oldBytes,newBytes:item.newBytes,diffBytes:item.diffBytes}))});
+    const fullSnapshot=buildSnapshot(mr,fullDiffs,policy),reviewSnapshot=fullSnapshot;
+    const qualityDegradations=[...new Set(qualityEvidence.degradationReasons||[])].slice(0,24);
+    for(const reason of qualityDegradations)fullSnapshot.advisories.push('quality:'+reason);
+    if(qualityDegradations.length)this.telemetry?.metrics.inc('codex_review_quality_evidence_degraded_total',qualityDegradations.length);fullSnapshot.rawDiffFallbacks=Object.freeze(fullSnapshot.files.map(file=>file.raw_diff_fallback?{path:file.path,...file.raw_diff_fallback}:null).filter(Boolean));if(fullSnapshot.rawDiffFallbacks.length)this.logger.info?.({event:'gitlab_raw_diff_fallback',jobId:job.id,projectId:job.project_id,mrIid:job.mr_iid,results:fullSnapshot.rawDiffFallbacks.map(item=>({path:item.path,status:item.status,oldBytes:item.oldBytes,newBytes:item.newBytes,diffBytes:item.diffBytes}))});
     const baseTotalBudget=this.config.maxTotalDiffBytes||this.config.maxDiffBytes,profileTotalBudget=Math.max(policy.maxDiffBytes,Math.floor(baseTotalBudget*profile.evidenceFactor)),selection=selectChunksWithinByteBudget(reviewSnapshot.chunks,profileTotalBudget);
     reviewSnapshot.chunks=selection.chunks;
-    fullSnapshot.coverageLedger=Object.freeze({...fullSnapshot.coverageLedger,...evidenceCoverageLedger(fullSnapshot,selection.chunks)});
+    fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,selection.chunks);
     this.telemetry?.metrics.inc('codex_review_unplanned_changed_lines_total',fullSnapshot.coverageLedger.unplannedChangedLines);
     if(!selection.complete){const omitted=selection.omitted.map(chunk=>chunk.files.map(file=>file.path).join(',')).filter(Boolean);fullSnapshot.coverageGaps.push(`mr_diff_budget:${omitted.slice(0,8).join('|')||'chunk_omitted'}`);fullSnapshot.coverageComplete=false;this.telemetry?.metrics.inc('codex_review_diff_budget_omitted_chunks_total',selection.omitted.length);}
+    fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,reviewSnapshot.chunks);
+        const sourceCacheStats=()=>{
+      const stats=sourceScope.stats();
+      this.telemetry?.metrics.inc('codex_review_source_cache_hits_total',stats.hits);
+      this.telemetry?.metrics.inc('codex_review_source_cache_misses_total',stats.misses);
+      return stats;
+    };
     const evidenceEntries=[];
     if(!reviewSnapshot.chunks.length){
       const review=emptyReview(reviewSnapshot,policy);
       review.summary=deterministicSummary(review.findings,policy);
       review.usage={inputTokens:0,cachedInputTokens:0,cacheWriteInputTokens:0,outputTokens:0,reasoningOutputTokens:0};
-      review.usageKnown=true;review.reviewProfile=profile.name;review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=evidenceCoverageLedger(fullSnapshot,[],0);review.contextCoverage={omittedSlices:0,omittedFiles:[],reasons:{}};review.saturatedChunks=[];review.modelInferenceCount=0;
-      review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[])},chunks:[]});
+      review.usageKnown=true;review.reviewProfile=profile.name;fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,[],0);review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=fullSnapshot.coverageLedger;review.qualityEvidenceStatus=Object.freeze({degraded:qualityDegradations.length>0,reasons:qualityDegradations});review.contextCoverage={omittedSlices:0,omittedFiles:[],reasons:{}};review.saturatedChunks=[];review.modelInferenceCount=0;review.sourceCache=sourceCacheStats();
+      review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},chunks:[]});
       review.reviewSubjectFingerprint=computeReviewSubjectFingerprint({subject:reviewSubject(fullSnapshot),diffFingerprint:fullSnapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',evidenceManifestDigest:review.evidenceManifestDigest,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,reviewProfile:profile.name,model:''});
       return{snapshot:fullSnapshot,review};
     }
+    const findingCapacities=allocateFindingCapacities(reviewSnapshot.chunks,policy.maxFindings);
     const results=[],usage={inputTokens:0,cachedInputTokens:0,cacheWriteInputTokens:0,outputTokens:0,reasoningOutputTokens:0},models=new Set(),modelEvidence=[],shadowModelEvidence=[],shadowComparisons=[],shadowErrors=[],optionalRoleErrors=[],economicsRecords=[],roleCalls=[],saturatedChunks=[],contextOmissions=[];let version='unknown',estimatedTotal=0,economicsComplete=true;const modelRouter=createServiceModelRouter(this.config);
     for(const chunk of reviewSnapshot.chunks){
       if(controller.signal.aborted)throw controller.signal.reason;
-      const contextConfig=adaptiveContextConfig(this.config,policy,chunk),perChunkFindings=planChunkFindingCapacity(policy.maxFindings,reviewSnapshot.chunks.length,contextConfig.riskScore),profileContextConfig={...contextConfig,maxContextBytes:Math.floor(contextConfig.maxContextBytes*profile.contextFactor),maxContextFiles:Math.max(contextConfig.maxContextFiles?1:0,Math.floor(contextConfig.maxContextFiles*profile.contextFactor)),contextLines:Math.max(contextConfig.contextLines?1:0,Math.floor(contextConfig.contextLines*profile.contextFactor))},context=await this.contextFn(this.gitlab,mr,chunk,profileContextConfig);
+      const contextConfig=adaptiveContextConfig(this.config,policy,chunk),perChunkFindings=findingCapacities[chunk.index],profileContextConfig={...contextConfig,maxContextBytes:Math.floor(contextConfig.maxContextBytes*profile.contextFactor),maxContextFiles:Math.max(contextConfig.maxContextFiles?1:0,Math.floor(contextConfig.maxContextFiles*profile.contextFactor)),contextLines:Math.max(contextConfig.contextLines?1:0,Math.floor(contextConfig.contextLines*profile.contextFactor))},context=await this.contextFn(sourceScope.gitlab,mr,chunk,profileContextConfig);
       const chunkQuality=qualityContextForChunk(qualityEvidence,chunk);
       context.blocks=[...(context.blocks||[]),...chunkQuality.blocks];context.bytes=(context.bytes||0)+chunkQuality.bytes;
       if(chunkQuality.truncated){fullSnapshot.advisories.push('quality_context_clipped:chunk='+chunk.index);this.telemetry?.metrics.inc('codex_review_quality_context_clipped_chunks_total',1);}
@@ -172,9 +208,9 @@ class ReviewService{
     let review=consolidateReviews(reviewSnapshot,results,policy);
     const deterministicAnalyzerFindings=anchorAnalyzerFindings(fullSnapshot,qualityEvidence.analyzerFindings);
     review=mergeCurrentEvidenceFindings(review,deterministicAnalyzerFindings,policy);
-    review.summary=deterministicSummary(review.findings,policy);review.codexVersion=version;review.codexModel=[...models].join(',');review.usage=usage;review.usageKnown=roleCalls.every(call=>call.usageKnown)&&optionalRoleErrors.length===0;review.estimatedTokenBudget=estimatedTotal;review.reviewProfile=profile.name;review.impactNodes=qualityEvidence.impact?.nodes?.length||0;review.impactBytes=qualityEvidence.impact?.bytes||0;review.analyzerFindingCount=qualityEvidence.analyzerFindings?.length||0;review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=evidenceCoverageLedger(fullSnapshot,reviewSnapshot.chunks,results.length);review.contextCoverage=Object.freeze({omittedSlices:contextOmissions.length,omittedFiles:[...new Set(contextOmissions.map(item=>item.path))].slice(0,80),reasons:contextOmissions.reduce((out,item)=>(out[item.reason]=(out[item.reason]||0)+1,out),{})});review.saturatedChunks=Object.freeze(saturatedChunks);review.modelInferenceCount=roleCalls.filter(x=>!x.shadow).length;review.shadowInferenceCount=roleCalls.filter(x=>x.shadow).length;review.modelRoutingContractVersion=1;review.modelRegistrySource=modelRouter.registrySource;review.modelRegistryRevision=modelRouter.registryRevision;review.modelEvidence=Object.freeze(modelEvidence);review.shadowModelEvidence=Object.freeze(shadowModelEvidence);review.shadowComparisons=Object.freeze(shadowComparisons);review.shadowErrors=Object.freeze(shadowErrors);review.optionalRoleErrors=Object.freeze(optionalRoleErrors);review.modelEconomics=review.usageKnown&&economicsComplete?buildModelEconomicsScorecard(economicsRecords):null;this.logger.info?.({event:'model_routing_evidence',jobId:job.id,registryRevision:modelRouter.registryRevision,productionCalls:review.modelInferenceCount,shadowCalls:review.shadowInferenceCount,scoutCalls:roleCalls.filter(x=>!x.shadow&&x.role==='scout').length,adjudicatorCalls:roleCalls.filter(x=>!x.shadow&&x.role==='adjudicator').length,shadowErrors:review.shadowErrors.length,optionalRoleErrors:review.optionalRoleErrors.length,usage:review.usage,usageKnown:review.usageKnown,economicsComplete,economics:review.modelEconomics});
+    review.summary=deterministicSummary(review.findings,policy);review.codexVersion=version;review.codexModel=[...models].join(',');review.usage=usage;review.usageKnown=roleCalls.every(call=>call.usageKnown)&&optionalRoleErrors.length===0;review.estimatedTokenBudget=estimatedTotal;review.reviewProfile=profile.name;review.impactNodes=qualityEvidence.impact?.nodes?.length||0;review.impactBytes=qualityEvidence.impact?.bytes||0;review.analyzerFindingCount=qualityEvidence.analyzerFindings?.length||0;fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,reviewSnapshot.chunks,results.length);review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=fullSnapshot.coverageLedger;review.qualityEvidenceStatus=Object.freeze({degraded:qualityDegradations.length>0,reasons:qualityDegradations});review.contextCoverage=Object.freeze({omittedSlices:contextOmissions.length,omittedFiles:[...new Set(contextOmissions.map(item=>item.path))].slice(0,80),reasons:contextOmissions.reduce((out,item)=>(out[item.reason]=(out[item.reason]||0)+1,out),{})});review.saturatedChunks=Object.freeze(saturatedChunks);review.sourceCache=sourceCacheStats();review.modelInferenceCount=roleCalls.filter(x=>!x.shadow).length;review.shadowInferenceCount=roleCalls.filter(x=>x.shadow).length;review.modelRoutingContractVersion=1;review.modelRegistrySource=modelRouter.registrySource;review.modelRegistryRevision=modelRouter.registryRevision;review.modelEvidence=Object.freeze(modelEvidence);review.shadowModelEvidence=Object.freeze(shadowModelEvidence);review.shadowComparisons=Object.freeze(shadowComparisons);review.shadowErrors=Object.freeze(shadowErrors);review.optionalRoleErrors=Object.freeze(optionalRoleErrors);review.modelEconomics=review.usageKnown&&economicsComplete?buildModelEconomicsScorecard(economicsRecords):null;this.logger.info?.({event:'model_routing_evidence',jobId:job.id,registryRevision:modelRouter.registryRevision,productionCalls:review.modelInferenceCount,shadowCalls:review.shadowInferenceCount,scoutCalls:roleCalls.filter(x=>!x.shadow&&x.role==='scout').length,adjudicatorCalls:roleCalls.filter(x=>!x.shadow&&x.role==='adjudicator').length,shadowErrors:review.shadowErrors.length,optionalRoleErrors:review.optionalRoleErrors.length,usage:review.usage,usageKnown:review.usageKnown,economicsComplete,economics:review.modelEconomics});
     if(!fullSnapshot.coverageComplete){review.coverageComplete=false;review.verdict='incomplete';}
-    review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[])},modelRouting:{contractVersion:1,registryRevision:modelRouter.registryRevision,modelEvidence},chunks:evidenceEntries});
+    review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},modelRouting:{contractVersion:1,registryRevision:modelRouter.registryRevision,modelEvidence},chunks:evidenceEntries});
     review.reviewSubjectFingerprint=computeReviewSubjectFingerprint({subject:reviewSubject(fullSnapshot),diffFingerprint:fullSnapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',evidenceManifestDigest:review.evidenceManifestDigest,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,reviewProfile:profile.name,model:review.codexModel});
     return{snapshot:fullSnapshot,review};
   }
