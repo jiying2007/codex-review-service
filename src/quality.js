@@ -158,7 +158,11 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
    if(bytes+size>maxBytes){truncated=true;return;}
    blocks.push(text);bytes+=size;
  };
- append(formatProfilePackEvidence(evidence?.profile));
+ const profile=evidence?.profile;
+ const pack=String(profile?.packName||'');
+ const engineering=/^(security|cpp|embedded-linux|embedded-mcu|driver|kernel|realtime)$/.test(pack);
+ if(chunk?.index===0||engineering)append(formatProfilePackEvidence(profile));
+ else if(pack)append('TRUSTED REVIEW PROFILE: '+pack+'; primary check: '+String(profile?.checks?.[0]||''));
  const related=(evidence?.impact?.nodes||[]).filter(node=>linked.has(node.path)).slice(0,4);
  if(related.length){
    const {boundSourceBlock}=require('./codex-safe-core/context-builder');
@@ -174,13 +178,10 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
  const analyzers=(evidence?.analyzerFindings||[]).filter(item=>paths.has(item.file));
  append(formatAnalyzerEvidence(analyzers,{maxFindings:12,maxBytes:8192}).text);
  // Global test recommendations remain visible in a bounded form to each chunk.
- const tests=String(evidence?.testImpactEvidence?.text||'');
- if(tests){
-   const {boundSourceBlock}=require('./codex-safe-core/context-builder');
-   const bounded=boundSourceBlock(tests,4096);
-   append(bounded.text);
-   if(bounded.truncated)truncated=true;
- }
+ const tests=(evidence?.testImpact?.recommendedTests||[]).slice(0,3);
+ if(tests.length)append('--- TEST IMPACT CANDIDATES (NOT EXECUTED) ---\n'+tests.map(item=>
+   '- '+String(item.path||item.id||'').slice(0,160)+' score='+Number(item.score||0)
+ ).join('\n')+'\n--- END TEST IMPACT CANDIDATES ---');
  if(chunk?.index===0)append(formatAnalyzerMetadata(evidence?.analyzerMetadata||[]));
  return Object.freeze({blocks:Object.freeze(blocks),bytes,truncated,
    relatedImpactNodes:related.length,relatedAnalyzerFindings:analyzers.length});
