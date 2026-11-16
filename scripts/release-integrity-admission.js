@@ -84,6 +84,63 @@ function allJobs(repository,runId){
   }
   return jobs;
 }
+function allArtifacts(repository,runId){
+  const response=gh(['api',`repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`]);
+  if(!Number.isSafeInteger(response?.total_count)||response.total_count>100||
+      !Array.isArray(response.artifacts)||response.artifacts.length!==response.total_count)
+    fail('ERELEASEARTIFACTS','Missing, truncated or unbounded source release artifact inventory');
+  return response.artifacts;
+}
+function selectIntentArtifact(artifacts,context,state){
+  assertRun(context);
+  if(!state.intentRequired)return null;
+  if(!Array.isArray(artifacts)||artifacts.length>100)
+    fail('ERELEASEARTIFACTS','Missing or unbounded source release artifacts');
+  const prefix=`release-intent-${context.runId}-`,matches=[],seen=new Set();
+  for(const artifact of artifacts){
+    if(typeof artifact?.name!=='string'||!artifact.name.startsWith(prefix))continue;
+    const suffix=artifact.name.slice(prefix.length);
+    if(!RUN.test(suffix))fail('ERELEASEINTENT','Malformed source release intent attempt');
+    const attempt=Number(suffix);
+    if(!Number.isSafeInteger(attempt)||attempt>Number(context.attempt)||
+       seen.has(attempt)||artifact.expired!==false||
+       !Number.isSafeInteger(artifact.size_in_bytes)||artifact.size_in_bytes<1||
+       artifact.size_in_bytes>65536||
+       String(artifact.workflow_run?.id)!==String(context.runId)||
+       artifact.workflow_run?.head_sha!==context.headSha||
+       artifact.workflow_run?.head_branch!=='main')
+      fail('ERELEASEINTENT','Source release intent artifact is expired, ambiguous or not bound to the parent run');
+    seen.add(attempt);matches.push({name:artifact.name,attempt});
+  }
+  if(!matches.length)fail('ERELEASEINTENT','No immutable source Prepare intent artifact in the parent Release run');
+  // A rerun-failed-jobs attempt can retain the earlier Prepare success and
+  // its original artifact. GitHub's latest-job listing may relabel that job
+  // with the current attempt; the original artifact attempt remains authority.
+  return matches.sort((a,b)=>b.attempt-a.attempt)[0];
+}
+function prepareJobsAtAttempt(repository,runId,attempt){
+  const response=gh(['api',`repos/${repository}/actions/runs/${runId}/attempts/${attempt}/jobs?per_page=100`]);
+  if(!Number.isSafeInteger(response?.total_count)||response.total_count>100||
+      !Array.isArray(response.jobs)||response.jobs.length!==response.total_count)
+    fail('ERELEASEJOBS','Incomplete original Prepare attempt job evidence');
+  return response.jobs;
+}
+function assertPreparedIntent(jobs,context,attempt){
+  assertRun(context);
+  if(!Number.isSafeInteger(attempt)||attempt<1||attempt>Number(context.attempt)||
+      !Array.isArray(jobs)||jobs.length>100)
+    fail('ERELEASEJOBS','Invalid original Prepare attempt');
+  const matching=jobs.filter(job=>job?.name===PREPARE);
+  if(matching.length!==1||matching[0].conclusion!=='success'||
+     String(matching[0].run_id)!==String(context.runId)||
+     Number(matching[0].run_attempt)!==attempt||
+     matching[0].head_sha!==context.headSha||
+     matching[0].workflow_name!=='Release'||
+     !Array.isArray(matching[0].steps)||
+     !matching[0].steps.some(step=>step.name==='Record exact source release decision'&&step.conclusion==='success'))
+    fail('ERELEASEJOBS','Source intent is not backed by a successful exact-attempt Prepare job');
+  return true;
+}
 function readIntent(file){
   try{
     // The source Prepare job writes intent before initializing submodules.
@@ -100,13 +157,17 @@ function verifyParent(env=process.env){
   assertRun(context);
   const state=assessJobs(allJobs(context.repository,context.runId));
   if(!state.intentRequired)return{published:false,releaseSha:null};
+  const selected=selectIntentArtifact(allArtifacts(context.repository,context.runId),context,state);
+  assertPreparedIntent(prepareJobsAtAttempt(context.repository,context.runId,selected.attempt),
+    context,selected.attempt);
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'release-intent-'));
   try{
-    const name=`release-intent-${context.runId}-${context.attempt}`;
     execFileSync('gh',['run','download',String(context.runId),'--repo',context.repository,
-      '--name',name,'--dir',directory],{timeout:45000,encoding:'utf8',maxBuffer:1024*1024,
-      env:{...process.env,GH_PROMPT_DISABLED:'1'}});
-    return validatedIntent(readIntent(path.join(directory,'release-intent.json')),context,state);
+      '--name',selected.name,'--dir',directory],{timeout:45000,encoding:'utf8',
+      maxBuffer:1024*1024,env:{...process.env,GH_PROMPT_DISABLED:'1'}});
+    const intentContext={...context,attempt:String(selected.attempt)};
+    return validatedIntent(readIntent(path.join(directory,'release-intent.json')),
+      intentContext,state);
   }finally{fs.rmSync(directory,{recursive:true,force:true});}
 }
 function main(){
@@ -127,4 +188,4 @@ if(require.main===module){try{main();}catch(error){
   console.error(String(error.code||'ERELEASEUNKNOWN')+': '+error.message);
   process.exitCode=2;
 }}
-module.exports={assertRun,assessJobs,validatedIntent,writeIntent,readIntent,verifyParent};
+module.exports={assertRun,assessJobs,validatedIntent,writeIntent,readIntent,verifyParent,selectIntentArtifact,assertPreparedIntent,allArtifacts,prepareJobsAtAttempt};
