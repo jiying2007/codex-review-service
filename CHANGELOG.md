@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.7.7
+
+- Integrate the formally released Safe Core 4.18.7 bounded Review Evidence Hunk splitter via exact immutable commit pin and verified runtime/governance digests, after trusted Core release qualification.
+- Preserve Review Service #149/#150 exact per-chunk coverage, unified final ledger, bounded Impact/Analyzer degradation, MR-level Finding candidate budgets and job-scoped SHA source caching.
+- Retain Config Schema 8, DB Schema 12, Safe Contract v2, Review Receipt v5 and current production safety gates. No automatic migration of active 7.6.1 deployment or activation of Sensor model review.
+
 ## 7.7.6
 
 - Exact-pin immutable Safe Core 4.18.6 to make the bounded, authenticated public trust-root release metadata verifier available to the Service Family Release Guard. Preserve runtime digest, product protocols, database/config schema, and model execution behavior.
