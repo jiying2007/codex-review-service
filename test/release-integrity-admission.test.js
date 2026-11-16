@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const {assessJobs,validatedIntent,writeIntent,readIntent}=require('../scripts/release-integrity-admission');
+const {assessJobs,validatedIntent,writeIntent,readIntent,selectIntentArtifact,assertPreparedIntent}=require('../scripts/release-integrity-admission');
 const sha='a'.repeat(40),old='b'.repeat(40);
 const context={repository:'jiying2007/codex-review-service',runId:'1234',attempt:'1',headSha:sha,event:'push'};
 function jobs(pre='success',post='success',publication='success'){
@@ -113,4 +113,78 @@ test('source Prepare can still write intent before Core submodules are initializ
   assert.ifError(result.error);
   assert.equal(result.status,0,result.stderr);
   assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),intent());
+});
+
+function intentArtifact(attempt,overrides={}){
+  return {id:100+attempt,name:`release-intent-1234-${attempt}`,expired:false,
+    size_in_bytes:330,workflow_run:{id:1234,head_sha:sha,head_branch:'main'},...overrides};
+}
+function prepareAttempt(attempt=1,overrides={}){
+  return {name:'Prepare release',conclusion:'success',run_id:1234,
+    run_attempt:attempt,head_sha:sha,workflow_name:'Release',
+    steps:[{name:'Record exact source release decision',conclusion:'success'}],
+    ...overrides};
+}
+test('rerun-failed-publisher can use only the genuine prior successful Prepare intent',()=>{
+  const retryContext={...context,attempt:'2'};
+  const state=assessJobs(jobs());
+  const candidate=selectIntentArtifact([intentArtifact(1)],retryContext,state);
+  assert.deepEqual(candidate,{name:'release-intent-1234-1',attempt:1});
+  assert.equal(assertPreparedIntent([prepareAttempt(1)],retryContext,candidate.attempt),true);
+  // Context's effective attempt is the actual Prepare job attempt, not the
+  // publisher's latest workflow attempt. Every other source field stays bound.
+  assert.deepEqual(validatedIntent(intent(),{...retryContext,attempt:String(candidate.attempt)},state),
+    {published:true,releaseSha:sha});
+  assert.throws(()=>validatedIntent(intent(),retryContext,state),/differs/);
+});
+test('original attempt and repeat-preparation attempt are separately source-bound',()=>{
+  const latest={...context,attempt:'3'};
+  assert.deepEqual(selectIntentArtifact([intentArtifact(1),intentArtifact(3)],latest,assessJobs(jobs())),
+    {name:'release-intent-1234-3',attempt:3});
+  assert.throws(()=>validatedIntent(intent(),latest,assessJobs(jobs())),/differs/);
+  const newIntent=intent({runAttempt:3});
+  assert.deepEqual(validatedIntent(newIntent,latest,assessJobs(jobs())),{published:true,releaseSha:sha});
+});
+test('intent artifact selector denies mismatched, expired, future or ambiguous provenance',()=>{
+  const retryContext={...context,attempt:'2'};
+  const state=assessJobs(jobs());
+  const cases=[
+    [],[intentArtifact(3)],[intentArtifact(1,{expired:true})],
+    [intentArtifact(1,{size_in_bytes:999999})],
+    [intentArtifact(1,{workflow_run:{id:1234,head_sha:old,head_branch:'main'}})],
+    [intentArtifact(1,{workflow_run:{id:9999,head_sha:sha,head_branch:'main'}})],
+    [intentArtifact(1,{workflow_run:{id:1234,head_sha:sha,head_branch:'dev'}})],
+    [intentArtifact(1),intentArtifact(1,{id:777})],
+    [intentArtifact(1,{name:'release-intent-1234-not-an-attempt'})]
+  ];
+  for(const artifacts of cases){
+    assert.throws(()=>selectIntentArtifact(artifacts,retryContext,state),
+      {code:'ERELEASEINTENT'},JSON.stringify(artifacts));
+  }
+  assert.throws(()=>selectIntentArtifact(Array(101).fill({name:'unrelated'}),retryContext,state),
+    {code:'ERELEASEARTIFACTS'});
+  assert.equal(selectIntentArtifact([],retryContext,{intentRequired:false,published:false}),null);
+});
+test('prior Prepare evidence requires exact job attempt, source, success and recorded intent',()=>{
+  const retryContext={...context,attempt:'2'},prepared=prepareAttempt(1);
+  assert.equal(assertPreparedIntent([prepared],retryContext,1),true);
+  for(const variant of [
+    {...prepared,conclusion:'failure'}, {...prepared,run_attempt:2},
+    {...prepared,head_sha:old}, {...prepared,run_id:1235},
+    {...prepared,workflow_name:'Other'},
+    {...prepared,steps:[{name:'Record exact source release decision',conclusion:'failure'}]}
+  ]){
+    assert.throws(()=>assertPreparedIntent([variant],retryContext,1),{code:'ERELEASEJOBS'});
+  }
+  assert.throws(()=>assertPreparedIntent([prepared,prepared],retryContext,1),{code:'ERELEASEJOBS'});
+  assert.throws(()=>assertPreparedIntent([prepared],retryContext,3),{code:'ERELEASEJOBS'});
+  assert.throws(()=>assertPreparedIntent([],retryContext,1),{code:'ERELEASEJOBS'});
+});
+test('historical retry still rejects publisher decision mismatch and SHA drift',()=>{
+  const retryContext={...context,attempt:'2'},state=assessJobs(jobs());
+  const selected=selectIntentArtifact([intentArtifact(1)],retryContext,state);
+  assert.equal(selected.attempt,1);
+  for(const modified of [
+    {publish:false},{headSha:old},{releaseSha:old},{event:'issue_comment'},{tag:'v7.6.1'}
+  ])assert.throws(()=>validatedIntent(intent(modified),{...retryContext,attempt:'1'},state));
 });

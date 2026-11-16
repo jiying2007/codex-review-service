@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.7.5
+
+- Verify exact original successful Prepare-release intent even when a failed-only publisher rerun completes at a later workflow attempt. Preserve authenticated run, head SHA, original Prepare job, decision and published artifact integrity; never fabricate an attempt-2 intent.
+- Fail closed on missing, expired, duplicate, future, cross-branch or mismatched source artifacts, incomplete job evidence and invalid release decisions. Add adversarial deterministic tests.
+- Keep immutable v7.7.4 intact; release this correction as v7.7.5, preserving Core 4.18.5, DB Schema 12, Config Schema 8, real GitLab/OCI/Trivy gates and zero default model calls.
+
 ## 7.7.4
 
 - Fail closed in the multi-GitLab read-only cutover gate while durable model-call history contains started or unknown transport outcomes, even when the parent review job has reached a terminal state. Report unresolved model calls explicitly while retaining succeeded/failed call history.
