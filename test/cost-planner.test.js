@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const{estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,TokenBudgetLedger}=require('../src/cost-planner');
+const{estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,allocateFindingCapacities,TokenBudgetLedger}=require('../src/cost-planner');
 
 test('estimates prompt/output conservatively before execution',()=>{const estimate=estimateChunkTokens('x'.repeat(3000),2);assert.ok(estimate.input>=1500);assert.ok(estimate.output>=456);assert.equal(estimate.total,estimate.input+estimate.output);});
 test('risk score expands evidence context without deciding model authority',()=>{const low={files:[{path:'docs/readme.md'}],diffText:'+ wording'},high={files:[{path:'src/auth/token.js'}],diffText:'+ await mutex.lock();\n+ token = secret;'},config={contextEnabled:true,adaptiveContextEnabled:true},policy={maxContextBytes:262144,maxContextFiles:12,contextLines:20};const lowCfg=adaptiveContextConfig(config,policy,low),highCfg=adaptiveContextConfig(config,policy,high);assert.ok(scoreChunkRisk(high)>scoreChunkRisk(low));assert.ok(highCfg.maxContextBytes>lowCfg.maxContextBytes);});
@@ -17,4 +17,27 @@ test('finding capacity avoids eight-chunk starvation yet remains within global c
  assert.equal(planChunkFindingCapacity(4,8,12),4);
  assert.equal(planChunkFindingCapacity(1,1,100),1);
  assert.equal(planChunkFindingCapacity(40,1,0),40);
+});
+
+
+test('MR-wide candidate quotas limit total output requests across high-risk chunks',()=>{
+ const chunks=Array.from({length:8},(_,index)=>({
+   index,files:[{path:index===0?'src/auth/secret.c':'src/ordinary'+index+'.c'}],
+   diffText:index===0?'+ token = secret;\n+ mutex_lock();':'+ value++;'
+ }));
+ const caps=allocateFindingCapacities(chunks,40);
+ assert.equal(caps.length,8);
+ assert.ok(caps.every(value=>value>=1&&value<=40));
+ assert.ok(caps.reduce((sum,value)=>sum+value,0)<=60,'candidate budget at most 1.5x final limit');
+ assert.ok(caps[0]>caps[1],'more candidate slots are assigned to higher-risk changes');
+ assert.deepEqual(allocateFindingCapacities(chunks,40),caps,'deterministic allocation');
+});
+test('MR-wide finding quotas keep every chunk representable at tiny final caps',()=>{
+ const chunks=Array.from({length:64},(_,index)=>({index,files:[],diffText:'+'+index}));
+ const caps=allocateFindingCapacities(chunks,4);
+ assert.equal(caps.length,64);
+ assert.ok(caps.every(value=>value===1));
+ assert.equal(caps.reduce((sum,value)=>sum+value,0),64);
+ assert.deepEqual(allocateFindingCapacities([],40),[]);
+ assert.deepEqual(allocateFindingCapacities([{index:0,files:[],diffText:''}],40),[40]);
 });
