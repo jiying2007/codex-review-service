@@ -2,14 +2,14 @@
 
 ## Product baseline
 
-Codex Review Service **7.7.5** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
+Codex Review Service **7.7.6** is the current production-operations baseline. Machine-readable identity lives in `product-contract.json`:
 
 - Database Schema 12
 - Config Schema 8
 - Model Routing Contract 1
 - Policy Schema 4
 - Review Receipt 5
-- Safe Contract 2 / Safe Core Family v4 exact commit `ac5203e1b65ffdca26064c0887537f64d2a8a6cb`
+- Safe Contract 2 / Safe Core Family v4 exact commit `0ace77445f5e4c8fa48579b8dc824d4d526b5828`
 - Profile Pack 1 / Test Impact 1 / Analyzer Adapter 1
 - Native/systemd Node.js: 22 LTS >=22.22.2 or 24 LTS >=24.19.0; Node 23 unsupported
 - Canonical Docker Node.js: 24.19.0
@@ -49,7 +49,7 @@ System deployment:
 
 Both systemd units explicitly set `CODEX_REVIEW_CONFIG_FILE=/etc/codex-review/config.json`. Runtime does not infer root, sudo or systemd mode.
 
-Config Schema 8 is the current boundary. Service 7.7.5 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
+Config Schema 8 is the current boundary. Service 7.7.6 consumes Runtime/Provider Contract v3 and Model Routing Contract v1; legacy `codex.model`/`codex.fastModel` are rejected rather than translated. Unknown fields and unsupported versions still fail closed.
 
 ## Analyzer / Profile / Test Impact operations
 
@@ -185,7 +185,7 @@ Restore procedure:
 
 ## Upgrade and rollback
 
-From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.7.5 uses Config Schema 8 and Database Schema 12 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
+From v5.0.0 onward, released DB/Config compatibility is a product contract. Service 7.7.6 uses Config Schema 8 and Database Schema 12 while consuming Runtime/Provider Contract v3 and Model Routing Contract v1; the hard cut retires `codex.model`/`codex.fastModel`. Service 7.2.x used Config Schema 6 for responsibility delivery, and Service 7.0.0 introduced the historical Config Schema 4 -> 5 hard cut. Before upgrade:
 
 1. create/verify backup;
 2. drain durable work;
