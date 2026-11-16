@@ -40,7 +40,7 @@ jobs:
   integrity:
     needs: admission
     if: ${{ needs.admission.result == 'success' && needs.admission.outputs.published == 'true' }}
-    uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@0ace77445f5e4c8fa48579b8dc824d4d526b5828
+    uses: jiying2007/codex-safe-core/.github/workflows/consumer-release-integrity.yml@27581151313813d5cd777e862e5ced7f023a94d3
     with:
       expected_sha: ${{ needs.admission.outputs.release_sha }}
       product: codex-review-service

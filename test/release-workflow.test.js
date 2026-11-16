@@ -51,3 +51,19 @@ test('explicit release retry may recover a cancelled pre-tag publication without
   assert.match(release,/Require genuine same-SHA main CI Gate before immutable publication/);
   assert.match(release,/node: \[22\.22\.2, 24\.19\.0\]/);
 });
+
+
+test('reusable Family and Release Integrity workflows pin the exact Product Contract Core SHA',()=>{
+ const contract=require('../product-contract.json');
+ const ci=fs.readFileSync('.github/workflows/ci.yml','utf8');
+ const integrity=fs.readFileSync('.github/workflows/release-integrity.yml','utf8');
+ const sha=contract.safeCoreCommit;
+ assert.match(sha,/^[0-9a-f]{40}$/);
+ const ciCore=ci.match(/uses: jiying2007\/codex-safe-core\/\.github\/workflows\/family-release-guard\.yml@([0-9a-f]{40})/);
+ const expected=ci.match(/expected_core_sha: ([0-9a-f]{40})/);
+ const releaseCore=integrity.match(/uses: jiying2007\/codex-safe-core\/\.github\/workflows\/consumer-release-integrity\.yml@([0-9a-f]{40})/);
+ assert.ok(ciCore&&expected&&releaseCore,'all reusable workflow identities must be explicit immutable SHAs');
+ assert.equal(ciCore[1],sha);
+ assert.equal(expected[1],sha);
+ assert.equal(releaseCore[1],sha);
+});
