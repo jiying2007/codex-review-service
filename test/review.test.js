@@ -50,3 +50,18 @@ test('increment and decrement code lines beginning +++/--- remain valid changed 
  assert.deepEqual(changed.old,[4]);
  assert.deepEqual(changed.new,[4]);
 });
+
+
+test('MR summary reports completed model line coverage rather than all planned files',()=>{
+ const snapshot={headSha:'a'.repeat(40),
+   files:[{path:'src/a.c',skipped:false},{path:'src/b.c',skipped:false}],
+   coverageGaps:['token_budget_preflight'],advisories:['context:context_budget']};
+ const review={verdict:'incomplete',findings:[],summary:'',
+   modelCoverage:{changedLines:20,completedByModel:5,plannedChunks:2,completedChunks:1},
+   contextCoverage:{omittedSlices:3},saturatedChunks:[]};
+ const rendered=formatSummary(review,snapshot,{language:'en',source:'fixture',fingerprint:'b'.repeat(64)});
+ assert.match(rendered,/5\/20 changed lines completed by model/);
+ assert.match(rendered,/1\/2 chunks/);
+ assert.match(rendered,/Context slices omitted: 3/);
+ assert.doesNotMatch(rendered,/2 text files reviewed/);
+});
