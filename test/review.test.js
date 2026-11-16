@@ -20,3 +20,26 @@ test('structurally rejected model finding makes review incomplete',()=>{const sn
 test('MAX_FINDINGS is a global retained-output cap without weakening blocking gate',()=>{const snapshot={coverageComplete:true,advisories:[],files:[]},findings=Array.from({length:6},(_,index)=>({severity:index===5?'high':'low',category:'correctness',file:`f${index}.js`,side:'new',line:1,endLine:1,title:`Issue ${index}`,description:'x',suggestion:'',confidence:0.9,fingerprint:`fp-${index}`}));const result=consolidateReviews(snapshot,[{summary:'a',findings:findings.slice(0,3),rejected:0,filtered:0,modelFindingCount:3},{summary:'b',findings:findings.slice(3),rejected:0,filtered:0,modelFindingCount:3}],{...policy,maxFindings:3,forbiddenPathPrefixes:[],requireTestsForCodeChanges:false});assert.equal(result.allFindings.length,3);assert.equal(result.truncatedFindingCount,3);assert.equal(result.verdict,'block');});
 
 test('summary localizes review time while retaining the canonical UTC receipt time',()=>{const previous=process.env.CODEX_SAFE_DISPLAY_TIME_ZONE;process.env.CODEX_SAFE_DISPLAY_TIME_ZONE='Asia/Shanghai';try{const snapshot={headSha:'a'.repeat(40),files:[],coverageGaps:[],advisories:[]},review={verdict:'pass',findings:[],summary:'ok'},text=formatSummary(review,snapshot,{language:'en',source:'test',fingerprint:'f'.repeat(64)},'2026-08-30T13:00:00.000Z');assert.match(text,/\*\*Review time:\*\* 2026-08-30 21:00:00 UTC\+08:00 \(UTC: 2026-08-30T13:00:00\.000Z\)/);}finally{if(previous===undefined)delete process.env.CODEX_SAFE_DISPLAY_TIME_ZONE;else process.env.CODEX_SAFE_DISPLAY_TIME_ZONE=previous;}});
+
+
+test('chunk-specific anchors reject changed lines not present in the actual evidence chunk',()=>{
+ const line='x'.repeat(1700),diff='@@ -1 +1 @@\n-'+line+'\n+'+line+'A'+
+   '\n@@ -100 +100 @@\n-'+line+'\n+'+line+'B';
+ const snapshot=buildSnapshot(mr,{complete:true,items:[{
+   old_path:'src/split.c',new_path:'src/split.c',diff
+ }]},{...policy,maxDiffBytes:4096,maxReviewChunks:8});
+ assert.equal(snapshot.coverageComplete,true,JSON.stringify(snapshot.coverageGaps));
+ assert.equal(snapshot.chunks.length,2);
+ assert.deepEqual(snapshot.chunks[0].files[0].changedLines.new,[1]);
+ assert.deepEqual(snapshot.chunks[1].files[0].changedLines.new,[100]);
+ const finding={severity:'high',category:'correctness',file:'src/split.c',
+   side:'new',line:100,endLine:100,title:'Concern',description:'d',
+   suggestion:'',confidence:0.95,rootCauseKey:'',claimClass:''};
+ const wrong=validateChunkResult({findings:[finding]},snapshot.chunks[0],policy);
+ const right=validateChunkResult({findings:[finding]},snapshot.chunks[1],policy);
+ assert.equal(wrong.findings.length,0);
+ assert.equal(wrong.rejected,1);
+ assert.equal(right.findings.length,1);
+ assert.equal(snapshot.coverageLedger.unscheduledChangedLines,0);
+ assert.equal(snapshot.coverageLedger.scheduledChangedLines,4);
+});
