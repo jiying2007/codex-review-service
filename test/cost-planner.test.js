@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const{estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,TokenBudgetLedger}=require('../src/cost-planner');
+const{estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,TokenBudgetLedger}=require('../src/cost-planner');
 
 test('estimates prompt/output conservatively before execution',()=>{const estimate=estimateChunkTokens('x'.repeat(3000),2);assert.ok(estimate.input>=1500);assert.ok(estimate.output>=456);assert.equal(estimate.total,estimate.input+estimate.output);});
 test('risk score expands evidence context without deciding model authority',()=>{const low={files:[{path:'docs/readme.md'}],diffText:'+ wording'},high={files:[{path:'src/auth/token.js'}],diffText:'+ await mutex.lock();\n+ token = secret;'},config={contextEnabled:true,adaptiveContextEnabled:true},policy={maxContextBytes:262144,maxContextFiles:12,contextLines:20};const lowCfg=adaptiveContextConfig(config,policy,low),highCfg=adaptiveContextConfig(config,policy,high);assert.ok(scoreChunkRisk(high)>scoreChunkRisk(low));assert.ok(highCfg.maxContextBytes>lowCfg.maxContextBytes);});
@@ -9,3 +9,12 @@ test('adaptive context never exceeds configured policy caps',()=>{const cfg=adap
 test('total diff budget keeps highest-risk chunks, reindexes plan, and fails closed on omissions',()=>{const chunks=[{index:0,bytes:700,files:[{path:'docs/a.md'}],diffText:'+ docs'},{index:1,bytes:700,files:[{path:'src/auth/a.js'}],diffText:'+ token = secret'},{index:2,bytes:700,files:[{path:'src/b.js'}],diffText:'+ value'}],plan=selectChunksWithinByteBudget(chunks,1400);assert.equal(plan.complete,false);assert.ok(plan.chunks.some(c=>c.originalIndex===1));assert.deepEqual(plan.chunks.map(c=>c.index),[0,1]);assert.equal(plan.chunks.length,2);assert.equal(plan.omitted.length,1);});
 test('cost planner exposes no historical finding carry-forward primitive',()=>{const planner=require('../src/cost-planner');for(const name of['changedPathsFromCompare','subsetDiffResult','carryForwardFindings','mergeCarriedFindings'])assert.equal(Object.prototype.hasOwnProperty.call(planner,name),false,`${name} must remain retired`);});
 test('project token reservations prevent concurrent budget overshoot',()=>{const ledger=new TokenBudgetLedger();ledger.reserve('a',7,60,{budget:100,committed:20});assert.throws(()=>ledger.reserve('b',7,30,{budget:100,committed:20}),error=>error.code==='ETOKENBUDGET');assert.equal(ledger.release('a'),60);ledger.reserve('b',7,30,{budget:100,committed:20});assert.equal(ledger.reservedForProject(7),30);});
+
+test('finding capacity avoids eight-chunk starvation yet remains within global configured cap',()=>{
+ assert.equal(planChunkFindingCapacity(40,8,0),10);
+ assert.equal(planChunkFindingCapacity(40,8,6),14);
+ assert.equal(planChunkFindingCapacity(40,8,12),18);
+ assert.equal(planChunkFindingCapacity(4,8,12),4);
+ assert.equal(planChunkFindingCapacity(1,1,100),1);
+ assert.equal(planChunkFindingCapacity(40,1,0),40);
+});
