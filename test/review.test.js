@@ -43,3 +43,10 @@ test('chunk-specific anchors reject changed lines not present in the actual evid
  assert.equal(snapshot.coverageLedger.unscheduledChangedLines,0);
  assert.equal(snapshot.coverageLedger.scheduledChangedLines,4);
 });
+
+test('increment and decrement code lines beginning +++/--- remain valid changed lines',()=>{
+ const diff='@@ -4 +4 @@\n---counter\n+++counter';
+ const changed=parseChangedLines(diff);
+ assert.deepEqual(changed.old,[4]);
+ assert.deepEqual(changed.new,[4]);
+});
