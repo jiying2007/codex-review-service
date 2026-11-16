@@ -14,7 +14,7 @@ const{computeReviewSubjectFingerprint,shouldPersistJudgmentReceipt}=require('./c
 const{classifyFindingLifecycle}=require('./finding-ledger');
 const{eventForReview,eventForReviewStarted,eventForFailure,planStatusCardActions,planNotificationActions}=require('./notification');
 const{currentAssignments,assignmentMatch}=require('./assignment');
-const{estimateChunkTokens,adaptiveContextConfig,selectChunksWithinByteBudget,TokenBudgetLedger,TokenEstimatorCalibration}=require('./cost-planner');
+const{estimateChunkTokens,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,TokenBudgetLedger,TokenEstimatorCalibration}=require('./cost-planner');
 const{createServiceModelRouter,executeRoleAwareReview}=require('./model-routing-runtime');
 const{buildModelEconomicsScorecard}=require('./codex-safe-core/model-economics');
 const{createTokenCalibrationStore}=require('./codex-safe-core/token-calibration-store');
@@ -135,10 +135,10 @@ class ReviewService{
       review.reviewSubjectFingerprint=computeReviewSubjectFingerprint({subject:reviewSubject(fullSnapshot),diffFingerprint:fullSnapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',evidenceManifestDigest:review.evidenceManifestDigest,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,reviewProfile:profile.name,model:''});
       return{snapshot:fullSnapshot,review};
     }
-    const baseChunkFindings=Math.max(1,Math.min(policy.maxFindings,Math.max(8,Math.ceil(policy.maxFindings/Math.max(1,Math.ceil(reviewSnapshot.chunks.length/2)))))),results=[],usage={inputTokens:0,cachedInputTokens:0,cacheWriteInputTokens:0,outputTokens:0,reasoningOutputTokens:0},models=new Set(),modelEvidence=[],shadowModelEvidence=[],shadowComparisons=[],shadowErrors=[],optionalRoleErrors=[],economicsRecords=[],roleCalls=[],saturatedChunks=[],contextOmissions=[];let version='unknown',estimatedTotal=0,economicsComplete=true;const modelRouter=createServiceModelRouter(this.config);
+    const results=[],usage={inputTokens:0,cachedInputTokens:0,cacheWriteInputTokens:0,outputTokens:0,reasoningOutputTokens:0},models=new Set(),modelEvidence=[],shadowModelEvidence=[],shadowComparisons=[],shadowErrors=[],optionalRoleErrors=[],economicsRecords=[],roleCalls=[],saturatedChunks=[],contextOmissions=[];let version='unknown',estimatedTotal=0,economicsComplete=true;const modelRouter=createServiceModelRouter(this.config);
     for(const chunk of reviewSnapshot.chunks){
       if(controller.signal.aborted)throw controller.signal.reason;
-      const contextConfig=adaptiveContextConfig(this.config,policy,chunk),perChunkFindings=Math.max(1,Math.min(policy.maxFindings,baseChunkFindings+(contextConfig.riskScore>=10?8:contextConfig.riskScore>=5?4:0))),profileContextConfig={...contextConfig,maxContextBytes:Math.floor(contextConfig.maxContextBytes*profile.contextFactor),maxContextFiles:Math.max(contextConfig.maxContextFiles?1:0,Math.floor(contextConfig.maxContextFiles*profile.contextFactor)),contextLines:Math.max(contextConfig.contextLines?1:0,Math.floor(contextConfig.contextLines*profile.contextFactor))},context=await this.contextFn(this.gitlab,mr,chunk,profileContextConfig);
+      const contextConfig=adaptiveContextConfig(this.config,policy,chunk),perChunkFindings=planChunkFindingCapacity(policy.maxFindings,reviewSnapshot.chunks.length,contextConfig.riskScore),profileContextConfig={...contextConfig,maxContextBytes:Math.floor(contextConfig.maxContextBytes*profile.contextFactor),maxContextFiles:Math.max(contextConfig.maxContextFiles?1:0,Math.floor(contextConfig.maxContextFiles*profile.contextFactor)),contextLines:Math.max(contextConfig.contextLines?1:0,Math.floor(contextConfig.contextLines*profile.contextFactor))},context=await this.contextFn(this.gitlab,mr,chunk,profileContextConfig);
       const chunkQuality=qualityContextForChunk(qualityEvidence,chunk);
       context.blocks=[...(context.blocks||[]),...chunkQuality.blocks];context.bytes=(context.bytes||0)+chunkQuality.bytes;
       if(chunkQuality.truncated){fullSnapshot.advisories.push('quality_context_clipped:chunk='+chunk.index);this.telemetry?.metrics.inc('codex_review_quality_context_clipped_chunks_total',1);}
