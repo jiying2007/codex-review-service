@@ -65,3 +65,20 @@ test('MR summary reports completed model line coverage rather than all planned f
  assert.match(rendered,/Context slices omitted: 3/);
  assert.doesNotMatch(rendered,/2 text files reviewed/);
 });
+
+
+test('model finding line positions reject rounding and out-of-chunk end ranges',()=>{
+ const snapshot=buildSnapshot(mr,{complete:true,items:[{old_path:'motor.c',
+   new_path:'motor.c',diff:'@@ -2,2 +2,2 @@\n-a\n-b\n+c\n+d'}]},
+   {...policy,maxDiffBytes:4096,maxReviewChunks:2});
+ const base={severity:'high',category:'correctness',file:'motor.c',side:'new',
+   line:2,endLine:3,title:'Risk',description:'Evidence-based concern',
+   suggestion:'Repair',confidence:0.9,rootCauseKey:'',claimClass:''};
+ const valid=validateChunkResult({findings:[base]},snapshot.chunks[0],policy);
+ assert.equal(valid.findings.length,1);
+ for(const change of [{line:2.4},{line:'2'},{endLine:3.4},{endLine:99},{endLine:1}]){
+   const bad=validateChunkResult({findings:[{...base,...change}]},snapshot.chunks[0],policy);
+   assert.equal(bad.findings.length,0,JSON.stringify(change));
+   assert.equal(bad.rejected,1);
+ }
+});
