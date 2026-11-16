@@ -149,8 +149,10 @@ function qualityContextBlocks(evidence) {
 // evidence must not disappear merely because it was sent to chunk zero.
 function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
  const paths=new Set((chunk?.files||[]).map(file=>String(file.path||'')));
- const linked=new Set(paths);
- for(const edge of evidence?.impact?.edges||[])if(paths.has(edge.from))linked.add(edge.to);
+ // A global graph may connect every changed path to every candidate.
+ // Recompute dependency signals from this actual chunk, not from those
+ // global edges, or unrelated code would be repeated in each prompt.
+ const signals=extractImpactSignals(String(chunk?.diffText||''));
  const blocks=[];let bytes=0,truncated=false;
  const append=value=>{
    const text=String(value||'');if(!text)return;
@@ -163,7 +165,7 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
  const engineering=/^(security|cpp|embedded-linux|embedded-mcu|driver|kernel|realtime)$/.test(pack);
  if(chunk?.index===0||engineering)append(formatProfilePackEvidence(profile));
  else if(pack)append('TRUSTED REVIEW PROFILE: '+pack+'; primary check: '+String(profile?.checks?.[0]||''));
- const related=(evidence?.impact?.nodes||[]).filter(node=>linked.has(node.path)).slice(0,4);
+ const related=(evidence?.impact?.nodes||[]).filter(node=>paths.has(node.path)||cheapScore(String(node.path||''),signals)>0).slice(0,4);
  if(related.length){
    const {boundSourceBlock}=require('./codex-safe-core/context-builder');
    append('--- CHUNK-RELATED IMPACT EVIDENCE (UNTRUSTED) ---');
