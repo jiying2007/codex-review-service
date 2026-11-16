@@ -216,4 +216,4 @@ async processJob(job){const key=this.key(job.project_id,job.mr_iid),controller=n
   startWorkers(){if(this.workers.length)return this.workers;this.workers=Array.from({length:this.config.workerConcurrency},(_,index)=>this.workerLoop(index+1).catch(error=>{this.logger.error?.({event:'worker_crashed',workerId:index+1,code:error.code||'EWORKER'});throw error;}));return this.workers;}
   async stop(){this.stopping=true;for(const active of this.active.values())active.controller.abort(abortError('ESHUTDOWN','Service is shutting down'));await Promise.allSettled(this.workers);}
 }
-module.exports={ReviewService,NON_RETRYABLE_ERRORS,retryable,retryDelay,abortError,usageAdd,usageTotal,isDraft};
+module.exports={ReviewService,evidenceCoverageLedger,NON_RETRYABLE_ERRORS,retryable,retryDelay,abortError,usageAdd,usageTotal,isDraft};
