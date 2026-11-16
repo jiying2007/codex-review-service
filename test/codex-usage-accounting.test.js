@@ -107,8 +107,11 @@ test('MR preflight retains unknown estimates across chunks without counting the 
   assert.equal(result.job.status,'incomplete');assert.equal(result.rows.length,1);assert.equal(result.charged,first);assertUnknown(result);
 });
 test('MR preflight settles complete usage instead of adding both observation and estimate',async()=>{
-  const baseline=await review(),first=baseline.rows[0].estimated_tokens;
-  const result=await review({rawUsage:{input_tokens:100,output_tokens:20}}, {mrMaxTokenBudget:Math.ceil(first/factor)});
+  const baseline=await review(),second=baseline.rows[1].estimated_tokens;
+  // Budget for the next *actual* chunk estimate, not the first chunk's
+  // incidental prompt size (which changes when quality evidence is routed).
+  const result=await review({rawUsage:{input_tokens:100,output_tokens:20}},
+    {mrMaxTokenBudget:Math.ceil((120+second)/factor)});
   assert.equal(result.executions,2);assert.equal(result.job.status,'pass');assert.equal(result.charged,240);
 });
 test('budget interruptions retain completed roles and cannot create empty zero-cost economics',async()=>{
@@ -123,7 +126,7 @@ test('budget interruptions retain completed roles and cannot create empty zero-c
     {fixture:{},overrides:{codexScoutEnabled:true},executions:1,scouts:1,known:[0]},
     {fixture:{rawUsage:{input_tokens:3500,output_tokens:100}},overrides:{codexScoutEnabled:true},executions:1,scouts:1,known:[1]},
     {fixture:{rawUsage:{input_tokens:3500,output_tokens:100},parsed:{findings:[finding]}},overrides:{codexAdjudicatorEnabled:true},executions:1,scouts:0,known:[1]},
-    {fixture:{responses:[{rawUsage:{input_tokens:100,output_tokens:20}},{rawUsage:{input_tokens:100,output_tokens:20}},{}]},overrides:{codexScoutEnabled:true,mrMaxTokenBudget:Math.ceil(4000/factor)},executions:3,scouts:2,known:[1,1,0]}
+    {fixture:{responses:[{rawUsage:{input_tokens:100,output_tokens:20}},{rawUsage:{input_tokens:100,output_tokens:20}},{}]},overrides:{codexScoutEnabled:true,mrMaxTokenBudget:Math.ceil((first*1.5)/factor)},executions:3,scouts:2,known:[1,1,0]}
   ];
   for(const item of cases){
     const result=await review(item.fixture,{mrMaxTokenBudget:Math.ceil(first/factor),...item.overrides},null,isolated.exports.ReviewService);
