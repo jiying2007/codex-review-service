@@ -145,4 +145,50 @@ function qualityContextBlocks(evidence) {
   ].filter(Boolean));
 }
 
-module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, globMatch, resolveEvidencePipeline, collectAnalyzerReports, collectTestImpact, formatAnalyzerMetadata, collectServiceQualityEvidence, qualityContextBlocks, anchorAnalyzerFindings });
+// Give every review chunk its *own* related engineering evidence. Global
+// evidence must not disappear merely because it was sent to chunk zero.
+function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
+ const paths=new Set((chunk?.files||[]).map(file=>String(file.path||'')));
+ // A global graph may connect every changed path to every candidate.
+ // Recompute dependency signals from this actual chunk, not from those
+ // global edges, or unrelated code would be repeated in each prompt.
+ const signals=extractImpactSignals(String(chunk?.diffText||''));
+ const blocks=[];let bytes=0,truncated=false;
+ const append=value=>{
+   const text=String(value||'');if(!text)return;
+   const size=Buffer.byteLength(text,'utf8');
+   if(bytes+size>maxBytes){truncated=true;return;}
+   blocks.push(text);bytes+=size;
+ };
+ const profile=evidence?.profile;
+ const pack=String(profile?.packName||'');
+ const engineering=/^(security|cpp|embedded-linux|embedded-mcu|driver|kernel|realtime)$/.test(pack);
+ if(chunk?.index===0||engineering)append(formatProfilePackEvidence(profile));
+ else if(pack)append('TRUSTED REVIEW PROFILE: '+pack+'; primary check: '+String(profile?.checks?.[0]||''));
+ const allRelated=(evidence?.impact?.nodes||[]).filter(node=>paths.has(node.path)||cheapScore(String(node.path||''),signals)>0);
+ const related=allRelated.slice(0,4);if(allRelated.length>related.length)truncated=true;
+ if(related.length){
+   const {boundSourceBlock}=require('./codex-safe-core/context-builder');
+   append('--- CHUNK-RELATED IMPACT EVIDENCE (UNTRUSTED) ---');
+   for(const node of related){
+     const bounded=boundSourceBlock(String(node.content||''),4096);
+     append('### '+String(node.path||'')+' [score='+Number(node.score||0)+']\n'+bounded.text+
+       (bounded.truncated?'\n[impact node clipped for bounded context]':''));
+     if(bounded.truncated)truncated=true;
+   }
+   append('--- END CHUNK-RELATED IMPACT EVIDENCE ---');
+ }
+ const analyzers=(evidence?.analyzerFindings||[]).filter(item=>paths.has(item.file));
+ const analyzerBlock=formatAnalyzerEvidence(analyzers,{maxFindings:12,maxBytes:8192});
+ append(analyzerBlock.text);if(analyzers.length>12||analyzerBlock.truncated)truncated=true;
+ // Global test recommendations remain visible in a bounded form to each chunk.
+ const tests=(evidence?.testImpact?.recommendedTests||[]).slice(0,3);
+ if(tests.length)append('--- TEST IMPACT CANDIDATES (NOT EXECUTED) ---\n'+tests.map(item=>
+   '- '+String(item.path||item.id||'').slice(0,160)+' score='+Number(item.score||0)
+ ).join('\n')+'\n--- END TEST IMPACT CANDIDATES ---');
+ if(chunk?.index===0)append(formatAnalyzerMetadata(evidence?.analyzerMetadata||[]));
+ return Object.freeze({blocks:Object.freeze(blocks),bytes,truncated,
+   relatedImpactNodes:related.length,relatedAnalyzerFindings:analyzers.length});
+}
+
+module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, globMatch, resolveEvidencePipeline, collectAnalyzerReports, collectTestImpact, formatAnalyzerMetadata, collectServiceQualityEvidence, qualityContextBlocks, qualityContextForChunk, anchorAnalyzerFindings });

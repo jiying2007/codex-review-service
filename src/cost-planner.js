@@ -8,4 +8,12 @@ function scoreChunkRisk(chunk){return core.scoreEvidenceRisk({paths:(chunk?.file
 function adaptiveContextConfig(config,policy,chunk){const riskScore=scoreChunkRisk(chunk),enabled=Boolean(config.contextEnabled)&&Number(policy.maxContextBytes||0)>0;if(!enabled)return{...config,...policy,contextEnabled:false,maxContextBytes:0,maxContextFiles:0,contextLines:0,riskScore};if(config.adaptiveContextEnabled===false)return{...config,...policy,riskScore};return{...config,...policy,riskScore,maxContextBytes:core.adaptiveBudget(policy.maxContextBytes,riskScore,{min:16*1024}),maxContextFiles:core.adaptiveBudget(policy.maxContextFiles,riskScore,{min:1}),contextLines:core.adaptiveBudget(policy.contextLines,riskScore,{min:4})};}
 function selectChunksWithinByteBudget(chunks,maxBytes){return core.selectChunksWithinByteBudget(chunks,maxBytes,{riskFn:scoreChunkRisk});}
 
-module.exports={estimateTextTokens,estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,TokenBudgetLedger:core.TokenBudgetLedger,TokenEstimatorCalibration:core.TokenEstimatorCalibration};
+function planChunkFindingCapacity(maxFindings,chunkCount,riskScore=0){
+ const cap=Math.max(1,Math.floor(Number(maxFindings)||1));
+ const count=Math.max(1,Math.floor(Number(chunkCount)||1));
+ const base=Math.min(cap,Math.max(8,Math.ceil(cap/Math.max(1,Math.ceil(count/2)))));
+ const bonus=Number(riskScore)>=10?8:Number(riskScore)>=5?4:0;
+ return Math.max(1,Math.min(cap,base+bonus));
+}
+
+module.exports={estimateTextTokens,estimateChunkTokens,scoreChunkRisk,adaptiveContextConfig,selectChunksWithinByteBudget,planChunkFindingCapacity,TokenBudgetLedger:core.TokenBudgetLedger,TokenEstimatorCalibration:core.TokenEstimatorCalibration};
