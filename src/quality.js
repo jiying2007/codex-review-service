@@ -145,4 +145,45 @@ function qualityContextBlocks(evidence) {
   ].filter(Boolean));
 }
 
-module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, globMatch, resolveEvidencePipeline, collectAnalyzerReports, collectTestImpact, formatAnalyzerMetadata, collectServiceQualityEvidence, qualityContextBlocks, anchorAnalyzerFindings });
+// Give every review chunk its *own* related engineering evidence. Global
+// evidence must not disappear merely because it was sent to chunk zero.
+function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
+ const paths=new Set((chunk?.files||[]).map(file=>String(file.path||'')));
+ const linked=new Set(paths);
+ for(const edge of evidence?.impact?.edges||[])if(paths.has(edge.from))linked.add(edge.to);
+ const blocks=[];let bytes=0,truncated=false;
+ const append=value=>{
+   const text=String(value||'');if(!text)return;
+   const size=Buffer.byteLength(text,'utf8');
+   if(bytes+size>maxBytes){truncated=true;return;}
+   blocks.push(text);bytes+=size;
+ };
+ append(formatProfilePackEvidence(evidence?.profile));
+ const related=(evidence?.impact?.nodes||[]).filter(node=>linked.has(node.path)).slice(0,4);
+ if(related.length){
+   const {boundSourceBlock}=require('./codex-safe-core/context-builder');
+   append('--- CHUNK-RELATED IMPACT EVIDENCE (UNTRUSTED) ---');
+   for(const node of related){
+     const bounded=boundSourceBlock(String(node.content||''),4096);
+     append('### '+String(node.path||'')+' [score='+Number(node.score||0)+']\n'+bounded.text+
+       (bounded.truncated?'\n[impact node clipped for bounded context]':''));
+     if(bounded.truncated)truncated=true;
+   }
+   append('--- END CHUNK-RELATED IMPACT EVIDENCE ---');
+ }
+ const analyzers=(evidence?.analyzerFindings||[]).filter(item=>paths.has(item.file));
+ append(formatAnalyzerEvidence(analyzers,{maxFindings:12,maxBytes:8192}).text);
+ // Global test recommendations remain visible in a bounded form to each chunk.
+ const tests=String(evidence?.testImpactEvidence?.text||'');
+ if(tests){
+   const {boundSourceBlock}=require('./codex-safe-core/context-builder');
+   const bounded=boundSourceBlock(tests,4096);
+   append(bounded.text);
+   if(bounded.truncated)truncated=true;
+ }
+ if(chunk?.index===0)append(formatAnalyzerMetadata(evidence?.analyzerMetadata||[]));
+ return Object.freeze({blocks:Object.freeze(blocks),bytes,truncated,
+   relatedImpactNodes:related.length,relatedAnalyzerFindings:analyzers.length});
+}
+
+module.exports = Object.freeze({ unifiedDiffText, textCandidate, cheapScore, collectImpact, globMatch, resolveEvidencePipeline, collectAnalyzerReports, collectTestImpact, formatAnalyzerMetadata, collectServiceQualityEvidence, qualityContextBlocks, qualityContextForChunk, anchorAnalyzerFindings });
