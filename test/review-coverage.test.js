@@ -38,3 +38,47 @@ test('coverage ledger reports omitted Hunk changes even if other chunks complete
  assert.equal(ledger.completedByModel,4);
  assert.equal(ledger.plannedFiles,1);
 });
+
+
+test('single ledger recomputes all scheduled fields after MR budget selection',()=>{
+ const snapshot={coverageLedger:{providerComplete:true,plannedEvidenceUnits:3,
+   scheduledChangedLines:9,scheduledChunks:3,scheduledEvidenceUnits:3},
+   coverageGaps:['mr_diff_budget:omitted'],files:[
+     {path:'a.c',skipped:false,changedLines:{new:[1,2],old:[1,2]}},
+     {path:'b.c',skipped:false,changedLines:{new:[3],old:[3]}},
+     {path:'c.c',skipped:false,changedLines:{new:[4],old:[4]}}
+   ]};
+ const selected=[{index:0,unitCount:1,files:[{path:'b.c',changedLines:{new:[3],old:[3]}}]}];
+ const first=evidenceCoverageLedger(snapshot,selected,0);
+ assert.equal(first.changedLines,8);
+ assert.equal(first.plannedEvidenceUnits,3);
+ assert.equal(first.scheduledEvidenceUnits,1);
+ assert.equal(first.scheduledChunks,1);
+ assert.equal(first.scheduledChangedLines,2);
+ assert.equal(first.plannedForModel,2);
+ assert.equal(first.completedByModel,0);
+ assert.equal(first.unscheduledChangedLines,6);
+ assert.equal(first.coverageGaps,1);
+ snapshot.coverageLedger=first;
+ snapshot.coverageGaps.push('token_budget_preflight');
+ const final=evidenceCoverageLedger(snapshot,selected,1);
+ assert.equal(final.coverageGaps,2);
+ assert.equal(final.completedByModel,2);
+ assert.equal(final.scheduledChangedLines,final.plannedForModel);
+ assert.equal(final.unscheduledChangedLines,final.unplannedChangedLines);
+ assert.equal(final.scheduledFiles,1);
+ assert.equal(final.plannedEvidenceUnits,3);
+});
+
+test('repeated source lines across chunks do not inflate model coverage',()=>{
+ const source={files:[{path:'a.c',skipped:false,changedLines:{old:[1],new:[2]}}],
+   coverageGaps:[],coverageLedger:{providerComplete:true,plannedEvidenceUnits:2}};
+ const chunks=Array.from({length:2},(_,index)=>({index,unitCount:1,
+   files:[{path:'a.c',changedLines:{old:[1],new:[2]}}]}));
+ const incomplete=evidenceCoverageLedger(source,chunks,1);
+ assert.equal(incomplete.changedLines,2);
+ assert.equal(incomplete.scheduledChangedLines,2);
+ assert.equal(incomplete.completedByModel,2);
+ assert.equal(incomplete.scheduledEvidenceUnits,2);
+ assert.equal(incomplete.completedChunks,1);
+});
