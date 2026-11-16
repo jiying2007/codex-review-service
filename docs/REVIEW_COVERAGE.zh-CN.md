@@ -36,3 +36,22 @@ npm run ci
 - 质量指标：critical/high recall、precision、false-positive/review、invalid-line rate、token/true-positive 和 p50/p95 延迟。必须与相同模型、相同样本集、同样预算的 Baseline 比较。
 - 成本：现有 MR Token Budget、项目预算与未决模型调用账本不放宽；只有明确批准真实模型额度后才进行真实效果 A/B，不得以 mock 通过宣称模型缺陷召回提升。
 - 安全：开发源码更新不等于 GitLab 生产主机升级；当前 7.6.1 生产容器及旧数据库不能由本次 PR 自动切换。
+
+
+## 第二轮覆盖与成本收敛（2026-11-16 候选）
+
+- Coverage Ledger 不再将筛选前的 scheduledChangedLines/scheduledChunks/scheduledEvidenceUnits 拼接到筛选后的字段上。预算选块之后与模型执行结束之后均调用同一个纯函数重建全部计划、调度、完成计数；保留原始 plannedEvidenceUnits 作为独立基线。对无模型结果、部分 Chunk 和未知预算结果仍保持 incomplete。
+- Impact 取证对 Tree 未分页完成、超过 20,000 节点、超过 64 个正向候选、原始源码缺失/读取异常、文件超长或图证据预算截断，明确输出 bounded degradationReasons；相应 Advisory 进入 Review 证据摘要，不得报告完整依赖覆盖。
+- 可选静态报告缺失、Test Impact 退化只形成明确 Advisory；required 的报告继续阻断。普通上下文缺失不自动扩大安全门禁，不把 Advisory 冒充已验证的缺陷。
+- Finding 候选量在 **MR 级**分配；默认总量最多约为最终 maxFindings 的 1.5 倍（为每个 Chunk 最少提供一个候选位置时允许超过该比例），不再给每个高风险 Chunk 独立膨胀至 18 条。分配遵循风险加权且有上界，最终展示仍受 maxFindings/maxPublishedFindings 限制。
+- 仅在单次 Job 中缓存精确 (projectId, refSHA, path) 原始文件读取，默认最多 48 个条目、1 MiB 总量、96 KiB/文件。超限、不存在或读取失败不写入缓存；不持久化源码或共享不同 Review Job / GitLab 实例的结果。
+- Finding line 不接受小数/字符串取整，endLine 必须是同侧当前 Chunk 真实变更行，禁止跨块或任意补全出虚假的代码范围。
+
+### 新增离线回归
+
+~~~bash
+node --test test/review-coverage.test.js test/impact-completeness.test.js test/quality-degradation.test.js test/source-cache.test.js test/cost-planner.test.js test/review.test.js
+npm run ci
+~~~
+
+真实模型 A/B 缺陷召回、误报率、Token/有效 Finding、p50/p95 延迟仍需要显式批准的模型额度与可复现实测数据；上述离线测试不会调用模型，不能据此声称实测成本下降。正式部署仍需不可变 Core Release、Service 精确 Pin、新版 Service Release/完整性验证以及现场 SQLite 备份、唯一 Writer 和可执行回滚。不得修改现有生产 7.6.1 数据库或直接启动 Sensor 的模型审查。
