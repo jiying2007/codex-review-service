@@ -23,7 +23,7 @@ function dbFixture({schema=contract.databaseSchemaVersion}={}){
     'PRAGMA user_version='+Number(schema)+';'
   ].join('\n'));
   const insert=(table,status)=>{
-    const column=['status_write_attempts'].includes(table)?'outcome':
+    const column=['status_write_attempts','model_calls'].includes(table)?'outcome':
       table==='status_publication_targets'?'projection_state':'status';
     db.prepare('INSERT INTO '+table+'('+column+') VALUES(?)').run(status);
   };
@@ -55,7 +55,10 @@ test('cutover blocks every outstanding retry, worker claim and uncertain remote 
     ['notification_outbox','delivering','notifications'],
     ['status_write_attempts','started','uncertainStatusWrites'],
     ['status_write_attempts','uncertain','uncertainStatusWrites'],
-    ['status_publication_targets','uncertain','uncertainStatusTargets']
+    ['status_publication_targets','uncertain','uncertainStatusTargets'],
+    // A failed/completed review job can still own an unsettled model call.
+    ['model_calls','started','unresolvedModelCalls'],
+    ['model_calls','unknown','unresolvedModelCalls']
   ];
   for(const [table,status,field] of cases){
     const f=dbFixture();
@@ -68,6 +71,26 @@ test('cutover blocks every outstanding retry, worker claim and uncertain remote 
     }finally{f.close();}
   }
 });
+test('cutover preserves settled model-call history without treating unknown transport as completed',()=>{
+  const f=dbFixture();
+  try{
+    f.insert('review_jobs','failed');
+    f.insert('model_calls','succeeded');
+    f.insert('model_calls','failed');
+    const settled=inspectDatabase(f.file);
+    assert.equal(settled.code,'READY',JSON.stringify(settled));
+    assert.equal(settled.active.unresolvedModelCalls,0);
+    f.insert('model_calls','unknown');
+    const unresolved=inspectDatabase(f.file);
+    assert.equal(unresolved.ok,false);
+    assert.equal(unresolved.code,'EDBNOTDRAINED');
+    assert.equal(unresolved.active.reviewJobs,0,'terminal job status cannot hide an unsettled transport');
+    assert.equal(unresolved.active.unresolvedModelCalls,1);
+    assert.equal(f.db.prepare('SELECT COUNT(*) count FROM model_calls').get().count,3,
+      'read-only preflight must not settle, delete or replay call history');
+  }finally{f.close();}
+});
+
 test('cutover refuses an old or unknown SQLite schema even when no work remains',()=>{
   for(const schema of [9,10,11,contract.databaseSchemaVersion+1,0]){
     const f=dbFixture({schema});
