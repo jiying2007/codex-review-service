@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.7.6
+
+- Exact-pin immutable Safe Core 4.18.6 to make the bounded, authenticated public trust-root release metadata verifier available to the Service Family Release Guard. Preserve runtime digest, product protocols, database/config schema, and model execution behavior.
+- Promote only through source-bound protected PR/CI, main GitLab Provider qualification, independent immutable Service release/attestation and Family snapshot; keep Legacy/Sensor on-prem acceptance independent.
+
 ## 7.7.5
 
 - Verify exact original successful Prepare-release intent even when a failed-only publisher rerun completes at a later workflow attempt. Preserve authenticated run, head SHA, original Prepare job, decision and published artifact integrity; never fabricate an attempt-2 intent.
