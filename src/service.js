@@ -57,7 +57,7 @@ function evidenceCoverageLedger(snapshot,chunks,reviewedCount=chunks.length){
  const original=snapshot.coverageLedger||{};
  const plannedUnits=Number.isSafeInteger(original.plannedEvidenceUnits)
    ?original.plannedEvidenceUnits
-   :chunks.reduce((n,chunk)=>n+Math.max(0,Number(chunk.unitCount)||0),0);
+   :chunks.reduce((n,chunk)=>n+(Number(chunk.unitCount)>0?Number(chunk.unitCount):1),0);
  return Object.freeze({
    providerComplete:Boolean(original.providerComplete??true),
    changedFiles:(snapshot.files||[]).length,
@@ -67,7 +67,7 @@ function evidenceCoverageLedger(snapshot,chunks,reviewedCount=chunks.length){
    scheduledChangedLines:planned,
    unscheduledChangedLines:expected.size-planned,
    plannedEvidenceUnits:plannedUnits,
-   scheduledEvidenceUnits:chunks.reduce((n,chunk)=>n+Math.max(0,Number(chunk.unitCount)||0),0),
+   scheduledEvidenceUnits:chunks.reduce((n,chunk)=>n+(Number(chunk.unitCount)>0?Number(chunk.unitCount):1),0),
    scheduledChunks:chunks.length,
    coverageGaps:(snapshot.coverageGaps||[]).length,
    plannedForModel:planned,
