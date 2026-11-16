@@ -107,11 +107,13 @@ test('MR preflight retains unknown estimates across chunks without counting the 
   assert.equal(result.job.status,'incomplete');assert.equal(result.rows.length,1);assert.equal(result.charged,first);assertUnknown(result);
 });
 test('MR preflight settles complete usage instead of adding both observation and estimate',async()=>{
-  const baseline=await review(),second=baseline.rows[1].estimated_tokens;
-  // Budget for the next *actual* chunk estimate, not the first chunk's
-  // incidental prompt size (which changes when quality evidence is routed).
+  const baseline=await review(),first=baseline.rows[0].estimated_tokens,second=baseline.rows[1].estimated_tokens;
+  // Preflight must admit the first complete estimated request, then account
+  // for measured 120 tokens rather than retaining its previous estimate.
+  // A profile/context change may make either chunk the larger request.
+  const budget=Math.max(first,120+second);
   const result=await review({rawUsage:{input_tokens:100,output_tokens:20}},
-    {mrMaxTokenBudget:Math.ceil((120+second)/factor)});
+    {mrMaxTokenBudget:Math.ceil(budget/factor)});
   assert.equal(result.executions,2);assert.equal(result.job.status,'pass');assert.equal(result.charged,240);
 });
 test('budget interruptions retain completed roles and cannot create empty zero-cost economics',async()=>{
