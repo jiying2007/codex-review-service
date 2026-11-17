@@ -1,5 +1,15 @@
 # Changelog
 
+## 8.0.1
+
+- Fail unavailable or corrupt queue-age metrics rather than reporting a healthy zero; preserve genuine empty queues and unknown model usage.
+- Reduce retained repository aggregation cost using existing covering indexes and active-only queue queries, without a database migration.
+- Preserve project fairness and same-MR exclusion while removing repeated historical scans; advance local dispatch state only after commit.
+- Reject duplicate fixed upstream endpoints and ambiguous target fields; enforce absolute read deadlines, response completeness and bounded bytes.
+- Coalesce concurrent fleet observations and clean up interrupted proxy streams; preserve explicit-only instance routing and independent credentials.
+- Add source-bound 10k/100k/1m paired query measurements, HTTP/SQLite regressions, and authenticated monitoring ingress examples. Query improvements do not assert production webhook latency or model quality gains.
+- Synchronize both product version fields during release preparation; permit owner-requested, exact-main metadata branches only, without automatic merge or publication.
+
 ## 8.0.0
 
 - **Breaking migration**: only explicitly named GitLab instances; no default Legacy webhook route, two-file catalog inference, Schema 1 catalog/manifest, or old Nginx proxy. Use per-host standalone Services plus credential-free Edge; migration is manual and fail-closed.

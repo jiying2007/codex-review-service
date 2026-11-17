@@ -1,6 +1,6 @@
 # 多 GitLab 独立执行：生产切换规范 V8
 
-本指南适用于 **Service v8.0.0（Database Schema 12 / Core 4.18.10）**。
+本指南适用于 **Service v8.0.1（Database Schema 12 / Core 4.18.10）**。
 
 ## 强制边界
 

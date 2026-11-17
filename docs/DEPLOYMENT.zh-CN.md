@@ -2,7 +2,7 @@
 
 ## 支持基线
 
-部署前先读取 `product-contract.json`。**Codex Review Service 8.0.0** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 12、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
+部署前先读取 `product-contract.json`。**Codex Review Service 8.0.1** 支持 Native/systemd Node.js **22 LTS >=22.22.2** 或 **24 LTS >=24.19.0**，GitLab Self-Managed **>=14.6.1**，Database Schema 12、**Config Schema 8**。官方 Docker 镜像使用 canonical Node 24.19.0。
 
 Safe Core 精确固定到 `bf7f1cfe093f9b9c552eb532fcc2ddc4a0d28fea`。禁止替换 gitlink 或把另一份 Core Runtime 复制进 Release。
 
@@ -10,7 +10,7 @@ GitLab 14.6.1 只是兼容下限，不是生命周期推荐版本。真实 Provi
 
 ## Config Schema 8 + Model Routing Contract v1 边界
 
-Service 8.0.0 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。当前配置必须设置 `schemaVersion: 8`；Runtime 不翻译旧配置，`codex.model`/`codex.fastModel` 已退役。`codex.providerMode` 默认 `auto`，复用 Service/Runner 账号的机器级 Runtime；`codex.credentialSource` 支持 `auto|env|auth-json`，`codex.allowInsecureHttp` 默认 `false`，显式覆盖的非 loopback HTTP 必须由运维明确授权可信中转站。历史配置边界见下方 Upgrade / Rollback。
+Service 8.0.1 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。当前配置必须设置 `schemaVersion: 8`；Runtime 不翻译旧配置，`codex.model`/`codex.fastModel` 已退役。`codex.providerMode` 默认 `auto`，复用 Service/Runner 账号的机器级 Runtime；`codex.credentialSource` 支持 `auto|env|auth-json`，`codex.allowInsecureHttp` 默认 `false`，显式覆盖的非 loopback HTTP 必须由运维明确授权可信中转站。历史配置边界见下方 Upgrade / Rollback。
 
 新的质量入口：
 
@@ -173,7 +173,7 @@ npm run admin -- drain 120
 
 ## Upgrade / Rollback
 
-从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。当前 Service 8.0.0 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。历史上，Service 7.5.5 引入 Config Schema 7 -> 8 并退役 `codex.model`/`codex.fastModel`；Service 7.3.0 引入 Config Schema 6 -> 7 Provider 边界，Service 7.2.0 引入 Config Schema 5 -> 6 责任人身份边界，Service 7.0.0 引入 Config Schema 4 -> 5 并退役 `review.incrementalReviewEnabled`。Runtime 不翻译这些历史配置版本。
+从 v5.0.0 起，已发布 DB/Config Compatibility 是正式产品契约。当前 Service 8.0.1 使用 Config Schema 8、Runtime/Provider Contract v3 与 Model Routing Contract v1。历史上，Service 7.5.5 引入 Config Schema 7 -> 8 并退役 `codex.model`/`codex.fastModel`；Service 7.3.0 引入 Config Schema 6 -> 7 Provider 边界，Service 7.2.0 引入 Config Schema 5 -> 6 责任人身份边界，Service 7.0.0 引入 Config Schema 4 -> 5 并退役 `review.incrementalReviewEnabled`。Runtime 不翻译这些历史配置版本。
 
 历史 Database Schema 5 -> 6、6 -> 7、7 -> 8 与 8 -> 9 迁移保持显式和受测试；8 -> 9 引入 Finding Claim 投影与生命周期状态。Schema 9 -> 10 新增状态写入 attempt 与 uncertainty 账本，使用经过验证的备份和事务迁移。当前数据库版本为 12。回滚必须保留当前 uncertainty 账本、控制未完成的远端写入，并恢复与目标 Release 匹配的备份；不支持原地降级。详见 [Storage and migrations](STORAGE_AND_MIGRATIONS.md)。
 
