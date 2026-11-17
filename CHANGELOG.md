@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.7.12
+
+- Add a stateless, credential-free Node sharded Edge using the same verified Service OCI image. The edge forwards only fixed Legacy/Sensor Webhook and per-instance read endpoints, retains old Legacy routes, and does not execute Codex or open any SQLite database.
+- Add a deterministic source-bound repository catalog from each GitLab's explicit Project/Group configuration. Reject stale, forged or noncanonical catalog data; configured Group selectors are not treated as remotely enumerated repositories.
+- Aggregate exact per-instance readiness, scrape status, bounded per-project queue age/count and known/unknown model usage. One tenant failure never conceals the other; unknown use is never reported as zero.
+- Use strict partial-readiness semantics: /health/ready requires both tenants; /health/ingress accepts at least one ready tenant; no external health endpoint authorizes a Merge.
+- Keep independent Legacy/Sensor processes, standalone DB Schema 12, Config Schema 8 and Core 4.18.10. No new model calls, scheduling tasks, shared secrets or production deployment.
+
+
 ## 7.7.11
 
 - Introduce profile-gated, digest-pinned Legacy/Sensor independent-container deployment with fixed-path edge routing, offline configuration checks and no-model repository inventory; no production rollout or secret disclosure is claimed.
