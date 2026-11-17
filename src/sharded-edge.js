@@ -1,5 +1,5 @@
 'use strict';
-// Unprivileged, stateless ingress for independent Legacy/Sensor containers.
+// Unprivileged, stateless ingress for independently named GitLab instances.
 // It owns no GitLab/LLM credentials, SQLite or model worker. All upstream
 // identities come from fixed trusted instance names, never from webhook data.
 const http=require('node:http');
@@ -7,7 +7,6 @@ const {targetFor}=require('./multi-gitlab-gateway');
 const {readJson,validateShardedCatalog,INSTANCE_ID,MAX_INSTANCES}=require('./sharded-catalog');
 const {contract}=require('./product-contract');
 const MAX_BODY=10*1024*1024,MAX_GET_BYTES=256*1024,UPSTREAM_TIMEOUT=2000;
-const INSTANCES=['legacy','sensor'];
 const ALLOWED_METRICS=new Set([
  'queue_depth','oldest_queue_age_seconds','input_tokens_total',
  'cached_input_tokens_total','output_tokens_total','model_usage_unknown_calls',
@@ -29,8 +28,8 @@ function sendJson(res,code,body){
   'Content-Length':bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
  res.end(bytes);
 }
-function targetMap(targets,instanceIds=INSTANCES){
- if(!Array.isArray(instanceIds)||instanceIds.length<2||instanceIds.length>MAX_INSTANCES||
+function targetMap(targets,instanceIds){
+ if(!Array.isArray(instanceIds)||instanceIds.length<1||instanceIds.length>MAX_INSTANCES||
     instanceIds.some(id=>!INSTANCE_ID.test(id))||new Set(instanceIds).size!==instanceIds.length)
    throw new TypeError('Invalid configured upstream instance IDs');
  if(!targets||typeof targets!=='object'||Array.isArray(targets))
@@ -113,7 +112,7 @@ function readUpstream(target,path,timeoutMs=UPSTREAM_TIMEOUT){
    req.on('error',()=>finish(0));
  });
 }
-async function readStatus(targets,path,instanceIds=INSTANCES){
+async function readStatus(targets,path,instanceIds){
  const results=await Promise.all(instanceIds.map(async id=>{
    const r=await readUpstream(targets[id],path);
    return {id,ready:r.status===200,reachable:r.status>0};
@@ -222,14 +221,12 @@ async function repositoryStatus(targets,catalog){
    remoteAuthorizationVerified:false,instances};
 }
 
-function createShardedEdge({catalog,targets={
- legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787}
- }}={}){
+function createShardedEdge({catalog,targets}={}){
  const source=validateShardedCatalog(catalog),instanceIds=source.instances.map(x=>x.id),upstreams=targetMap(targets,instanceIds);
  const ids=new Set(instanceIds);
  const server=http.createServer({maxHeaderSize:16*1024},async(req,res)=>{
    try{
-     const route=targetFor(req.method,req.url,ids,'legacy');
+     const route=targetFor(req.method,req.url,ids);
      if(route){proxy(req,res,upstreams[route.id],route.path);return;}
      if(req.method!=='GET'||!new Set(['/health/live','/health/ready',
        '/health/dependencies','/health/ingress','/version','/metrics','/repositories','/repositories/status']).has(req.url)){
@@ -268,9 +265,9 @@ function createShardedEdge({catalog,targets={
 function main(){
  const file=process.env.CODEX_REVIEW_SHARDED_CATALOG_FILE||'/etc/codex-review/catalog.json';
  const catalog=validateShardedCatalog(readJson(file));
- const defaults={legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787}};
- const targets=process.env.CODEX_REVIEW_SHARDED_TARGETS_FILE?
-   readJson(process.env.CODEX_REVIEW_SHARDED_TARGETS_FILE):defaults;
+ const fileTargets=process.env.CODEX_REVIEW_SHARDED_TARGETS_FILE;
+ if(!fileTargets)throw new Error('CODEX_REVIEW_SHARDED_TARGETS_FILE is required; no default upstream exists');
+ const targets=readJson(fileTargets);
  const server=createShardedEdge({catalog,targets});
  server.listen(8787,'0.0.0.0',()=>process.stdout.write(JSON.stringify({event:'sharded_edge_ready',port:8787})+'\n'));
  process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
