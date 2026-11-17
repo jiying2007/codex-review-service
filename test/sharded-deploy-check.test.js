@@ -10,7 +10,7 @@ const env={
  SENSOR_GITLAB_WEBHOOK_TOKEN_FILE:'/secure/sensor-hook'
 };
 const instance=(name,origin)=>({
- schemaVersion:8,server:{dataDir:'/var/lib/codex-review/'+name},
+ schemaVersion:8,server:{host:'0.0.0.0',port:8787,dataDir:'/var/lib/codex-review/'+name},
  codex:{home:'/home/codex-review/'+name},
  gitlab:{baseUrl:origin,projects:[113],groups:[]},webhook:{expectedInstance:origin}
 });
@@ -32,6 +32,7 @@ test('preflight rejects unsafe image, overlapping credentials, shared state, sta
  assert.throws(()=>checkShardedConfig({...options,env:{...env,SENSOR_GITLAB_API_TOKEN_FILE:env.LEGACY_GITLAB_API_TOKEN_FILE}}),/reuse/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{dataDir:legacy.server.dataDir}}}),/isolated/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,schemaVersion:7}}),/Schema 8/);
+ assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{...sensor.server,host:'127.0.0.1'}}}),/bridge/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,gitlab:{...sensor.gitlab,baseUrl:legacy.gitlab.baseUrl}}}),/origin/);
 });
 test('sharded deployment template never starts a model Worker by bare compose up',()=>{
