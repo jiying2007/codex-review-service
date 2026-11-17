@@ -63,7 +63,7 @@ services:
     profiles: ["cutover-edge"]
     # Use the SAME verified Service image; only the stateless ingress entry runs.
     # No GitLab, model, repository, SQLite or Docker credentials are mounted here.
-    image: ghcr.io/jiying2007/codex-review-service@sha256:\${CODEX_REVIEW_IMAGE_DIGEST:?Set_verified_Service_64_hex_OCI_digest}
+    image: ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST:?Set_verified_Service_64_hex_OCI_digest}
     command: ["node", "src/sharded-edge.js"]
     restart: unless-stopped
     read_only: true
@@ -71,7 +71,7 @@ services:
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     ports:
-      - "127.0.0.1:\${CODEX_REVIEW_EDGE_PORT:-8799}:8787"
+      - "127.0.0.1:${CODEX_REVIEW_EDGE_PORT:-8799}:8787"
     environment:
       CODEX_REVIEW_SHARDED_CATALOG_FILE: /etc/codex-review/catalog.json
     volumes:
