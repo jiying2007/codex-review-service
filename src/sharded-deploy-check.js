@@ -28,6 +28,8 @@ function checkShardedConfig({env,legacy,sensor}){
  for(const [id,config] of instances){
    if(config.schemaVersion!==8||!config.gitlab||!config.webhook)
      throw Error(id+' requires current standalone Config Schema 8');
+   if(config.server?.host!=='0.0.0.0'||config.server?.port!==8787)
+     throw Error(id+' must listen on the container bridge interface and port 8787');
    if(config.server?.dataDir!=='/var/lib/codex-review/'+id||
        config.codex?.home!=='/home/codex-review/'+id)
      throw Error(id+' must use isolated container state and Codex home');
