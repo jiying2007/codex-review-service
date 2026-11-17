@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "7.8.0",
+  "version": "8.0.0",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -69,7 +69,6 @@
     "deploy/docker/compose.instance.yaml",
     "deploy/monitoring/*.json",
     "deploy/monitoring/*.yaml",
-
     "docs/MULTI_GITLAB_SHARDED.zh-CN.md"
   ],
   "scripts": {
