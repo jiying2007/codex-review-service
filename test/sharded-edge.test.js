@@ -64,7 +64,7 @@ test('fixed edge preserves raw webhook identity, instance routing and same numer
    const sensor=await request(port,'/webhooks/gitlab/sensor',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'SENSOR_TEST_TOKEN'}});
    assert.equal(legacy.status,202);assert.equal(sensor.status,202);
-   assert.equal((await request(port,'/webhooks/gitlab',{method:'POST',body:payload})).status,404,'unnamed legacy route must be rejected');
+   assert.equal((await request(port,'/webhooks/gitlab',{method:'POST',body:payload})).status,404,'unnamed route must be rejected');
    assert.equal(a.events[0].raw,payload);assert.equal(b.events[0].raw,payload);
    assert.equal(a.events[0].path,'/webhooks/gitlab/legacy');
    assert.equal(b.events[0].path,'/webhooks/gitlab/legacy');
