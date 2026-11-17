@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.7.11
+
+- Introduce profile-gated, digest-pinned Legacy/Sensor independent-container deployment with fixed-path edge routing, offline configuration checks and no-model repository inventory; no production rollout or secret disclosure is claimed.
+- Bound multi-project scheduler candidate materialization to one runnable job per project in SQLite; use recorded project start times to improve post-restart fairness without a DB schema migration.
+- Expose partially routable multi-GitLab ingress health while retaining the existing all-tenant readiness contract; add cross-tenant failure regression tests.
+- Require exact-digest amd64 and arm64 image layer retrieval before mandatory Trivy scanning, with limited retry for transient GHCR BLOB_UNKNOWN. Missing layers or scanner failure still blocks release; never overwrite an old immutable image or omit BuildKit provenance/SBOM.
+- Service 7.7.11 remains exact-pinned to Safe Core 4.18.10, Config Schema 8 and DB Schema 12; no default extra model calls or Codex/Work quota usage.
+
+
 ## 7.7.10
 
 - Exact-pin immutable Safe Core 4.18.10 (`bf7f1cfe093f9b9c552eb532fcc2ddc4a0d28fea`): invalid/truncated Diff hunks fail closed before Finding anchor verification, non-source prose no longer forms lexical caller candidates, and the offline benchmark exposes its real dataset digest.
