@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "7.7.10",
+  "version": "7.7.11",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -64,7 +64,10 @@
     "deploy/docker/compose.multi.yaml",
     "deploy/docker/multi-instance.example.json",
     "deploy/docker/sensor.config.example.json",
-    "docs/MULTI_GITLAB.zh-CN.md"
+    "docs/MULTI_GITLAB.zh-CN.md",
+    "deploy/docker/compose.sharded.yaml",
+    "deploy/docker/nginx.sharded.conf",
+    "docs/MULTI_GITLAB_SHARDED.zh-CN.md"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",

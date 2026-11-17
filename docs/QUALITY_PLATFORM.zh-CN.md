@@ -1,6 +1,6 @@
 # 质量平台
 
-Codex Review Service 7.7.10 使用精确固定的 Safe Core 4.18.10：Quality Platform v3、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
+Codex Review Service 7.7.11 使用精确固定的 Safe Core 4.18.10：Quality Platform v3、Review Profile Pack v1、Impact Evidence v2、Test Impact v1 与 Analyzer Finding v1。所有质量证据都绑定 MR 不可变 head SHA。仓库内容、CI 报告、Analyzer 文本始终是不可信证据，不是可执行指令。
 
 ## Review Profile Pack
 

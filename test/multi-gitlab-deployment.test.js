@@ -69,3 +69,20 @@ test('Sensor runbook does not misrepresent disabled notifications or trigger fla
  assert.match(guide,/multi-gitlab-preflight\.js/);
  assert.match(guide,/不是产品内新增的强制无模型开关/);
 });
+
+
+test('the release package explicitly includes sharded deployment and no-model inventory entrypoints',()=>{
+ const files=['deploy/docker/compose.sharded.yaml','deploy/docker/nginx.sharded.conf',
+   'docs/MULTI_GITLAB_SHARDED.zh-CN.md'];
+ for(const filename of files){
+   assert.ok(fs.existsSync(filename),filename);
+   assert.ok(pkg.files.includes(filename),'missing packaged sharded deployment file: '+filename);
+ }
+ for(const file of ['src/multi-instance-inventory.js','src/sharded-deploy-check.js'])
+   assert.ok(fs.existsSync(file),'missing safe CLI entrypoint: '+file);
+ const guide=fs.readFileSync('docs/MULTI_GITLAB_SHARDED.zh-CN.md','utf8');
+ assert.match(guide,/不能在旧 Legacy 在线时启用新 Legacy Writer/);
+ assert.match(guide,/CODEX_REVIEW_IMAGE_DIGEST/);
+ assert.match(guide,/node src\/sharded-deploy-check\.js/);
+ assert.match(guide,/不是严格的“无模型”开关/);
+});

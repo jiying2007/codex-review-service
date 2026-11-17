@@ -108,6 +108,12 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
     await close(sensor.server);
     const degraded=await call(port,'/health/dependencies');
     assert.equal(degraded.status,503);
+    const ingress=await call(port,'/health/ingress');
+    assert.equal(ingress.status,200,'one failed tenant must not withdraw a routable ingress');
+    assert.equal(ingress.body.status,'routable');
+    assert.equal(ingress.body.readyInstances,1);
+    assert.equal(ingress.body.totalInstances,2);
+    assert.equal(ingress.body.instances.find(x=>x.id==='sensor').available,false);
     const stillActive=await call(port,'/webhooks/gitlab',{method:'POST',
       body,headers:signed(body,legacy.token,'old-113-v2','http://192.168.1.4')});
     assert.equal(stillActive.status,202,'sensor failure must not stop the legacy ingress');
