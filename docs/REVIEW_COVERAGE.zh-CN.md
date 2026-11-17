@@ -55,3 +55,24 @@ npm run ci
 ~~~
 
 真实模型 A/B 缺陷召回、误报率、Token/有效 Finding、p50/p95 延迟仍需要显式批准的模型额度与可复现实测数据；上述离线测试不会调用模型，不能据此声称实测成本下降。正式部署仍需不可变 Core Release、Service 精确 Pin、新版 Service Release/完整性验证以及现场 SQLite 备份、唯一 Writer 和可执行回滚。不得修改现有生产 7.6.1 数据库或直接启动 Sensor 的模型审查。
+
+## v7.7.8：吸收 OpenCodeReview 的确定性方法
+
+本轮复用精确固定的 Safe Core 4.18.8（不引入外部 Go 运行时依赖）：
+
+1. **Semantic Review Group**：按实现/头文件/测试、变更 include/import 和相邻语义身份将相关文件排列在同一 Review Group。分组不消耗模型调用、不排除文件，也不改变 Hunk 行号。组预算不足仍交给 Core Chunk Planner，并保留显式覆盖缺口。
+2. **Scoped Review Rules**：针对每个 Chunk 的文件选取至多三个可信规则（OTA、FOC、电机、MCU ISR/DMA、驱动、接口、CI、配置、翻译和测试）。仓库路径和源码始终是非可信选择器，规则不能覆盖 Safe Contract、权限、结果 Schema、行号锚点。
+3. **Review Preview**：开发侧零模型、零 GitLab API 入口，只接收显式 MR/Diff/Policy fixture，输出计划/排除状态、组、Chunk 和覆盖缺口，不表示实际已运行模型。
+4. **Conservative Claim Audit**：显式的缺失字面量与同文件新增代码冲突时，只报告事实冲突 Advisory；所有 Finding 均保留，安全/并发/资源/API 高风险 Finding 绝不自动删除。不额外调用 Review 模型。
+
+离线预览命令：
+
+~~~bash
+node scripts/review-preview.js < /tmp/review-fixture.json
+~~~
+
+fixture 需显式包含 GitLab 格式的 mr、diffResult:{complete,items} 与实际 policy；本命令不读取生产凭据、不操作数据库、不启动 Worker。
+
+外部质量评测：使用 Core 的 scripts/review-quality-compare.js 对已经产生的标准化结果进行同语料、同模型、同 Provider、同预算对照。仅能报告实测结果，静态单测不证明 AACR-Bench 真实召回率或 Token 优化。不得照搬 OCR 默认排除大量测试文件、额外 LLM 分组或无限 Agent 循环。
+
+v7.7.8 源码接入后，Core/Service 的精确不可变发行及生产现场验收仍为独立门禁，不能因为通过 PR CI 就宣称线上已部署。
