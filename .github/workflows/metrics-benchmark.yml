@@ -1,0 +1,57 @@
+name: Metrics Query Benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'src/repository-metrics.js'
+      - 'src/metrics-age.js'
+      - 'scripts/benchmark-repository-metrics.js'
+      - '.github/workflows/metrics-benchmark.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/repository-metrics.js'
+      - 'src/metrics-age.js'
+      - 'scripts/benchmark-repository-metrics.js'
+      - '.github/workflows/metrics-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrics-query-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+      - name: Run offline synthetic paired query measurements
+        run: node scripts/benchmark-repository-metrics.js --output METRICS_BENCHMARK.json
+      - name: Preserve exact source inputs for independent reproduction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar HEAD | gzip -n > METRICS_SOURCE.tar.gz
+          git -C src/codex-safe-core archive --format=tar HEAD | gzip -n > METRICS_CORE_SOURCE.tar.gz
+          sha256sum METRICS_BENCHMARK.json METRICS_SOURCE.tar.gz METRICS_CORE_SOURCE.tar.gz > METRICS_SHA256SUMS.txt
+      - name: Preserve raw measurements and immutable source inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: metrics-query-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            METRICS_BENCHMARK.json
+            METRICS_SOURCE.tar.gz
+            METRICS_CORE_SOURCE.tar.gz
+            METRICS_SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
