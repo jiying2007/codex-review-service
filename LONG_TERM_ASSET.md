@@ -1,10 +1,10 @@
 # Long-term asset invariants
 
-Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.7.8** is the current production-operations baseline; shared review/safety/Judgment Lifecycle/Runtime/Provider/Model Routing semantics remain exact-pinned Safe Core Family v4.
+Codex Review Service is maintained as a security- and reliability-sensitive platform component. Service **v7.7.9** is the current production-operations baseline; shared review/safety/Judgment Lifecycle/Runtime/Provider/Model Routing semantics remain exact-pinned Safe Core Family v4.
 
 ## Product identity
 
-`product-contract.json` is the machine-checked product fact source: Service 7.7.8, Database Schema 12, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `2d256337cf684a491c5034076e0ea378e0369a98`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
+`product-contract.json` is the machine-checked product fact source: Service 7.7.9, Database Schema 12, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime Contract 3, Provider Contract 3, Model Routing Contract 1, Profile Pack 1, Test Impact 1, Analyzer Adapter 1, Judgment Lifecycle 1, exact Safe Core commit `d337d9eb0aafb8897b1aa2729a3eee64f5a6c997`, Node 22.22.2+/24.19.0+ LTS support and GitLab >=14.6.1 compatibility.
 
 ## Non-negotiable invariants
 
@@ -47,7 +47,7 @@ Codex Review Service is maintained as a security- and reliability-sensitive plat
 37. `main` uses audited squash-merge history for product changes; merged feature branches are disposable and must be cleaned.
 38. Service-only GitLab/IM/Docker/Admin/deployment concerns must not be pushed into exact-pinned Safe Core shared protocol layers.
 39. Compatibility inputs removed in earlier releases must not be reintroduced without an explicit architecture/version decision.
-40. Current documentation must describe Service v7.7.8, Database Schema 12, Config Schema 8, Review Receipt 5, Runtime/Provider Contract v3, Model Routing Contract v1 and exact Safe Core 4.18.8 accurately; historical labels belong only in changelog/migration history.
+40. Current documentation must describe Service v7.7.9, Database Schema 12, Config Schema 8, Review Receipt 5, Runtime/Provider Contract v3, Model Routing Contract v1 and exact Safe Core 4.18.9 accurately; historical labels belong only in changelog/migration history.
 41. Flow Tracking is a deterministic GitLab event/state/notification domain. It never invokes Codex, retries/fixes pipelines, mutates code, or consumes model tokens.
 42. A Flow state transition and all notification actions derived from that transition are committed in the same SQLite transaction; serialization/outbox failure rolls the transition back for safe webhook replay.
 43. Flow event acquisition and IM delivery policy remain independent: `flowTracking` chooses what is tracked, while `notifications.routes[].events` chooses what is delivered.
