@@ -66,6 +66,9 @@
     "deploy/docker/sensor.config.example.json",
     "docs/MULTI_GITLAB.zh-CN.md",
     "deploy/docker/compose.sharded.yaml",
+    "deploy/docker/compose.instance.yaml",
+    "deploy/monitoring/*.json",
+    "deploy/monitoring/*.yaml",
     "deploy/docker/nginx.sharded.conf",
     "docs/MULTI_GITLAB_SHARDED.zh-CN.md"
   ],

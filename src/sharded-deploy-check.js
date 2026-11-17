@@ -3,6 +3,7 @@
 // or invokes a model. It does not prove remote IAM, an OCI signature or readiness.
 const fs=require('node:fs');
 const path=require('node:path');
+const crypto=require('node:crypto');
 const {buildShardedCatalog,validateShardedCatalog,readJson:readBoundedJson}=require('./sharded-catalog');
 const DIGEST=/^[a-f0-9]{64}$/;
 const PINNED_IMAGE=/^[a-z0-9][a-z0-9._/-]*(?::[a-z0-9._-]+)?@sha256:[a-f0-9]{64}$/;
@@ -62,17 +63,47 @@ function checkShardedConfig({env,legacy,sensor,catalog=null}){
    modelCalls:0,productionQualified:false,
    warning:'No remote API, image signature, Docker volume or database readiness evidence has been checked.'});
 }
+function verifyDistinctSecretFiles(env){
+ // Use one descriptor for read + stat. Never output secret paths, values, or hashes.
+ const digests=new Set();
+ for(const key of SECRET_ENV){
+   const filename=env?.[key];
+   if(typeof filename!=='string'||!path.isAbsolute(filename))
+     throw Error('Secret files must be absolute private paths');
+   const flags=fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0)|(fs.constants.O_NONBLOCK||0);
+   const fd=fs.openSync(filename,flags);
+   try{
+     const stat=fs.fstatSync(fd);
+     if(!stat.isFile()||stat.nlink!==1||stat.size<1||stat.size>65536||
+        process.platform!=='win32'&&(stat.mode&0o077)!==0)
+       throw Error('Secret files must be private singly linked regular files');
+     const buffer=Buffer.alloc(65537);
+     let size=0;
+     while(size<buffer.length){
+       const count=fs.readSync(fd,buffer,size,buffer.length-size,null);
+       if(count===0)break;
+       size+=count;
+     }
+     if(size<1||size>65536||fs.fstatSync(fd).size>65536)
+       throw Error('Secret file exceeds bounded length');
+     const value=new TextDecoder('utf-8',{fatal:true}).decode(buffer.subarray(0,size)).trim();
+     if(!value||/[\r\n\0]/.test(value))
+       throw Error('Secret file has invalid bounded content');
+     const digest=crypto.createHash('sha256').update(value).digest('hex');
+     if(digests.has(digest))throw Error('Different GitLab instances or secret roles reuse a credential');
+     digests.add(digest);
+   }finally{fs.closeSync(fd);}
+ }
+ return {secretFilesVerified:SECRET_ENV.length,credentialContentsDistinct:true};
+}
+
 function main(){
  const directory=path.resolve(process.argv[2]||'.');
  const read=name=>JSON.parse(fs.readFileSync(path.join(directory,name),'utf8'));
  const catalog=readBoundedJson(path.join(directory,'catalog.json'));
  const result=checkShardedConfig({env:process.env,legacy:read('legacy.json'),sensor:read('sensor.json'),catalog});
- for(const name of SECRET_ENV){
-   const stat=fs.lstatSync(process.env[name]);
-   if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||process.platform!=='win32'&&(stat.mode&0o077)!==0)
-     throw Error('Secret paths must name private, singly linked regular files: '+name);
- }
- process.stdout.write(JSON.stringify(result,null,2)+'\n');
+ const credentials=verifyDistinctSecretFiles(process.env);
+ process.stdout.write(JSON.stringify({...result,...credentials},null,2)+'\n');
 }
-if(require.main===module){try{main();}catch(e){console.error('ESHARDEDPREFLIGHT: '+String(e.message||e));process.exitCode=2;}}
-module.exports={checkShardedConfig,main};
+if(require.main===module){try{main();}catch(e){console.error('ESHARDEDPREFLIGHT: '+String(e?.code||'INVALID_DEPLOYMENT_CONFIGURATION'));process.exitCode=2;}}
+module.exports={checkShardedConfig,verifyDistinctSecretFiles,main};
