@@ -4,7 +4,8 @@ test('standalone multi-host node is an explicit opt-in single-writer release ima
  const y=fs.readFileSync('deploy/docker/compose.instance.yaml','utf8');
  assert.match(y,/profiles: \["cutover-standalone"\]/);
  assert.match(y,/ghcr\.io\/jiying2007\/codex-review-service@sha256:/);
- assert.match(y,/CODEX_REVIEW_INSTANCE_ID/);
+ assert.match(y,/instance-state:\/var\/lib\/codex-review\/tenant/);
+ assert.match(y,/instance-home:\/home\/codex-review\/tenant/);
  assert.match(y,/instance-state:\s*\n\s+external: true/);
  assert.match(y,/instance-home:\s*\n\s+external: true/);
  assert.match(y,/GITLAB_API_TOKEN_FILE: \/run\/secrets\/gitlab_api/);
