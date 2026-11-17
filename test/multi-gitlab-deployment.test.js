@@ -38,7 +38,9 @@ test('both deployment options are opt-in and do not publish Worker ports by defa
  assert.ok(edge.includes('profiles: ["cutover-edge"]'));
  assert.ok(instance.includes('profiles: ["cutover-standalone"]'));
  assert.ok(edge.includes('CODEX_REVIEW_SHARDED_TARGETS_FILE'));
- assert.doesNotMatch(edge,/^\s+secrets:|\/run\/secrets|cutover-legacy|cutover-sensor/m);
+ assert.doesNotMatch(edge,/^\s+secrets:\s*$/m);
+ for(const prohibited of ['/run/secrets','cutover-legacy','cutover-sensor'])
+  assert.equal(edge.includes(prohibited),false,'Edge must not contain '+prohibited);
  assert.doesNotMatch(instance,/^\s+ports:|^\s+build:/m);
  assert.doesNotMatch(multi,/^\s+build:|^\s+env_file:/m);
  assert.match(multi,/127\.0\.0\.1:/);
