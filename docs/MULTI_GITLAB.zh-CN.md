@@ -132,3 +132,8 @@ sensor.config.example.json 默认 review.triggerAssignment = always、projects =
 Webhook 去重、Review 入队、Flow 与通知意图在同一个 SQLite 事务中提交；HTTP 202 只在提交后返回。新版本启动前先取得状态库侧车的 OS 排他锁，第二个 Controller 不会先恢复或迁移数据库；不要删除正在使用的 `.controller-lock.sqlite` 文件。Runner 固定执行容量为 1，超出容量明确返回 503，Controller 会按能力收敛 worker 数。
 
 Schema 12 的 `model_calls` 在每次模型调用前持久化意图，并保留失败、取消及过期任务已经观测到的用量。未知用量单列，不能当作零；进程中断时未完成的调用保留 unknown，任务记为 `EMODELCALLUNCERTAIN`，不会自动重跑。通过 `node src/admin-cli.js model-calls` 查看调用账本，人工确认 provider 状态后才提交新的显式 review 命令，旧记录保留。升级先停止原 Writer、备份并验证；回退保留当前调用及发布账本，并使用匹配旧版本的 Schema 11 备份。以上确定性回归不代表两台内网 GitLab 已完成生产验收。
+
+
+## 可选独立容器模式
+
+跨 GitLab 信任域、希望隔离故障和资源时，参考 [独立容器部署说明](MULTI_GITLAB_SHARDED.zh-CN.md)：`deploy/docker/compose.sharded.yaml` 为 Legacy/Sensor 分别启用独立服务，`nginx.sharded.conf` 使用固定路由。该模板全部通过 Profile 显式选择启动；未完成模型额度授权、真实数据库备份及发行验收前不得运行新 Worker。现有单进程 `compose.multi.yaml` 不变。
