@@ -59,6 +59,8 @@ test('sharded deployment template never starts a model Worker by bare compose up
  assert.match(edge,/CODEX_REVIEW_SHARDED_CATALOG_FILE/);
  assert.match(edge,/catalog\.json:ro/);
  assert.match(edge,/ghcr\.io\/jiying2007\/codex-review-service@sha256/);
+ assert.equal(edge.includes(String.fromCharCode(92,36,123)),false,
+   'Docker Compose interpolation must not be escaped by a literal backslash');
  assert.doesNotMatch(edge,/CODEX_REVIEW_EDGE_IMAGE|\/run\/secrets\/|GITLAB_API_TOKEN_FILE/);
  const legacyProxy=fs.readFileSync('deploy/docker/nginx.sharded.conf','utf8');
  assert.match(legacyProxy,/location = \/webhooks\/gitlab\/sensor \{/);
