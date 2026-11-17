@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.7.9
+
+- Exact-pin verified Core 4.18.9: bounded lexical function-impact candidate edges, changed-line risk evidence and old/new Finding anchor verifier, without new model calls.
+- Link candidate callers only to the Chunk that actually contains the changed function line. Risk hints remain advisory and never become false deterministic defects.
+- Recalculate review completeness when published model/analyzer Finding cannot be bound to the original immutable GitLab Diff; never silently drop security/resource/concurrency findings.
+- Include bounded impact/risk identities in the evidence manifest digest and Source SHA, ensuring fresh evidence identity and existing trust-gate behavior.
+- Preserve Config Schema 8, DB Schema 12, Safe Contract v2, Review Receipt v5, model budgets, security gates and production 7.6.1 isolation. No automatic production migration.
+
 ## 7.7.8
 
 - Exact-pin and consume formally released Safe Core 4.18.8 deterministic semantic file grouping, per-file engineering rules, review-plan Preview and conservative fact-conflict audit.
