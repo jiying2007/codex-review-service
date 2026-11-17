@@ -30,7 +30,7 @@ test('preflight rejects unsafe image, overlapping credentials, shared state, sta
  assert.throws(()=>checkShardedConfig({...options,env:{...env,CODEX_REVIEW_IMAGE_DIGEST:'main'}}),/digest/);
  assert.throws(()=>checkShardedConfig({...options,env:{...env,CODEX_REVIEW_EDGE_IMAGE:'nginx:latest'}}),/pinned/);
  assert.throws(()=>checkShardedConfig({...options,env:{...env,SENSOR_GITLAB_API_TOKEN_FILE:env.LEGACY_GITLAB_API_TOKEN_FILE}}),/reuse/);
- assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{dataDir:legacy.server.dataDir}}}),/isolated/);
+ assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{...sensor.server,dataDir:legacy.server.dataDir}}}),/isolated/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,schemaVersion:7}}),/Schema 8/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{...sensor.server,host:'127.0.0.1'}}}),/bridge/);
  assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,gitlab:{...sensor.gitlab,baseUrl:legacy.gitlab.baseUrl}}}),/origin/);
