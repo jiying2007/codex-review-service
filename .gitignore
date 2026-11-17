@@ -11,4 +11,5 @@ deploy/docker/config.json
 deploy/docker/multi-instance.json
 deploy/docker/legacy.json
 deploy/docker/sensor.json
+deploy/docker/catalog.json
 .DS_Store
