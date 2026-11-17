@@ -76,3 +76,19 @@ fixture 需显式包含 GitLab 格式的 mr、diffResult:{complete,items} 与实
 外部质量评测：使用 Core 的 scripts/review-quality-compare.js 对已经产生的标准化结果进行同语料、同模型、同 Provider、同预算对照。仅能报告实测结果，静态单测不证明 AACR-Bench 真实召回率或 Token 优化。不得照搬 OCR 默认排除大量测试文件、额外 LLM 分组或无限 Agent 循环。
 
 v7.7.8 源码接入后，Core/Service 的精确不可变发行及生产现场验收仍为独立门禁，不能因为通过 PR CI 就宣称线上已部署。
+
+## v7.7.9：有界函数证据与真实 Finding 行锚核验
+
+- 使用已通过受保护 CI 和不可变 Release 的 Safe Core 4.18.9。`buildFunctionImpactEvidence` 仅从目标 MR 精确 HEAD 的候选源码构造词法调用关系，携带函数名、文件、原始行号、source SHA、置信度与读取截断原因；**不声称编译器/Tree-sitter 已完成跨模块指针调用解析**。
+- `buildReviewRiskEvidence` 只按 GitLab changed-line 识别 ISR 阻塞调用、OTA Flash 修改、C 字符串复制、CI 信任边界和危险配置等证据，默认只是 Reviewer 提示，不创建 deterministic blocker，也不自动多调用模型。
+- `qualityContextForChunk` 对词法调用证据和风险提示按当前 Chunk 文件及其真实 new-side 变更行筛选，并受现有 32 KiB 质量上下文预算限制，报告裁剪结果；质量退化保持可观测。
+- `verifyFindingEvidence` 在 Review Service 输出最终 Review Receipt 前重新核对原始 GitLab MR Diff 的路径、old/new 侧及起止行。无法核对或与明确的证据摘要冲突，则 Verdict 为 `incomplete`，不删除 High/Critical Finding。Anchor verified **不是 semantic defect confirmed**。
+- Evidence Manifest 另纳入风险证据摘要与原有 Impact 内容（含函数候选），避免不同质量上下文共享同一历史判断身份。
+
+### 外部评测（不调用模型）
+
+Core `scripts/review-benchmark-import.js` 通过本地已有的 ReviewBench golden 或 AACR-Bench 规范化 ReviewInstance 创建带 SHA/标签来源的 `quality/corpus.json` 兼容数据。ReviewBench 仅导入 `tp_fp=tp` 的 `introduced-by-pr` 记录；AACR 必须有独立人工认可的缺陷标签。缺少实际正例的 PR 不得当作 Clean Negative。与模型运行结果的比较仍通过 `scripts/review-quality-compare.js` 的相同模型/Provider/预算基线完成。
+
+新增八个嵌入式结构化假设测试，包括 Clean Negative，**不是实际 Recall/Precision 评测结果**。若未取得模型额度，禁止通过真实 Reviewer 或生产 GitLab 运行对照实验。
+
+生产部署依然是独立门禁：不得直接替换旧 7.6.1 内网容器，不得未经现场 SQLite 一致性备份/回滚验收启用 Sensor Worker。
