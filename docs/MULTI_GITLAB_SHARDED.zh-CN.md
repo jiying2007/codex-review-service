@@ -75,4 +75,3 @@ Edge `/health/ready` 表示**所有实例**就绪（任一异常时 503）；新
 仓库指标每实例最多输出 256 个拥有历史任务的 Project；超出限制时 `codex_review_repository_metrics_complete=0`，不能将其误视作全量覆盖。历史模型记录、无 Project 任务的 Group 选择器和真实 MR 权限仍需独立取证。推荐已有 Prometheus/Grafana 以 15–30 秒间隔从本地 Edge 的 `/metrics` 抓取，不需要为此创建 ChatGPT 定时巡检。
 
 Edge 不加载任何 GitLab 或模型 Secret，`/repositories` 不允许动态提交/修改。新增仓库需要受控地变更该 GitLab 的 Project/Group 白名单、重新生成 Catalog、完成只读预检与实际授权测试后，由现场维护窗口重启对应单实例；不能把未验证的远程 Project 当作已接入成功。
-
