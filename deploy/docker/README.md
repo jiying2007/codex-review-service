@@ -121,4 +121,13 @@ Then switch only to the verified new digest. Rollback must respect the release's
 
 ## Sharded multi-GitLab deployment (opt-in)
 
-For different GitLab trust domains requiring separate OS processes, use the profile-gated `compose.sharded.yaml` and fixed-route `nginx.sharded.conf` only after reading [the isolated deployment/runbook](../../docs/MULTI_GITLAB_SHARDED.zh-CN.md). The existing `compose.multi.yaml` remains supported for same-trust-domain worker-thread isolation. Neither template grants production approval or disables model execution by toggling notifications. Always validate exact image digests, isolated single-writer volumes, preflight and rollback before a controlled cutover.
+For separate OS processes, use the profile-gated `compose.sharded.yaml` with its stateless native `src/sharded-edge.js` ingress after reading [the isolated deployment/runbook](../../docs/MULTI_GITLAB_SHARDED.zh-CN.md). The edge uses the same verified Service OCI digest, but has **no GitLab/model credentials** and never starts a Review Worker. The older `nginx.sharded.conf` is kept only as a reference. The existing `compose.multi.yaml` remains supported for same-trust-domain worker-thread isolation. Neither template grants production approval or disables model execution by toggling notifications. Always validate exact image digests, isolated single-writer volumes, preflight and rollback before a controlled cutover.
+
+Generate the bounded, no-secret repository catalog before any sharded preflight:
+
+```bash
+node src/sharded-catalog.js deploy/docker/legacy.json deploy/docker/sensor.json > deploy/docker/catalog.json
+node src/sharded-deploy-check.js deploy/docker
+```
+
+The native edge serves read-only `/repositories`, `/metrics`, `/health/ready`, `/health/ingress` and per-instance readiness and metrics; no authenticated GitLab API calls or model execution are performed by these endpoints. External HTTPS proxies should forward **only explicit POST Webhook paths**; never expose operational management/metrics endpoints publicly. A partial ingress 200 does not imply all tenants are healthy.
