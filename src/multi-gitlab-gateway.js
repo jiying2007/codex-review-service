@@ -9,7 +9,7 @@ const { contract } = require('./product-contract');
 
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 const PROXY_TIMEOUT_MS = 30000;
-const GET_PATHS = new Set(['/health/live','/health/ready','/health/dependencies','/version','/metrics']);
+const GET_PATHS = new Set(['/health/live','/health/ready','/health/ingress','/health/dependencies','/version','/metrics']);
 function response(res, code, body) {
   const data = Buffer.from(JSON.stringify(body));
   res.writeHead(code, {
@@ -138,13 +138,18 @@ function createMultiGateway({manifest, lookupPort,lookupRestartCount=()=>0}) {
         return res.end(body);
       }
       const dependency=req.url==='/health/dependencies';
+      const ingress=req.url==='/health/ingress';
       const path=dependency?'/health/dependencies':'/health/ready';
       const checks=await Promise.all(manifest.instances.map(async item=>({
         id:item.id,...(await workerStatus(lookupPort(item.id),path))
       })));
-      const healthy=checks.every(item=>item.available);
+      const readyCount=checks.filter(item=>item.available).length;
+      // /health/ready remains the conservative aggregate. /health/ingress
+      // qualifies partial service without hiding degraded independent tenants.
+      const healthy=ingress?readyCount>0:readyCount===checks.length;
       return response(res,healthy?200:503,{
-        status:healthy?(dependency?'healthy':'ready'):'degraded',
+        status:ingress?(healthy?'routable':'unavailable'):healthy?(dependency?'healthy':'ready'):'degraded',
+        readyInstances:readyCount,totalInstances:checks.length,
         instances:checks
       });
     }catch{
