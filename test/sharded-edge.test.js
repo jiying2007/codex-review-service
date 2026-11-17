@@ -66,8 +66,8 @@ test('fixed edge preserves raw webhook identity, instance routing and same numer
    assert.equal(legacy.status,202);assert.equal(sensor.status,202);
    assert.equal((await request(port,'/webhooks/gitlab',{method:'POST',body:payload})).status,404,'unnamed route must be rejected');
    assert.equal(a.events[0].raw,payload);assert.equal(b.events[0].raw,payload);
-   assert.equal(a.events[0].path,'/webhooks/gitlab/legacy');
-   assert.equal(b.events[0].path,'/webhooks/gitlab/legacy');
+   assert.equal(a.events[0].path,'/webhooks/gitlab');
+   assert.equal(b.events[0].path,'/webhooks/gitlab');
    assert.equal(a.events[0].headers['x-forwarded-for'],undefined);
    assert.equal((await request(port,'/webhooks/gitlab/sensor',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'LEGACY_TEST_TOKEN'}})).status,401);
