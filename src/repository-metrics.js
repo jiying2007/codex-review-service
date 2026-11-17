@@ -23,8 +23,10 @@ function renderRepositoryMetrics(store,{maxProjects=MAX_PROJECTS,now=Date.now()}
    "SUM(CASE WHEN c.usage_known=1 THEN COALESCE(c.input_tokens,0)+COALESCE(c.output_tokens,0) ELSE 0 END) known,"+
    "SUM(CASE WHEN c.usage_known=0 THEN 1 ELSE 0 END) unknown "+
    "FROM model_calls c JOIN review_jobs j ON j.id=c.job_id "+
-   "WHERE c.started_at>=? GROUP BY j.project_id"
- ).all(since.toISOString());
+   "WHERE c.started_at>=? AND j.project_id IN "+
+   "(SELECT project_id FROM review_jobs GROUP BY project_id ORDER BY project_id LIMIT ?) "+
+   "GROUP BY j.project_id"
+ ).all(since.toISOString(),maxProjects);
  const usage=new Map(tokens.map(x=>[x.project_id,x]));
  const lines=[
    '# TYPE codex_review_repository_metrics_complete gauge',
