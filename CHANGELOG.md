@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.7.10
+
+- Exact-pin immutable Safe Core 4.18.10 (`bf7f1cfe093f9b9c552eb532fcc2ddc4a0d28fea`): invalid/truncated Diff hunks fail closed before Finding anchor verification, non-source prose no longer forms lexical caller candidates, and the offline benchmark exposes its real dataset digest.
+- Refresh Service 7.7.10 Product Contract, Core runtime/governance digests, release guard and integrity workflow exact SHAs, multi-GitLab documentation and independent release identity. Database Schema 12 / Config Schema 8 remain unchanged.
+- No model-call increase, new secret, live GitLab operation, production SQLite mutation or automatic promotion claim.
+
+
 ## 7.7.9
 
 - Exact-pin verified Core 4.18.9: bounded lexical function-impact candidate edges, changed-line risk evidence and old/new Finding anchor verifier, without new model calls.
