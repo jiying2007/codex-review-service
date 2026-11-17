@@ -9,6 +9,7 @@ const {
   formatAnalyzerEvidence
 } = require('./codex-safe-core/quality-platform');
 const { resolveReviewProfilePack, formatProfilePackEvidence } = require('./codex-safe-core/review-profile-pack');
+const { buildFunctionImpactEvidence, buildReviewRiskEvidence } = require('./codex-safe-core/review-evidence-v2');
 const { buildTestImpactMap, formatTestImpactEvidence } = require('./codex-safe-core/test-impact');
 const { parseAnalyzerArtifact, mergeAnalyzerArtifacts } = require('./analyzer-adapters');
 
@@ -73,7 +74,10 @@ async function collectImpact(gitlab, mr, diffResult, profile) {
     maxEdges:Math.max(32,profile.maxImpactFiles*6),
     maxBytes:Math.min(256*1024,Math.max(32*1024,profile.maxImpactFiles*12*1024))});
   if(!graph.complete||graph.truncated)reasons.add('impact_graph_budget');
-  return Object.freeze({...graph,complete:reasons.size===0,truncated:reasons.size>0,
+  const functionImpact=buildFunctionImpactEvidence({diff,candidates,maxSymbols:24,maxEdges:48,maxBytes:12*1024});
+  for(const reason of functionImpact.reasons||[])reasons.add('function_impact:'+reason);
+  return Object.freeze({...graph,functionImpact,sourceProjectId,sourceHeadSha:headSha,
+    complete:reasons.size===0,truncated:reasons.size>0,
     degradationReasons:Object.freeze([...reasons])});
 }
 function globMatch(value, pattern='*') {
@@ -149,14 +153,16 @@ async function collectServiceQualityEvidence(gitlab, mr, diffResult, config) {
   const analyzerFindings=dedupeAnalyzerFindings(analyzer.findings||[]);
   const analyzerEvidence = formatAnalyzerEvidence(analyzerFindings, { maxFindings: 80, maxBytes: 64 * 1024 });
   const testImpactEvidence=formatTestImpactEvidence(testImpact,{maxBytes:48*1024});
+  const risk=buildReviewRiskEvidence({diff:unifiedDiffText(diffResult),maxSignals:48});
   const degradationReasons=new Set(impact.degradationReasons||[]);
+  if(!risk.complete)for(const reason of risk.reasons)degradationReasons.add('risk:'+reason);
   if(impact.complete===false)degradationReasons.add('impact_incomplete');
   if(analyzer.complete===false)degradationReasons.add('optional_analyzer_incomplete');
   if(analyzerEvidence.truncated)degradationReasons.add('analyzer_evidence_truncated');
   if(testResult.status!=='fulfilled')degradationReasons.add('test_impact_unavailable');
   if(testImpact.truncated)degradationReasons.add('test_impact_truncated');
   if(testImpactEvidence.truncated)degradationReasons.add('test_evidence_truncated');
-  return Object.freeze({profile,impact,analyzerFindings,analyzerEvidence,
+  return Object.freeze({profile,impact,risk,analyzerFindings,analyzerEvidence,
     analyzerMetadata:analyzer.metadata,analyzerArtifacts:analyzer.artifacts,
     analyzerComplete:analyzer.complete,testImpact,testImpactEvidence,
     degradationReasons:Object.freeze([...degradationReasons])});
@@ -204,6 +210,27 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
      if(bounded.truncated)truncated=true;
    }
    append('--- END CHUNK-RELATED IMPACT EVIDENCE ---');
+ }
+ const functionImpact=evidence?.impact?.functionImpact;
+ const scopedSeeds=(functionImpact?.seeds||[]).filter(seed=>paths.has(seed.path)&&
+   (chunk.files||[]).some(file=>file.path===seed.path&&
+      (file.changedLines?.new||[]).includes(seed.line))).slice(0,8);
+ const seedIds=new Set(scopedSeeds.map(seed=>seed.identity));
+ const scopedCalls=(functionImpact?.edges||[]).filter(edge=>seedIds.has(edge.to?.identity)).slice(0,12);
+ if(scopedSeeds.length){
+   append('--- FUNCTION CALL CANDIDATES (UNTRUSTED LEXICAL EVIDENCE) ---\n'+
+     JSON.stringify({headSha:evidence?.impact?.sourceHeadSha||'',
+       verifiedResolution:false,seeds:scopedSeeds,edges:scopedCalls})+
+     '\n--- END FUNCTION CALL CANDIDATES ---');
+   if((functionImpact?.edges||[]).filter(edge=>seedIds.has(edge.to?.identity)).length>scopedCalls.length)truncated=true;
+ }
+ const relevantRisk=(evidence?.risk?.signals||[]).filter(signal=>paths.has(signal.path)&&
+   (chunk.files||[]).some(file=>file.path===signal.path&&
+      (file.changedLines?.new||[]).includes(signal.line)));
+ if(relevantRisk.length){
+   append('--- DETERMINISTIC RISK HINTS (NOT CERTIFIED DEFECTS) ---\n'+
+     JSON.stringify(relevantRisk.slice(0,12))+'\n--- END RISK HINTS ---');
+   if(relevantRisk.length>12)truncated=true;
  }
  const analyzers=(evidence?.analyzerFindings||[]).filter(item=>paths.has(item.file));
  const analyzerBlock=formatAnalyzerEvidence(analyzers,{maxFindings:12,maxBytes:8192});
