@@ -3,18 +3,14 @@
 // An explicitly configured project is not evidence of remote membership.
 const fs=require('node:fs');
 const crypto=require('node:crypto');
-const DEFAULT_INSTANCES=['legacy','sensor'];
 const INSTANCE_ID=/^[a-z][a-z0-9-]{0,31}$/;
 const MAX_INSTANCES=16;
 function orderedIds(configs){
  if(!configs||typeof configs!=='object'||Array.isArray(configs))throw new TypeError('Standalone instance configs are required');
  const ids=Object.keys(configs);
- if(ids.length<2||ids.length>MAX_INSTANCES||!ids.includes('legacy')||ids.some(id=>!INSTANCE_ID.test(id)))
-   throw new TypeError('Catalog requires legacy and 1-15 bounded independent GitLab IDs');
- return ids.sort((a,b)=>{
-   const priority=id=>DEFAULT_INSTANCES.indexOf(id)>=0?DEFAULT_INSTANCES.indexOf(id):2;
-   return priority(a)-priority(b)||a.localeCompare(b);
- });
+ if(ids.length<1||ids.length>MAX_INSTANCES||ids.some(id=>!INSTANCE_ID.test(id)))
+   throw new TypeError('Catalog requires 1-16 explicitly named GitLab instances');
+ return ids.sort((a,b)=>a.localeCompare(b));
 }
 const MAX_PROJECTS=256,MAX_GROUPS=64,MAX_FILE_BYTES=1024*1024;
 function requireId(value,label) {
@@ -62,18 +58,18 @@ function buildShardedCatalog(configs) {
       groupEnumeration:'requires_live_authenticated_preflight'};
   });
   const sourceDigest=crypto.createHash('sha256').update(JSON.stringify(instances)).digest('hex');
-  return Object.freeze({schemaVersion:1,kind:'sharded_repository_catalog',
+  return Object.freeze({schemaVersion:2,kind:'sharded_repository_catalog',
     sourceDigest,modelCalls:0,freshApiQuery:false,instances,
     warning:'Configured scopes only. No live GitLab project membership, authorization or deployment is verified.'});
 }
 function validateShardedCatalog(catalog) {
-  if(!catalog||catalog.schemaVersion!==1||catalog.kind!=='sharded_repository_catalog'||
-     !Array.isArray(catalog.instances)||catalog.instances.length<2||catalog.instances.length>MAX_INSTANCES)
+  if(!catalog||catalog.schemaVersion!==2||catalog.kind!=='sharded_repository_catalog'||
+     !Array.isArray(catalog.instances)||catalog.instances.length<1||catalog.instances.length>MAX_INSTANCES)
     throw new TypeError('Sharded repository catalog has an invalid schema');
   const configs=Object.create(null);
   const ids=catalog.instances.map(item=>item?.id);
   if(ids.some(id=>typeof id!=='string'||!INSTANCE_ID.test(id))||
-     ids.length!==new Set(ids).size||!ids.includes('legacy'))
+     ids.length!==new Set(ids).size)
     throw new TypeError('Sharded catalog has invalid or duplicate instance identities');
   for(let i=0;i<ids.length;i++){
     const id=ids[i],entry=catalog.instances[i];
@@ -118,20 +114,16 @@ function readJson(file){
   }
 }
 function main(args=process.argv.slice(2)){
-  // Backward compatible two-file CLI, or an explicit id=/absolute/config.json
-  // list for >2 instances. Nothing is retrieved from GitLab or printed from secrets.
+  // Breaking v8 contract: every config must carry its own explicit instance ID.
+  // Never auto-classify unnamed files as a default/legacy GitLab instance.
+  if(args.length<1||args.length>MAX_INSTANCES)
+    throw new TypeError('Usage: sharded-catalog.js id=/absolute/config.json [id=/absolute/config.json ...]');
   const configs=Object.create(null);
-  if(args.length===2&&!args.some(arg=>arg.includes('='))){
-    configs.legacy=readJson(args[0]);configs.sensor=readJson(args[1]);
-  }else{
-    if(args.length<2||args.length>MAX_INSTANCES)
-      throw new TypeError('Usage: sharded-catalog.js legacy.json sensor.json | legacy=/path sensor=/path [id=/path ...]');
-    for(const item of args){
-      const pos=item.indexOf('='),id=item.slice(0,pos),file=item.slice(pos+1);
-      if(pos<1||!INSTANCE_ID.test(id)||!file||Object.hasOwn(configs,id))
-        throw new TypeError('Invalid or duplicate instance=configuration mapping');
-      configs[id]=readJson(file);
-    }
+  for(const item of args){
+    const pos=item.indexOf('='),id=item.slice(0,pos),file=item.slice(pos+1);
+    if(pos<1||!INSTANCE_ID.test(id)||!require('node:path').isAbsolute(file)||Object.hasOwn(configs,id))
+      throw new TypeError('Every instance requires a unique id=/absolute/config.json mapping');
+    configs[id]=readJson(file);
   }
   const catalog=buildShardedCatalog(configs);
   process.stdout.write(JSON.stringify(catalog,null,2)+'\n');
