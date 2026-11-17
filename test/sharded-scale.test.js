@@ -9,7 +9,7 @@ const config=(id,project=113)=>({
  webhook:{expectedInstance:'http://'+id+'.gitlab.test'}
 });
 const configs={legacy:config('legacy'),sensor:config('sensor'),qa:config('qa')};
-function serve(handler){const server=http.createServer(handler);return new Promise(resolve=>
+function serve(handler){const server=typeof handler==='function'?http.createServer(handler):handler;return new Promise(resolve=>
  server.listen(0,'127.0.0.1',()=>resolve({server,port:server.address().port})));
 }
 function close(server){return new Promise(r=>server.close(r));}
@@ -21,7 +21,7 @@ function request(port,pathname,{method='GET',headers={},body=''}={}){
     let value=raw;try{value=JSON.parse(raw);}catch{}
     resolve({status:res.statusCode,raw,value});
    });
-  });req.on('error',reject);req.end(body);
+  });req.setTimeout(5000,()=>req.destroy(new Error('fixture_timeout')));req.on('error',reject);req.end(body);
  });
 }
 test('N-instance catalog remains bounded, canonical and never forges remote membership',()=>{
