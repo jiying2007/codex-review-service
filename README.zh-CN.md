@@ -32,6 +32,8 @@
 
 <!-- END GENERATED PRODUCT CONTRACT -->
 
+**多 GitLab v8 破坏性入口变更：** 统一网关仅接受 `POST /webhooks/gitlab/<instance-id>`，裸 `POST /webhooks/gitlab` 明确返回 404。单实例 Worker 内部仍通过固定路由接收原始签名和消息体，并执行独立鉴权。Catalog 与多实例 Manifest 都要求 Schema 2、显式实例名和 Targets，无 Legacy 默认回退。详见 [多 GitLab 独立部署说明](docs/MULTI_GITLAB_SHARDED.zh-CN.md)。
+
 GitLab 兼容通过 capability profile 管理，而不是到处堆版本判断：
 
 - **Classic profile**（`14.6.1` 到 `<15.7`）：使用 `GET .../merge_requests/:iid/changes`，只有 GitLab 明确返回 `overflow: false` 才允许继续 Review。
