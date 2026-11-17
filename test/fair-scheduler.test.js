@@ -51,3 +51,39 @@ test('scheduler never claims a second running job for the same MR', () => {
     assert.equal(store.claimNext(), null);
   } finally { cleanup(); }
 });
+
+
+test('scheduler restores relative fairness from committed started_at after restart',()=>{
+ const {store,cleanup}=tempStore();
+ try {
+   installFairScheduling(store);
+   enqueue(store,1,101,'restart-a');
+   enqueue(store,1,102,'restart-b');
+   enqueue(store,2,201,'restart-c');
+   const first=store.claimNext();
+   assert.equal(first.project_id,1);
+   store.finishJob(first.id,'pass');
+   // A worker crash/new process discards the in-memory rotation state.
+   installFairScheduling(store);
+   const second=store.claimNext();
+   assert.equal(second.project_id,2,'a recently served project must not dominate a fresh scheduler');
+ } finally {cleanup();}
+});
+
+test('bounded per-project SQL candidate selection still serves multiple backlog-heavy projects',()=>{
+ const {store,cleanup}=tempStore();
+ try {
+   installFairScheduling(store);
+   for(let i=0;i<120;i++)store.enqueue({projectId:1,mrIid:1000+i,
+     trigger:'test',dedupeKey:'bulk-a-'+i,maxQueueDepth:500});
+   for(let i=0;i<4;i++)store.enqueue({projectId:2,mrIid:2000+i,
+     trigger:'test',dedupeKey:'bulk-b-'+i,maxQueueDepth:500});
+   const observed=[];
+   for(let i=0;i<6;i++){
+     const job=store.claimNext();
+     observed.push(job.project_id);
+     store.finishJob(job.id,'pass');
+   }
+   assert.deepEqual(observed,[1,2,1,2,1,2]);
+ } finally {cleanup();}
+});
