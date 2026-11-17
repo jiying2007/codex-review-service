@@ -60,7 +60,7 @@ function mockWorker(id,origin,key,records){
 test('ingress only routes explicitly named GitLab instances; no default route',()=>{
   const ids=new Set(['legacy','sensor']);
   assert.equal(targetFor('POST','/webhooks/gitlab',ids),null,'implicit default route must not exist');
-  assert.deepEqual(targetFor('POST','/webhooks/gitlab/sensor',ids),{id:'sensor',path:'/webhooks/gitlab/legacy'});
+  assert.deepEqual(targetFor('POST','/webhooks/gitlab/sensor',ids),{id:'sensor',path:'/webhooks/gitlab'});
   assert.deepEqual(targetFor('GET','/instances/sensor/health/ready',ids),{id:'sensor',path:'/health/ready'});
   for(const pathname of ['/webhooks/gitlab/unknown','/webhooks/gitlab/sensor?other=true',
     '/webhooks/gitlab/../sensor','/webhooks/gitlab/%2e%2e','/webhooks/gitlab/SENSOR'])
