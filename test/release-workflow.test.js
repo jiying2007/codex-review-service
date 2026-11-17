@@ -81,6 +81,10 @@ test('GHCR blob materialization is required before Trivy and never weakens relea
  assert.match(release,/org\.opencontainers\.image\.version/);
  assert.match(release,/BLOB_UNKNOWN/);
  assert.match(release,/BUILDX_NO_DEFAULT_OCI_ARTIFACT: '1'/);
+ assert.match(release,/AMD64_CONFIG: \$\{\{ steps\.scan_targets\.outputs\.amd64_config \}\}/);
+ assert.match(release,/ARM64_CONFIG: \$\{\{ steps\.scan_targets\.outputs\.arm64_config \}\}/);
+ assert.match(release,/actual_config="\$\(docker image inspect/);
+ assert.match(release,/"\$actual_config" != "\$expected_config"/);
  assert.match(release,/--provenance=mode=max/);
  assert.match(release,/--sbom=true/);
  assert.match(release,/node scripts\/trivy-findings-gate\.js --report TRIVY-linux-amd64\.json/);

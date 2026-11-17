@@ -1,6 +1,6 @@
 {
   "name": "codex-review-service",
-  "version": "7.7.11",
+  "version": "7.7.12",
   "private": true,
   "description": "Durable, self-hosted Codex code review service for GitLab merge requests",
   "license": "MIT",
@@ -91,7 +91,8 @@
     "docs:generate": "node scripts/generate-contract-docs.js && node scripts/sync-operational-docs.js",
     "docs:verify": "npm run docs:generate && node scripts/sync-operational-docs.js --check",
     "test:offline-safety": "node --test test/db-migrations.test.js test/db.test.js test/live-ref-observation.test.js test/publication-target-identity.test.js test/publication-evidence.test.js test/publication.test.js test/service.test.js test/webhook.test.js",
-    "test:multi-offline": "node --test test/multi-gitlab-admin.test.js test/multi-gitlab-config.test.js test/multi-gitlab-cutover.test.js test/multi-gitlab-deployment.test.js test/multi-gitlab-gateway.test.js test/multi-gitlab-preflight.test.js test/multi-gitlab-real-worker-env.test.js test/multi-gitlab-runtime.test.js"
+    "test:multi-offline": "node --test test/multi-gitlab-admin.test.js test/multi-gitlab-config.test.js test/multi-gitlab-cutover.test.js test/multi-gitlab-deployment.test.js test/multi-gitlab-gateway.test.js test/multi-gitlab-preflight.test.js test/multi-gitlab-real-worker-env.test.js test/multi-gitlab-runtime.test.js test/sharded-catalog.test.js test/sharded-edge.test.js test/repository-metrics.test.js",
+    "catalog:generate": "node src/sharded-catalog.js"
   },
   "repository": {
     "type": "git",

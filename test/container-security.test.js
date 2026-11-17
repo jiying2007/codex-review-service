@@ -177,3 +177,30 @@ test('actual scan gate CLI distinguishes clean, blocking and incomplete JSON evi
     r = run(broken); assert.equal(r.status, 2); assert.match(r.stderr, /ETRIVYREPORT/);
   }
 });
+
+
+test('digest-bound real Trivy 0.70 manifest identity is distinct from signed config digest',()=>{
+ const manifest='sha256:'+'c'.repeat(64),configDigest='sha256:'+'d'.repeat(64);
+ const repoTag='ghcr.io/jiying2007/codex-review-service:'+version;
+ const canonical='ghcr.io/jiying2007/codex-review-service@'+manifest;
+ const identity={...options,image:repoTag+'@'+manifest,imageId:configDigest};
+ const value=report();
+ value.ArtifactName=identity.image;
+ value.Metadata.ImageID=manifest;
+ value.Metadata.Reference=canonical;
+ value.Metadata.RepoDigests=[canonical];
+ assert.equal(assess(value,identity).ok,true,
+   'real Trivy Metadata.ImageID identifies the scanned platform manifest, not OCI config');
+ assert.equal(assess(value,identity).manifestDigest,manifest);
+ for(const modify of [
+   x=>{x.Metadata.ImageID=configDigest;},
+   x=>{x.Metadata.Reference=repoTag+'@'+configDigest;},
+   x=>{x.Metadata.RepoDigests=[repoTag+'@'+manifest];},
+   x=>{x.Metadata.RepoDigests=[];},
+   x=>{x.ArtifactName=repoTag+'@'+configDigest;},
+   x=>{x.Metadata.ImageConfig.config.Labels['org.opencontainers.image.revision']='f'.repeat(40);}
+ ]){
+   const bad=structuredClone(value);modify(bad);
+   assert.throws(()=>assess(bad,identity),{code:'ETRIVYREPORT'});
+ }
+});

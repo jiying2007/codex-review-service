@@ -39,8 +39,21 @@ function assess(report, { image, imageId, platform, revision }) {
       !['linux/amd64', 'linux/arm64'].includes(platform) || !/^[0-9a-f]{40}$/.test(revision)) fail('Exact image, config, platform and source SHA are required');
   const config = report?.Metadata?.ImageConfig;
   const [os, architecture] = platform.split('/');
+  // Trivy 0.70 reports a digest-bound remote scan's *manifest* in
+  // Metadata.ImageID. The caller's imageId is the separately verified OCI
+  // *config* digest from the raw child manifest. These are not interchangeable.
+  const childDigest=/@(sha256:[0-9a-f]{64})$/.exec(image)?.[1]||null;
+  const repoTag=childDigest?image.slice(0,-childDigest.length-1):'';
+  const repository=repoTag?repoTag.replace(/:[^/:]*$/,''):'';
+  const canonical=childDigest?repository+'@'+childDigest:'';
+  const exactRegistryIdentity=childDigest?
+    (report?.Metadata?.ImageID===childDigest &&
+      report?.Metadata?.Reference===canonical &&
+      Array.isArray(report?.Metadata?.RepoDigests) &&
+      report.Metadata.RepoDigests.includes(canonical)):
+    report?.Metadata?.ImageID===imageId;
   if (report?.SchemaVersion !== 2 || report.ArtifactType !== 'container_image' || report.ArtifactName !== image ||
-      report.Metadata?.ImageID !== imageId || config?.os !== os || config?.architecture !== architecture ||
+      !exactRegistryIdentity || config?.os !== os || config?.architecture !== architecture ||
       config?.config?.Labels?.['org.opencontainers.image.revision'] !== revision ||
       config?.config?.Labels?.['org.opencontainers.image.version'] !== contract.serviceVersion ||
       config?.config?.Labels?.['org.opencontainers.image.source'] !== 'https://github.com/jiying2007/codex-review-service' ||
@@ -81,7 +94,7 @@ function assess(report, { image, imageId, platform, revision }) {
           severity: finding.Severity, installedVersion: finding.InstalledVersion, fixedVersion: fixed });
     }
   }
-  return { ok: blocking.length === 0, policy: 'all-critical-and-fixable-high', image, imageId, platform, sourceSha: revision,
+  return { ok: blocking.length === 0, policy: 'all-critical-and-fixable-high', image, imageId, manifestDigest:childDigest, platform, sourceSha: revision,
     scannerVersion: report.Trivy.Version, productVersion: contract.serviceVersion, packages, counts, blocking };
 }
 function main(args = process.argv.slice(2)) {

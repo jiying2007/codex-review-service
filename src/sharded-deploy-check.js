@@ -3,18 +3,19 @@
 // or invokes a model. It does not prove remote IAM, an OCI signature or readiness.
 const fs=require('node:fs');
 const path=require('node:path');
+const {buildShardedCatalog,validateShardedCatalog,readJson:readBoundedJson}=require('./sharded-catalog');
 const DIGEST=/^[a-f0-9]{64}$/;
 const PINNED_IMAGE=/^[a-z0-9][a-z0-9._/-]*(?::[a-z0-9._-]+)?@sha256:[a-f0-9]{64}$/;
 const SECRET_ENV=[
   'LEGACY_GITLAB_API_TOKEN_FILE','LEGACY_GITLAB_WEBHOOK_TOKEN_FILE',
   'SENSOR_GITLAB_API_TOKEN_FILE','SENSOR_GITLAB_WEBHOOK_TOKEN_FILE'
 ];
-function checkShardedConfig({env,legacy,sensor}){
+function checkShardedConfig({env,legacy,sensor,catalog=null}){
  if(!env||!legacy||!sensor)throw Error('Two standalone configs and deployment environment are required');
  if(!DIGEST.test(String(env.CODEX_REVIEW_IMAGE_DIGEST||'')))
    throw Error('Use one verified complete Service OCI index SHA256 digest');
- if(!PINNED_IMAGE.test(String(env.CODEX_REVIEW_EDGE_IMAGE||'')))
-   throw Error('Edge proxy image must be an exact SHA256-pinned container reference');
+ if(env.CODEX_REVIEW_EDGE_IMAGE!==undefined && !PINNED_IMAGE.test(String(env.CODEX_REVIEW_EDGE_IMAGE)))
+   throw Error('Optional legacy Nginx image must remain exact SHA256-pinned');
  for(const key of ['CODEX_REVIEW_LEGACY_STATE_VOLUME','CODEX_REVIEW_LEGACY_HOME_VOLUME',...SECRET_ENV])
    if(typeof env[key]!=='string'||!env[key].trim())
      throw Error('Missing required sharded deployment input: '+key);
@@ -46,9 +47,17 @@ function checkShardedConfig({env,legacy,sensor}){
      keys.push(id+':'+p);
    }
  }
+ const configured=buildShardedCatalog({legacy,sensor});
+ if(catalog){
+   const supplied=validateShardedCatalog(catalog);
+   if(supplied.sourceDigest!==configured.sourceDigest)
+     throw Error('Non-secret catalog must exactly match current Legacy/Sensor project and group configuration');
+ }
  return Object.freeze({schemaVersion:1,readyForReadOnlyPreflight:true,
+   catalogVerified:Boolean(catalog),catalogDigest:configured.sourceDigest,
    serviceDigest:'sha256:'+env.CODEX_REVIEW_IMAGE_DIGEST,
-   edgeImage:env.CODEX_REVIEW_EDGE_IMAGE,
+   edgeMode:'native_service_image_without_secrets',
+   legacyOptionalEdgeImage:env.CODEX_REVIEW_EDGE_IMAGE||null,
    edgeLoopbackPort:edgePort,configuredProjectKeys:keys.sort(),
    modelCalls:0,productionQualified:false,
    warning:'No remote API, image signature, Docker volume or database readiness evidence has been checked.'});
@@ -56,7 +65,8 @@ function checkShardedConfig({env,legacy,sensor}){
 function main(){
  const directory=path.resolve(process.argv[2]||'.');
  const read=name=>JSON.parse(fs.readFileSync(path.join(directory,name),'utf8'));
- const result=checkShardedConfig({env:process.env,legacy:read('legacy.json'),sensor:read('sensor.json')});
+ const catalog=readBoundedJson(path.join(directory,'catalog.json'));
+ const result=checkShardedConfig({env:process.env,legacy:read('legacy.json'),sensor:read('sensor.json'),catalog});
  for(const name of SECRET_ENV){
    const stat=fs.lstatSync(process.env[name]);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||process.platform!=='win32'&&(stat.mode&0o077)!==0)

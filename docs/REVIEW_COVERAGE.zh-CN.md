@@ -1,6 +1,6 @@
 # Codex Review 覆盖率与低成本深度审查
 
-## v7.7.11：不可信 Diff 拒绝错误行锚
+## v7.7.12：不可信 Diff 拒绝错误行锚
 
 - 精确固定已发布的 Safe Core 4.18.10：任一 Unified Diff Hunk 长度、坐标或顺序出现矛盾，则整个 MR Diff 不产生 `anchor_verified`；高风险 Finding 保留并标记证据不完整，不自动抑制或删除。
 - 函数影响中的候选调用仅来自源码文件，不把 Markdown 等自然语言误当作实际调用；仍不声称词法匹配等于编译器解析。
