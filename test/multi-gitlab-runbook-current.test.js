@@ -28,5 +28,5 @@ test('review and release governance remain independent of observability dashboar
  for(const term of ['GitLab','保护规则','CodeQL','Release Integrity','没有真实生产读写证据'])
   assert.ok(runbook.includes(term),term);
  assert.ok(sharded.includes('唯一 Writer'));
- assert.ok(sharded.includes('没有 Legacy 回退')||runbook.includes('不保留旧版默认实例'));
+ assert.ok(runbook.includes('不提供旧版默认实例'),'default route must be removed');
 });
