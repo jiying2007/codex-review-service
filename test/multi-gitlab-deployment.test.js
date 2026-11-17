@@ -8,6 +8,7 @@ test('multi deployment package contains runtime, closed templates and a rollback
  for(const filename of [
    'src/multi-gitlab-config.js','src/multi-gitlab-gateway.js',
    'src/multi-gitlab.js','src/multi-gitlab-preflight.js',
+   'src/sharded-edge.js','src/sharded-catalog.js','src/repository-metrics.js',
    'deploy/docker/compose.multi.yaml','deploy/docker/multi-instance.example.json',
    'deploy/docker/sensor.config.example.json','docs/MULTI_GITLAB.zh-CN.md'
  ])assert.ok(fs.existsSync(filename),filename);
@@ -52,7 +53,7 @@ test('templates preserve old route while creating isolated sensor origin, scope 
 test('repository ignores active multi-tenant config and secret files',()=>{
  const text=fs.readFileSync('.gitignore','utf8');
  for(const item of ['deploy/docker/multi-instance.json','deploy/docker/legacy.json',
-   'deploy/docker/sensor.json','deploy/docker/secrets/'])
+   'deploy/docker/sensor.json','deploy/docker/catalog.json','deploy/docker/secrets/'])
    assert.ok(text.includes(item),item);
 });
 
