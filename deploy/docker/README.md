@@ -117,3 +117,8 @@ npm run admin -- drain 120
 ```
 
 Then switch only to the verified new digest. Rollback must respect the release's DB/Config Schema boundary.
+
+
+## Sharded multi-GitLab deployment (opt-in)
+
+For different GitLab trust domains requiring separate OS processes, use the profile-gated `compose.sharded.yaml` and fixed-route `nginx.sharded.conf` only after reading [the isolated deployment/runbook](../../docs/MULTI_GITLAB_SHARDED.zh-CN.md). The existing `compose.multi.yaml` remains supported for same-trust-domain worker-thread isolation. Neither template grants production approval or disables model execution by toggling notifications. Always validate exact image digests, isolated single-writer volumes, preflight and rollback before a controlled cutover.
