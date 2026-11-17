@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {checkShardedConfig}=require('../src/sharded-deploy-check');
+const {buildShardedCatalog}=require('../src/sharded-catalog');
 const env={
  CODEX_REVIEW_IMAGE_DIGEST:'a'.repeat(64),CODEX_REVIEW_EDGE_IMAGE:'nginx:1.29-alpine@sha256:'+'b'.repeat(64),
  CODEX_REVIEW_LEGACY_STATE_VOLUME:'old-volume',CODEX_REVIEW_LEGACY_HOME_VOLUME:'old-home',
@@ -21,6 +22,11 @@ test('preflight requires an immutable image and unique instance-qualified projec
  assert.equal(result.productionQualified,false);
  assert.equal(result.modelCalls,0);
  assert.deepEqual(result.configuredProjectKeys,['legacy:113','sensor:113']);
+ const catalog=buildShardedCatalog({legacy,sensor});
+ const confirmed=checkShardedConfig({env,legacy,sensor,catalog});
+ assert.equal(confirmed.catalogVerified,true);
+ assert.equal(confirmed.catalogDigest,catalog.sourceDigest);
+ assert.throws(()=>checkShardedConfig({env,legacy,sensor:{...sensor,gitlab:{...sensor.gitlab,projects:[114]}},catalog}),/catalog/);
  const data=JSON.stringify(result);
  assert.equal(data.includes('/secure'),false);
  assert.equal(data.includes('old-volume'),false);
@@ -48,10 +54,14 @@ test('sharded deployment template never starts a model Worker by bare compose up
  assert.doesNotMatch(text,/^\s*build:/m);
  assert.doesNotMatch(text,/^\s*env_file:/m);
  assert.doesNotMatch(text,/ports:\s*\n\s*- "0\.0\.0\.0:/);
- const proxy=fs.readFileSync('deploy/docker/nginx.sharded.conf','utf8');
- assert.match(proxy,/location = \/webhooks\/gitlab\/sensor \{/);
- assert.match(proxy,/proxy_pass http:\/\/sensor:8787\/webhooks\/gitlab/);
- assert.match(proxy,/location = \/webhooks\/gitlab \{/);
- assert.match(proxy,/proxy_pass http:\/\/legacy:8787\/webhooks\/gitlab/);
- assert.match(proxy,/return 404/);
+ const edge=text.slice(text.indexOf('\n  edge:'),text.indexOf('\nsecrets:'));
+ assert.match(edge,/command: \["node", "src\/sharded-edge\.js"\]/);
+ assert.match(edge,/CODEX_REVIEW_SHARDED_CATALOG_FILE/);
+ assert.match(edge,/catalog\.json:ro/);
+ assert.match(edge,/ghcr\.io\/jiying2007\/codex-review-service@sha256/);
+ assert.doesNotMatch(edge,/CODEX_REVIEW_EDGE_IMAGE|\/run\/secrets\/|GITLAB_API_TOKEN_FILE/);
+ const legacyProxy=fs.readFileSync('deploy/docker/nginx.sharded.conf','utf8');
+ assert.match(legacyProxy,/location = \/webhooks\/gitlab\/sensor \{/);
+ assert.match(legacyProxy,/location = \/webhooks\/gitlab \{/);
+
 });
