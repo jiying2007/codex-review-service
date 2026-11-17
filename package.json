@@ -69,7 +69,10 @@
     "deploy/docker/compose.instance.yaml",
     "deploy/monitoring/*.json",
     "deploy/monitoring/*.yaml",
-    "docs/MULTI_GITLAB_SHARDED.zh-CN.md"
+    "docs/MULTI_GITLAB_SHARDED.zh-CN.md",
+    "docs/MULTI_GITLAB_SCALE.zh-CN.md",
+    "docs/METRICS_CORRECTNESS.zh-CN.md",
+    "docs/QUALITY_TOKEN_BENCHMARK.zh-CN.md"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",
