@@ -61,20 +61,31 @@ services:
 
   edge:
     profiles: ["cutover-edge"]
-    image: ${CODEX_REVIEW_EDGE_IMAGE:?Set_separately_verified_digest_pinned_nginx_image}
+    # Use the SAME verified Service image; only the stateless ingress entry runs.
+    # No GitLab, model, repository, SQLite or Docker credentials are mounted here.
+    image: ghcr.io/jiying2007/codex-review-service@sha256:\${CODEX_REVIEW_IMAGE_DIGEST:?Set_verified_Service_64_hex_OCI_digest}
+    command: ["node", "src/sharded-edge.js"]
     restart: unless-stopped
     read_only: true
-    user: "101:101"
-    tmpfs:
-      - /tmp:size=64m,uid=101,gid=101,mode=1777
-      - /var/cache/nginx:size=64m,uid=101,gid=101,mode=1777
+    tmpfs: ["/tmp:size=64m,mode=1777"]
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     ports:
-      - "127.0.0.1:${CODEX_REVIEW_EDGE_PORT:-8799}:8080"
+      - "127.0.0.1:\${CODEX_REVIEW_EDGE_PORT:-8799}:8787"
+    environment:
+      CODEX_REVIEW_SHARDED_CATALOG_FILE: /etc/codex-review/catalog.json
     volumes:
-      - ./nginx.sharded.conf:/etc/nginx/nginx.conf:ro
+      - ./catalog.json:/etc/codex-review/catalog.json:ro
     networks: [legacy-link, sensor-link]
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits: {cpus: "1", memory: 512M}
 
 secrets:
   legacy_api:
