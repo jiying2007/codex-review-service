@@ -298,6 +298,41 @@ jobs:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: node scripts/oci-scan-targets.js "$IMAGE_REF" "$IMAGE_DIGEST" OCI_SCAN_TARGETS.json
 
+      - name: Verify both immutable OCI platform layers are retrievable
+        env:
+          AMD64_IMAGE: ${{ steps.scan_targets.outputs.amd64_image }}
+          ARM64_IMAGE: ${{ steps.scan_targets.outputs.arm64_image }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # An OCI manifest can resolve while a referenced GHCR blob returns BLOB_UNKNOWN.
+          # Pull the EXACT per-platform manifest and all layers before scanning.
+          for spec in "linux/amd64|$AMD64_IMAGE" "linux/arm64|$ARM64_IMAGE"; do
+            platform="${spec%%|*}"
+            image="${spec#*|}"
+            fetched=false
+            for attempt in 1 2 3; do
+              if timeout 180 docker pull --platform "$platform" "$image"; then
+                fetched=true
+                break
+              fi
+              if [[ "$attempt" -lt 3 ]]; then sleep $((attempt * 7)); fi
+            done
+            if [[ "$fetched" != true ]]; then
+              echo "::error::Registry layer materialization failed for $platform. Do not suppress Trivy or overwrite the immutable tag; repair GHCR or publish a new version." >&2
+              exit 1
+            fi
+            actual_sha="$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
+            actual_version="$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")"
+            actual_arch="$(docker image inspect -f '{{ .Architecture }}' "$image")"
+            if [[ "$actual_sha" != "$RELEASE_SHA" || "$actual_version" != "$RELEASE_VERSION" || "$actual_arch" != "${platform#linux/}" ]]; then
+              echo "::error::Materialized image identity differs from the immutable release source for $platform." >&2
+              exit 1
+            fi
+          done
+
       - id: scan_amd64
         name: Scan exact amd64 manifest without filtering findings
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
