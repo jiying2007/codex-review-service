@@ -8,7 +8,7 @@ const config=(id,project=113)=>({
  schemaVersion:8,gitlab:{baseUrl:'http://'+id+'.gitlab.test',projects:[project],groups:[]},
  webhook:{expectedInstance:'http://'+id+'.gitlab.test'}
 });
-const configs={legacy:config('legacy'),sensor:config('sensor'),qa:config('qa')};
+const configs={primary:config('primary'),sensor:config('sensor'),qa:config('qa')};
 function serve(handler){const server=typeof handler==='function'?http.createServer(handler):handler;return new Promise(resolve=>
  server.listen(0,'127.0.0.1',()=>resolve({server,port:server.address().port})));
 }
@@ -26,22 +26,22 @@ function request(port,pathname,{method='GET',headers={},body=''}={}){
 }
 test('N-instance catalog remains bounded, canonical and never forges remote membership',()=>{
  const catalog=buildShardedCatalog(configs);
- assert.deepEqual(catalog.instances.map(x=>x.id),['legacy','sensor','qa']);
+ assert.deepEqual(catalog.instances.map(x=>x.id),['primary','qa','sensor']);
  assert.deepEqual(validateShardedCatalog(catalog),catalog);
- assert.deepEqual(catalog.instances.map(x=>x.explicitProjects[0].repositoryKey),['legacy:113','sensor:113','qa:113']);
+ assert.deepEqual(catalog.instances.map(x=>x.explicitProjects[0].repositoryKey),['primary:113','qa:113','sensor:113']);
  assert.ok(catalog.instances.every(x=>x.explicitProjects[0].status==='configured_not_live_verified'));
  assert.throws(()=>buildShardedCatalog(Object.fromEntries(Array.from({length:17},(_,i)=>
-   [i===0?'legacy':'id'+i,config('host'+i)]))),/1-15|bounded/);
- assert.throws(()=>buildShardedCatalog({legacy:configs.legacy,qa:config('legacy')}),/origin/);
+   [i===0?'primary':'id'+i,config('host'+i)]))),/1-16|bounded/);
+ assert.throws(()=>buildShardedCatalog({primary:configs.primary,qa:config('primary')}),/origin/);
  assert.throws(()=>validateShardedCatalog({...catalog,instances:[...catalog.instances].reverse()}),/noncanonical/);
- assert.throws(()=>targetMap({legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787},
-   qa:{host:'169.254.169.254',port:8787}},['legacy','sensor','qa']),/fixed trusted/);
+ assert.throws(()=>targetMap({primary:{host:'primary',port:8787},sensor:{host:'sensor',port:8787},
+   qa:{host:'169.254.169.254',port:8787}},['primary','sensor','qa']),/fixed trusted/);
 });
 test('third GitLab isolates raw webhook delivery and status never interprets missing metrics as zero',async()=>{
  const events=[];
  const servers=[];
  const specs=[
-  {id:'legacy',token:'legacy-test-secret',ready:200,metrics:[
+  {id:'primary',token:'primary-test-secret',ready:200,metrics:[
    'codex_review_repository_metrics_complete 1',
    'codex_review_repository_jobs{project_id="113",status="total"} 3',
    'codex_review_repository_jobs{project_id="113",status="queued"} 2',
@@ -75,15 +75,17 @@ test('third GitLab isolates raw webhook delivery and status never interprets mis
   servers.push(edge);
   const post=await request(edge.port,'/webhooks/gitlab/qa',{method:'POST',body:'{"event":1}',headers:{'x-gitlab-token':'qa-test-secret'}});
   assert.equal(post.status,202);
+  assert.equal((await request(edge.port,'/webhooks/gitlab',{method:'POST'})).status,404);
   assert.deepEqual(events,[{id:'qa',path:'/webhooks/gitlab',raw:'{"event":1}'}]);
-  assert.equal((await request(edge.port,'/webhooks/gitlab/qa',{method:'POST',headers:{'x-gitlab-token':'legacy-test-secret'}})).status,401);
+  assert.equal((await request(edge.port,'/webhooks/gitlab/qa',{method:'POST',headers:{'x-gitlab-token':'primary-test-secret'}})).status,401);
   const status=await request(edge.port,'/repositories/status');
   assert.equal(status.status,200);
   assert.equal(status.value.remoteAuthorizationVerified,false);
   assert.equal(status.value.instances.length,3);
-  const [legacy,sensor,qa]=status.value.instances;
-  assert.equal(legacy.explicitProjects[0].observationStatus,'local_job_history_observed_not_remote_verified');
-  assert.equal(legacy.explicitProjects[0].queue.queued,2);
+  const byId=Object.fromEntries(status.value.instances.map(x=>[x.id,x]));
+  const {primary,sensor,qa}=byId;
+  assert.equal(primary.explicitProjects[0].observationStatus,'local_job_history_observed_not_remote_verified');
+  assert.equal(primary.explicitProjects[0].queue.queued,2);
   assert.equal(sensor.explicitProjects[0].observationStatus,'configured_no_local_job_history');
   assert.equal(sensor.explicitProjects[0].queue,null);
   assert.equal(qa.explicitProjects[0].observationStatus,'metrics_unavailable');

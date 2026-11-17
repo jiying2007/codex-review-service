@@ -1,6 +1,6 @@
 # Codex Provider and Relay Configuration
 
-Codex Review Service 7.7.12 consumes Codex Safe Core 4.18.10 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
+Codex Review Service 8.0.0 consumes Codex Safe Core 4.18.10 Runtime/Provider Contract v3. The normal path is **Auto**: if `codex` already works for the Service OS account, isolated Runner account, or container, Review Service reuses that machine runtime instead of asking operators to duplicate the relay URL.
 
 ## Runtime Contract v3 — zero-config
 

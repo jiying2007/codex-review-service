@@ -1,77 +1,43 @@
-# 多 GitLab / 多仓库：独立容器部署
+# 多 GitLab / 多仓库：独立容器 + 统一无凭据 Edge（V8）
 
-适用：多个 GitLab Self-Managed 实例及各自多个 Project，Legacy 和 Sensor 互不共享状态或运行身份。此模板提供**单管理主机、双独立容器 + 无凭据 Node Edge 统一入口**，不代表双活 HA、不代表已部署内网。跨管理主机部署时，每个实例仍只能有一个活动 Controller/SQLite Writer；应由可信的专用 HTTPS/VPN 反向代理提供固定路径与网络 ACL，不能直接共享数据库卷。
+新版本只支持显式路由，不保留旧的 Legacy 默认入口。每个 GitLab 实例的 Service/SQLite/Codex Home/API Token/Webhook Secret 必须相互隔离，实例内部可纳管多个 Project/Group。不支持同一 SQLite Writer 跨机器共享，也不提供 NFS/WAL 伪双活。
 
-## 选择拓扑
+## 两个独立发行模板
 
-- **同信任域，资源有限**：继续使用 `compose.multi.yaml`（一个进程、多 Worker Thread；非硬安全边界）。
-- **不同 GitLab、独立故障域**：优先 `compose.sharded.yaml`，Legacy / Sensor 分容器、分网络、分密钥、分本地数据库、分 Codex Home；每台 GitLab 内多仓库通过 Project/Group Allowlist 接入，不为每个仓库再创建 Service。
-- **真正同实例多 Controller**：本版本不支持。不要让两个容器或两台机器指向同一个 SQLite 卷，也不能用 NFS/WAL 伪装多机 HA。需要数据库/队列重构及部署资格后另行演进。
+- deploy/docker/compose.instance.yaml：每台 GitLab 所在执行主机单独使用，profile cutover-standalone，专属外部数据卷和密钥文件；裸 docker compose up 不启动审查进程。
+- deploy/docker/compose.sharded.yaml：只提供 profile cutover-edge 的无凭据统一入口，不包含任何 Review Worker、Secret 或 SQLite。要求在宿主机的 127.0.0.1 绑定，再由可信 HTTPS 代理对外仅开放指定 Webhook。
+- Docker 以 RELEASE-PUBLISHED OCI digest 精确固定镜像；GitHub 主线成功但没有 Release Integrity 不足以放行生产。
 
-## 安全边界与上线前提
-
-`compose.sharded.yaml` 中全部服务都带独立 Compose `profiles`：**直接 `docker compose up` 不应启动任何模型 Worker**。模板是交付示例，不能在旧 Legacy 在线时启用新 Legacy Writer。
-
-必须先具有**已正式发布、签名/摘要验证且可拉取每一层**的新 Service OCI Index Digest（不是源码版本号、普通 Tag 或 CI 成功）；Edge 使用同一份不可变 Service 镜像，仅执行 `node src/sharded-edge.js`，不挂载模型/GitLab 密钥，也不启动 Review Worker；不再要求单独的 Nginx 镜像。当前安装版本还须确认 `src/index.js` / Config Schema 8 / DB Schema 12 对应。
-
-在部署目录中准备 `legacy.json`、`sensor.json`，两份皆为**独立单实例 Config Schema 8**，不是多实例清单。Legacy 必须从实际原配置迁移有效规则，不能用示例覆盖；其 `server.dataDir` 应为 `/var/lib/codex-review/legacy`，`codex.home` 为 `/home/codex-review/legacy`；Sensor 对应 `.../sensor`。各实例 `gitlab.projects` / `gitlab.groups` 含明确授权范围，`webhook.expectedInstance` 与各自真实 `gitlab.baseUrl` 对应。
-
-两个单实例配置的 `server.host` 必须是容器内 `0.0.0.0`，`server.port=8787`，否则服务只监听容器自身的回环地址，独立 Edge 容器无法访问。该绑定仅用于 Docker 私有网络，宿主机仍不能直接公开后端端口。
-
-两个实例须独立 API Token、Webhook Token、数据卷和 Home。绝不在 Git、Shell 历史、日志或 PR 写入 Secret。四个 `*_FILE` 宿主路径应指向权限受限的常规文件。Legacy 已有真实命名卷必须用 `external: true` 指向，不会自动创建同名空卷冒充旧数据。
-
-## 只读验证（禁止启动应用）
-
-确认环境中的 `CODEX_REVIEW_IMAGE_DIGEST` 为已正式核验的 64 个 hex 字符，同时已配置四个凭据文件路径与 Legacy 两个现有卷名；不要在命令行放凭据值。额外的 `CODEX_REVIEW_EDGE_IMAGE` 已不需要，旧静态 Nginx 模板仅作为历史参考。
+## 显式 Catalog Schema 2 和目标映射
 
 ~~~bash
-node src/sharded-catalog.js deploy/docker/legacy.json deploy/docker/sensor.json > deploy/docker/catalog.json
-node src/sharded-deploy-check.js deploy/docker
-docker volume inspect "$CODEX_REVIEW_LEGACY_STATE_VOLUME" >/dev/null
-docker volume inspect "$CODEX_REVIEW_LEGACY_HOME_VOLUME" >/dev/null
+node src/sharded-catalog.js primary=/etc/codex-review/primary.json sensor=/etc/codex-review/sensor.json > /etc/codex-review/catalog.json
+node src/sharded-deploy-check.js /etc/codex-review/catalog.json /etc/codex-review/targets.json primary=/etc/codex-review/primary.json sensor=/etc/codex-review/sensor.json
 docker compose -f deploy/docker/compose.sharded.yaml config --quiet
 ~~~
 
-这些步骤**不启动 Worker、不运行 Codex、不调用 GitLab API**。其中本地计划检查只确认配置/路径/摘要格式，并非镜像发行签名证明；必须另外执行官方发行校验、镜像逐平台 Layer Pull、真实服务端 API 身份和网络连通性只读检查，并保留脱敏回执。
+其中 primary/sensor 仅为示例实例 ID，1–16 个 ID 均由使用方显式提供，不存在默认 ID。完整合法 Catalog 包含 schemaVersion=2 和来源摘要，项目显式标记 configured_not_live_verified，Group 成员并不代表已完成在线枚举。
 
-也可在现有真正多实例运行环境中执行：
+targets.json 必须是无凭据 JSON，每个实例有同名私有 DNS 别名或 127.0.0.1 指向一个受信端口，例如：
 
-~~~bash
-CODEX_REVIEW_MULTI_CONFIG_FILE=/etc/codex-review/multi-instance.json \
-  node src/multi-instance-inventory.js
+~~~json
+{"primary":{"host":"primary","port":8787},"sensor":{"host":"sensor","port":8787}}
 ~~~
 
-该命令报告 `instance:projectId` 及 Group 选择器，**不递归枚举 Group 成员**、不读取 MR、不运行模型；它必须在具备相同只读配置/Secret 文件挂载的环境执行。清单中 `configured_not_live_verified` 不得等同实际仓库接入成功。
+Edge 使用 CODEX_REVIEW_SHARDED_TARGETS_FILE 指向 targets.json，目标数量与 Catalog 必须完全一致。任意网络 URL、公开 IP、跨 GitLab 目标复用、未声明目标均拒绝。跨物理主机必须另行提供经过审核的双向 TLS/VPN 隧道，并在 Edge 私有网络上公布与实例 ID 一致的别名；项目不内置 TLS 终止服务，也不自动授权网络。
 
-## 受控切换 / 回滚
+## 接口和访问限制
 
-1. Legacy 继续使用现有已验收实例，不将旧正在运行的卷交给新容器并行写入。对旧实例先 drain 并观察未决模型调用、Publication/Notification Outbox、状态回写、回放账本，再执行一致性 SQLite 备份与校验。
-2. 现场停止旧唯一 Writer，在隔离副本上验证 Schema 迁移至目标版本、回滚备份可读。Sensor 的首次数据库初始化也只能在独立受控暂存中完成。缺失数据库不能算作 READY。
-3. 单独启用 `--profile cutover-legacy` 或 `--profile cutover-sensor` 所选择的实例，完成真实 API/Webhook 签名拒绝、项目范围、错误重放和状态恢复测试；仅在两个实例均获许可后才启用 `--profile cutover-edge`。轻量无凭据 Edge 默认仅绑定宿主机 `127.0.0.1:8799`，由已有可信 HTTPS 入口转发，不直接暴露公网。
-4. 旧路径 `/webhooks/gitlab` 固定转 Legacy；`/webhooks/gitlab/sensor` 固定转 Sensor 并转写后端路径为 `/webhooks/gitlab`。WebHook 原始签名/Token 必须由各自 Service 再次验证，不以 Edge 固定路由视为授权。
-5. 任一实例故障，不切断另一实例的独立执行与后端队列；边缘单点故障和主机故障不在本模板的 HA 能力之内。故障回滚应停止对应新 Writer，若 DB 迁移则恢复与旧镜像匹配的完整原始备份，不得直接让旧二进制打开新 DB。
+- POST /webhooks/gitlab/<instance-id>：唯一外部 Webhook 入口，仅固定路由至该 Service 内部 /webhooks/gitlab，并由各实例再次验证原始签名、项目和 Head SHA。
+- POST /webhooks/gitlab：404，**不会回退到任意默认实例**。
+- GET /health/live：Edge 进程存活；GET /health/ready：全部实例 READY；GET /health/ingress：至少一个实例可路由，不能解释为全部健康。
+- GET /instances/<instance-id>/health/ready、/metrics：私网定位单实例。
+- GET /repositories：只读配置目录；GET /repositories/status：只读本地任务观测，不宣称远端 GitLab 权限；GET /metrics：Prometheus 聚合，未知用量与缺失指标不填零。
 
-**重要：** `notifications.enabled=false`、`triggerOnOpen=false` 等不是严格的“无模型”开关。初始化运行时可能恢复已有队列、响应 Note 或 reconcile。共享 Codex/Work 额度未另行授权时不执行任何 `docker compose up`、不向新的 Sensor 发送真实 MR/Note Webhook，也不启动新 Review Worker；只读离线检查不等同于生产验证。
+GET /repositories*、/instances/*、/metrics 必须仅允许可信管理内网或认证监控平台访问，外部 HTTPS 仅转发明确授权的 Webhook 路径。Prometheus 告警 deploy/monitoring/codex-review.rules.yaml 和 Grafana deploy/monitoring/grafana-fleet.json 需要独立监控采集；不创建 ChatGPT 定时巡检。
 
-## 指标与扩容
+## 切换安全边界
 
-Edge `/health/ready` 表示**所有实例**就绪（任一异常时 503）；新增 `/health/ingress` 仅在至少一个实例可接受流量时返回 200，仍列出全部实例状态，不能替代任何单实例健康探针。查看 `/instances/<id>/health/ready` 和 `/instances/<id>/metrics` 定位局部问题。
+正式切换前先只读验证当前唯一 Writer 和数据库 Schema 12；等待队列清空，核验 Model Call started/unknown 与所有 Publication/Notification Outbox 和 status uncertainty，再做一致性备份、停止原 Writer、验证新旧版本回滚备份。任何阶段不能让两个 Writer 同时访问同一个 SQLite 卷。
 
-跨仓库调度仍以实例内 Project ID 为单位，保留同 MR 串行、防重复、最新 SHA 和每 Project/每 MR Token 账本。Node 端仅接收每个 Project 的候选任务，不搬运所有排队记录；仍需按实际队列等待、资源峰值和 Token 样本扩容。只有容量/可用性证据要求同 GitLab 实例多副本时，才考虑支持 Postgres / 分布式队列的独立方案。
-
-## 统一仓库管理与观测接口（不启动模型）
-
-配置完成后，由 `src/sharded-catalog.js` 从两份独立 Config Schema 8 生成非密钥 `catalog.json`；CLI 的输出仅包含 `instance:projectId`、Group 选择器、标准化 GitLab Origin 和摘要，不包含 Token 或 Codex Home。该文件被 `.gitignore` 排除，Edge 只读加载，`sharded-deploy-check.js` 必须验证它与两份配置的摘要一致。
-
-以下接口**只允许受信本机或专用监控网访问**；对外 HTTPS 反向代理应仅暴露严格限定的两个 Webhook POST 路径，不能把 `/repositories`、`/metrics` 或 `/instances/*` 发布到公网：
-
-- `GET /repositories`：静态配置清单。Project 明确标记 `configured_not_live_verified`；Group 成员没有被远程枚举，不能当作真实接入成功。
-- `GET /health/live`：入口进程健康。
-- `GET /health/ready`：所有实例准备就绪，否则 503；`GET /health/ingress`：至少一个实例就绪则 200，同时报告所有实例状态与故障实例。
-- `GET /instances/legacy/health/ready`、`/instances/sensor/health/ready`：分别查看独立实例。
-- `GET /metrics`：统一 Prometheus 文本采集。每个实例输出 `codex_review_instance_ready`、`codex_review_instance_metrics_scrape_ok`、队列长度、已观测 Token 与未知用量；仓库级输出 `codex_review_repository_jobs{instance,project_id,status}`、排队年龄和当日已知/未知模型用量。
-- `GET /instances/<id>/metrics`：转发单实例详细指标。采集失败时，`metrics_scrape_ok=0`，不伪造 Token 或待办为 0。
-
-仓库指标每实例最多输出 256 个拥有历史任务的 Project；超出限制时 `codex_review_repository_metrics_complete=0`，不能将其误视作全量覆盖。历史模型记录、无 Project 任务的 Group 选择器和真实 MR 权限仍需独立取证。推荐已有 Prometheus/Grafana 以 15–30 秒间隔从本地 Edge 的 `/metrics` 抓取，不需要为此创建 ChatGPT 定时巡检。
-
-Edge 不加载任何 GitLab 或模型 Secret，`/repositories` 不允许动态提交/修改。新增仓库需要受控地变更该 GitLab 的 Project/Group 白名单、重新生成 Catalog、完成只读预检与实际授权测试后，由现场维护窗口重启对应单实例；不能把未验证的远程 Project 当作已接入成功。
+模型执行需要独立资源授权，notifications.enabled=false 不代表模型不会调用。这里的检查**不启动模型、不发送真实 Webhook**，也不是生产可用性证明；**不能宣称生产部署已完成**。正式验收必须包含一个实例断线时另一个继续处理、跨仓库公平调度、真实 GitLab Webhook 签名拒绝和状态恢复。

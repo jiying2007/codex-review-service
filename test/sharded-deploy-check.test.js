@@ -2,68 +2,48 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {checkShardedConfig}=require('../src/sharded-deploy-check');
 const {buildShardedCatalog}=require('../src/sharded-catalog');
-const env={
- CODEX_REVIEW_IMAGE_DIGEST:'a'.repeat(64),CODEX_REVIEW_EDGE_IMAGE:'nginx:1.29-alpine@sha256:'+'b'.repeat(64),
- CODEX_REVIEW_LEGACY_STATE_VOLUME:'old-volume',CODEX_REVIEW_LEGACY_HOME_VOLUME:'old-home',
- LEGACY_GITLAB_API_TOKEN_FILE:'/secure/legacy-api',
- LEGACY_GITLAB_WEBHOOK_TOKEN_FILE:'/secure/legacy-hook',
- SENSOR_GITLAB_API_TOKEN_FILE:'/secure/sensor-api',
- SENSOR_GITLAB_WEBHOOK_TOKEN_FILE:'/secure/sensor-hook'
-};
-const instance=(name,origin)=>({
- schemaVersion:8,server:{host:'0.0.0.0',port:8787,dataDir:'/var/lib/codex-review/'+name},
- codex:{home:'/home/codex-review/'+name},
- gitlab:{baseUrl:origin,projects:[113],groups:[]},webhook:{expectedInstance:origin}
-});
-const legacy=instance('legacy','http://192.168.1.4'),sensor=instance('sensor','http://192.168.2.50');
-test('preflight requires an immutable image and unique instance-qualified project key',()=>{
- const result=checkShardedConfig({env,legacy,sensor});
- assert.equal(result.readyForReadOnlyPreflight,true);
- assert.equal(result.productionQualified,false);
- assert.equal(result.modelCalls,0);
- assert.deepEqual(result.configuredProjectKeys,['legacy:113','sensor:113']);
- const catalog=buildShardedCatalog({legacy,sensor});
- const confirmed=checkShardedConfig({env,legacy,sensor,catalog});
- assert.equal(confirmed.catalogVerified,true);
- assert.equal(confirmed.catalogDigest,catalog.sourceDigest);
- assert.throws(()=>checkShardedConfig({env,legacy,sensor:{...sensor,gitlab:{...sensor.gitlab,projects:[114]}},catalog}),/catalog/);
- const data=JSON.stringify(result);
- assert.equal(data.includes('/secure'),false);
- assert.equal(data.includes('old-volume'),false);
-});
-test('preflight rejects unsafe image, overlapping credentials, shared state, stale config and origins',()=>{
- const options={env,legacy,sensor};
- assert.throws(()=>checkShardedConfig({...options,env:{...env,CODEX_REVIEW_IMAGE_DIGEST:'main'}}),/digest/);
- assert.throws(()=>checkShardedConfig({...options,env:{...env,CODEX_REVIEW_EDGE_IMAGE:'nginx:latest'}}),/pinned/);
- assert.throws(()=>checkShardedConfig({...options,env:{...env,SENSOR_GITLAB_API_TOKEN_FILE:env.LEGACY_GITLAB_API_TOKEN_FILE}}),/reuse/);
- assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{...sensor.server,dataDir:legacy.server.dataDir}}}),/isolated/);
- assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,schemaVersion:7}}),/Schema 8/);
- assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,server:{...sensor.server,host:'127.0.0.1'}}}),/bridge/);
- assert.throws(()=>checkShardedConfig({...options,sensor:{...sensor,gitlab:{...sensor.gitlab,baseUrl:legacy.gitlab.baseUrl}}}),/origin/);
-});
-test('sharded deployment template never starts a model Worker by bare compose up',()=>{
- const text=fs.readFileSync('deploy/docker/compose.sharded.yaml','utf8');
- assert.match(text,/profiles: \["cutover-legacy"\]/);
- assert.match(text,/profiles: \["cutover-sensor"\]/);
- assert.match(text,/profiles: \["cutover-edge"\]/);
- assert.match(text,/legacy-state:\s*\n\s+external: true/);
- assert.match(text,/legacy-home:\s*\n\s+external: true/);
- assert.match(text,/127\.0\.0\.1:\$\{CODEX_REVIEW_EDGE_PORT/);
- assert.match(text,/read_only: true/);
- assert.match(text,/no-new-privileges:true/);
- assert.doesNotMatch(text,/^\s*build:/m);
- assert.doesNotMatch(text,/^\s*env_file:/m);
- assert.doesNotMatch(text,/ports:\s*\n\s*- "0\.0\.0\.0:/);
- const edge=text.slice(text.indexOf('\n  edge:'),text.indexOf('\nsecrets:'));
- assert.match(edge,/command: \["node", "src\/sharded-edge\.js"\]/);
- assert.match(edge,/CODEX_REVIEW_SHARDED_CATALOG_FILE/);
- assert.match(edge,/catalog\.json:ro/);
- assert.match(edge,/ghcr\.io\/jiying2007\/codex-review-service@sha256/);
- assert.equal(edge.includes(String.fromCharCode(92,36,123)),false,
-   'Docker Compose interpolation must not be escaped by a literal backslash');
- assert.doesNotMatch(edge,/CODEX_REVIEW_EDGE_IMAGE|\/run\/secrets\/|GITLAB_API_TOKEN_FILE/);
- const legacyProxy=fs.readFileSync('deploy/docker/nginx.sharded.conf','utf8');
- assert.match(legacyProxy,/location = \/webhooks\/gitlab\/sensor \{/);
- assert.match(legacyProxy,/location = \/webhooks\/gitlab \{/);
 
+const env={CODEX_REVIEW_IMAGE_DIGEST:'a'.repeat(64),CODEX_REVIEW_EDGE_PORT:'8799'};
+const config=(id,url)=>({schemaVersion:8,server:{host:'0.0.0.0',port:8787},
+  gitlab:{baseUrl:url,projects:[113],groups:[]},webhook:{expectedInstance:url}});
+const configs={primary:config('primary','http://192.168.1.4'),
+  sensor:config('sensor','http://192.168.2.50')};
+const catalog=buildShardedCatalog(configs);
+const targets={primary:{host:'primary',port:8787},sensor:{host:'sensor',port:8787}};
+test('v8 preflight validates catalog and explicit targets without requiring Edge secrets',()=>{
+ const report=checkShardedConfig({env,configs,catalog,targets});
+ assert.equal(report.schemaVersion,2);
+ assert.equal(report.modelCalls,0);
+ assert.equal(report.productionQualified,false);
+ assert.equal(report.configScopeVerified,true);
+ assert.equal(report.instanceCount,2);
+ assert.deepEqual(report.configuredProjectKeys,['primary:113','sensor:113']);
+ assert.equal(report.edgeTargetMapVerified,true);
+ assert.doesNotMatch(JSON.stringify(report),/SECRET|TOKEN|apiKey|\/secure/);
+ const single={qa:config('qa','https://qa.example.test')};
+ const only=checkShardedConfig({env,catalog:buildShardedCatalog(single),
+   targets:{qa:{host:'qa',port:8787}}});
+ assert.equal(only.instanceCount,1);
+ assert.equal(only.configScopeVerified,null);
+});
+test('v8 preflight refuses stale catalog, unsafe host, arbitrary target, invalid index',()=>{
+ assert.throws(()=>checkShardedConfig({env:{...env,CODEX_REVIEW_IMAGE_DIGEST:'main'},catalog,targets}),/digest/);
+ assert.throws(()=>checkShardedConfig({env,catalog:{...catalog,schemaVersion:1},targets}),/invalid schema/);
+ assert.throws(()=>checkShardedConfig({env,catalog,targets:{...targets,sensor:{host:'169.254.169.254',port:80}}}),/fixed trusted/);
+ assert.throws(()=>checkShardedConfig({env,catalog,targets:{primary:targets.primary}}),/fixed trusted/);
+ assert.throws(()=>checkShardedConfig({env,catalog,targets,configs:{...configs,sensor:config('sensor','https://other.example')}}),/differs/);
+ assert.throws(()=>checkShardedConfig({env:{...env,CODEX_REVIEW_EDGE_PORT:8787},catalog,targets}),/port/);
+});
+test('v8 sharded Compose deploys only credential-free ingress with explicit target mapping',()=>{
+ const yaml=fs.readFileSync('deploy/docker/compose.sharded.yaml','utf8');
+ assert.ok(yaml.includes('profiles: ["cutover-edge"]'));
+ assert.ok(yaml.includes('CODEX_REVIEW_SHARDED_TARGETS_FILE'));
+ assert.ok(yaml.includes('CODEX_REVIEW_CATALOG_FILE'));
+ assert.ok(yaml.includes('CODEX_REVIEW_PRIVATE_NETWORK'));
+ assert.ok(yaml.includes('127.0.0.1:'));
+ assert.ok(yaml.includes('command: ["node", "src/sharded-edge.js"]'));
+ assert.doesNotMatch(yaml,/^\s*(?:build|env_file|secrets|legacy|sensor):/m);
+ assert.doesNotMatch(yaml,/\/run\/secrets|GITLAB_API_TOKEN_FILE|OPENAI_API_KEY|cutover-legacy|cutover-sensor/);
+ assert.doesNotMatch(yaml,/^\s+-\s+"0\.0\.0\.0:/m);
+ assert.equal(fs.existsSync('deploy/docker/nginx.sharded.conf'),false,'no old default-route proxy is shipped');
 });

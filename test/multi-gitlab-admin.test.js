@@ -29,8 +29,8 @@ test('multi admin selects one SQLite/config identity and never passes a secret i
         secretFiles:{GITLAB_API_TOKEN_FILE:api,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:hook}};
     });
     const manifest=path.join(dir,'multi.json');
-    fs.writeFileSync(manifest,JSON.stringify({schemaVersion:1,
-      server:{host:'127.0.0.1',port:8787,defaultInstance:'legacy',
+    fs.writeFileSync(manifest,JSON.stringify({schemaVersion:2,
+      server:{host:'127.0.0.1',port:8787,
         sharedProcessTrustAcknowledged:true},instances:defs}));
     const seen=[];
     const fake=(program,args,options)=>{seen.push({program,args,options});return{status:0};};

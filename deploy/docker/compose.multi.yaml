@@ -1,7 +1,8 @@
 # Production: use a fully verified, immutable multi-capable image DIGEST.
-# Do not use the old v7.6.1 image: it does not include multi-GitLab.
+# Shared-process Worker Threads are NOT independent security domains. Use sharded per-host containers where possible.
 services:
   codex-review-multi:
+    profiles: ["explicit-multi-thread"]
     image: ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST:?Provide_the_verified_64_hex_multi_GitLab_image_digest}
     restart: unless-stopped
     read_only: true
@@ -14,18 +15,18 @@ services:
       - "127.0.0.1:${CODEX_REVIEW_PORT:-8787}:8787"
     volumes:
       - ./multi-instance.json:/etc/codex-review/multi-instance.json:ro
-      - ./legacy.json:/etc/codex-review/legacy.json:ro
+      - ./primary.json:/etc/codex-review/primary.json:ro
       - ./sensor.json:/etc/codex-review/sensor.json:ro
-      # The existing legacy named volumes are external and NEVER automatically recreated.
-      - legacy-state:/var/lib/codex-review/legacy
-      - legacy-home:/home/codex-review/legacy
+      # The existing primary named volumes are external and NEVER automatically recreated.
+      - primary-state:/var/lib/codex-review/primary
+      - primary-home:/home/codex-review/primary
       - sensor-state:/var/lib/codex-review/sensor
       - sensor-home:/home/codex-review/sensor
     environment:
       CODEX_REVIEW_MULTI_CONFIG_FILE: /etc/codex-review/multi-instance.json
     secrets:
-      - gitlab_legacy_api
-      - gitlab_legacy_webhook
+      - gitlab_primary_api
+      - gitlab_primary_webhook
       - gitlab_sensor_api
       - gitlab_sensor_webhook
     healthcheck:
@@ -41,21 +42,21 @@ services:
           memory: 6G
 
 secrets:
-  gitlab_legacy_api:
-    file: ${LEGACY_GITLAB_API_TOKEN_FILE:?Set_protected_legacy_API_secret_file}
-  gitlab_legacy_webhook:
-    file: ${LEGACY_GITLAB_WEBHOOK_TOKEN_FILE:?Set_protected_legacy_webhook_secret_file}
+  gitlab_primary_api:
+    file: ${PRIMARY_GITLAB_API_TOKEN_FILE:?Set_protected_primary_API_secret_file}
+  gitlab_primary_webhook:
+    file: ${PRIMARY_GITLAB_WEBHOOK_TOKEN_FILE:?Set_protected_primary_webhook_secret_file}
   gitlab_sensor_api:
     file: ${SENSOR_GITLAB_API_TOKEN_FILE:?Set_protected_sensor_API_secret_file}
   gitlab_sensor_webhook:
     file: ${SENSOR_GITLAB_WEBHOOK_TOKEN_FILE:?Set_protected_sensor_webhook_secret_file}
 
 volumes:
-  legacy-state:
+  primary-state:
     external: true
-    name: ${CODEX_REVIEW_LEGACY_STATE_VOLUME:?Inspect_the_existing_volume_before_cutover}
-  legacy-home:
+    name: ${CODEX_REVIEW_PRIMARY_STATE_VOLUME:?Inspect_the_existing_volume_before_cutover}
+  primary-home:
     external: true
-    name: ${CODEX_REVIEW_LEGACY_HOME_VOLUME:?Inspect_the_existing_volume_before_cutover}
+    name: ${CODEX_REVIEW_PRIMARY_HOME_VOLUME:?Inspect_the_existing_volume_before_cutover}
   sensor-state:
   sensor-home:

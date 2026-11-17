@@ -59,11 +59,12 @@ test('fixed edge preserves raw webhook identity, instance routing and same numer
  const port=await listen(edge);
  try{
    const payload='{"project":{"id":113},"object_kind":"merge_request"}';
-   const legacy=await request(port,'/webhooks/gitlab',{method:'POST',body:payload,
+   const legacy=await request(port,'/webhooks/gitlab/legacy',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'LEGACY_TEST_TOKEN','x-forwarded-for':'unsafe-client'}});
    const sensor=await request(port,'/webhooks/gitlab/sensor',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'SENSOR_TEST_TOKEN'}});
    assert.equal(legacy.status,202);assert.equal(sensor.status,202);
+   assert.equal((await request(port,'/webhooks/gitlab',{method:'POST',body:payload})).status,404,'unnamed route must be rejected');
    assert.equal(a.events[0].raw,payload);assert.equal(b.events[0].raw,payload);
    assert.equal(a.events[0].path,'/webhooks/gitlab');
    assert.equal(b.events[0].path,'/webhooks/gitlab');
@@ -97,7 +98,7 @@ test('fixed edge preserves raw webhook identity, instance routing and same numer
    assert.equal(partial.status,200);
    assert.match(partial.text,/codex_review_instance_metrics_scrape_ok\{instance="sensor"\} 0/);
    assert.match(partial.text,/codex_review_instance_metrics_scrape_ok\{instance="legacy"\} 1/);
-   assert.equal((await request(port,'/webhooks/gitlab',{method:'POST',body:payload,
+   assert.equal((await request(port,'/webhooks/gitlab/legacy',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'LEGACY_TEST_TOKEN'}})).status,202);
    assert.equal((await request(port,'/webhooks/gitlab/sensor',{method:'POST',body:payload,
      headers:{'x-gitlab-token':'SENSOR_TEST_TOKEN'}})).status,503);
@@ -106,8 +107,8 @@ test('fixed edge preserves raw webhook identity, instance routing and same numer
  }
 });
 test('edge rejects untrusted arbitrary proxy targets and malformed metric labels',()=>{
- assert.throws(()=>targetMap({legacy:{host:'169.254.169.254',port:80},sensor:{host:'sensor',port:8787}}),/fixed trusted/);
- assert.throws(()=>targetMap({legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787},other:{host:'other',port:8787}}),/dynamic/);
+ assert.throws(()=>targetMap({legacy:{host:'169.254.169.254',port:80},sensor:{host:'sensor',port:8787}},['legacy','sensor']),/fixed trusted/);
+ assert.throws(()=>targetMap({legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787},other:{host:'other',port:8787}},['legacy','sensor']),/dynamic/);
  const filtered=selectMetrics([
   'codex_review_queue_depth 3',
   'codex_review_retained_input_tokens 120',

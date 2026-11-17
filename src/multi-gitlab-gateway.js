@@ -20,12 +20,10 @@ function response(res, code, body) {
   });
   res.end(data);
 }
-function targetFor(method, rawUrl, ids, defaultInstance) {
+function targetFor(method, rawUrl, ids) {
   let url;
   try { url = new URL(rawUrl, 'http://localhost'); } catch { return null; }
   if (url.search || url.hash) return null;
-  if (method === 'POST' && url.pathname === '/webhooks/gitlab')
-    return {id:defaultInstance, path:'/webhooks/gitlab'};
   if (method === 'POST') {
     const match = /^\/webhooks\/gitlab\/([a-z][a-z0-9-]{0,31})$/.exec(url.pathname);
     if (match && ids.has(match[1])) return {id:match[1], path:'/webhooks/gitlab'};
@@ -111,7 +109,7 @@ function createMultiGateway({manifest, lookupPort,lookupRestartCount=()=>0}) {
   const ids=new Set(manifest.instances.map(item=>item.id));
   const server=http.createServer({maxHeaderSize:16*1024},async(req,res)=>{
     try {
-      const route=targetFor(req.method,req.url,ids,manifest.server.defaultInstance);
+      const route=targetFor(req.method,req.url,ids);
       if (route) return proxyRequest(req,res,lookupPort(route.id),route.path);
       if (req.method!=='GET' || !GET_PATHS.has(req.url)) {
         req.resume();

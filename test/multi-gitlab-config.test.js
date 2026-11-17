@@ -12,8 +12,8 @@ function fixture(){
   // Fixture permissions must not depend on the caller's process umask.
   function write(name,content){const file=location(name);fs.writeFileSync(file,content,{mode:0o600});return file;}
   const tokens={
-    legacyApi:write('legacy-api','legacy-api-credential'),
-    legacyWebhook:write('legacy-hook','whsec_'+Buffer.alloc(32,3).toString('base64')),
+    primaryApi:write('primary-api','primary-api-credential'),
+    primaryWebhook:write('primary-hook','whsec_'+Buffer.alloc(32,3).toString('base64')),
     sensorApi:write('sensor-api','sensor-api-credential'),
     sensorWebhook:write('sensor-hook','whsec_'+Buffer.alloc(32,4).toString('base64'))
   };
@@ -32,35 +32,35 @@ function fixture(){
     cfg.codex.home=location(id+'-home');
     return cfg;
   };
-  const legacy=makeConfig('legacy','http://192.168.1.4',[113,139]);
+  const primary=makeConfig('primary','http://192.168.1.4',[113,139]);
   const sensor=makeConfig('sensor','http://192.168.2.50',[113]);
   const manifest={
-    schemaVersion:1,server:{host:'127.0.0.1',port:8788,defaultInstance:'legacy',sharedProcessTrustAcknowledged:true},
+    schemaVersion:2,server:{host:'127.0.0.1',port:8788,sharedProcessTrustAcknowledged:true},
     instances:[
-      {id:'legacy',configFile:location('legacy.json'),homeDir:location('legacy-home'),
-        secretFiles:{GITLAB_API_TOKEN_FILE:tokens.legacyApi,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:tokens.legacyWebhook}},
+      {id:'primary',configFile:location('primary.json'),homeDir:location('primary-home'),
+        secretFiles:{GITLAB_API_TOKEN_FILE:tokens.primaryApi,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:tokens.primaryWebhook}},
       {id:'sensor',configFile:location('sensor.json'),homeDir:location('sensor-home'),
         secretFiles:{GITLAB_API_TOKEN_FILE:tokens.sensorApi,GITLAB_WEBHOOK_SIGNING_TOKEN_FILE:tokens.sensorWebhook}}
     ]
   };
   const manifestFile=location('multi.json');
   const flush=()=>{
-    fs.writeFileSync(manifest.instances[0].configFile,JSON.stringify(legacy),{mode:0o600});
+    fs.writeFileSync(manifest.instances[0].configFile,JSON.stringify(primary),{mode:0o600});
     fs.writeFileSync(manifest.instances[1].configFile,JSON.stringify(sensor),{mode:0o600});
     fs.writeFileSync(manifestFile,JSON.stringify(manifest),{mode:0o600});
   };
   flush();
-  return {dir,location,manifest,legacy,sensor,tokens,manifestFile,flush,
+  return {dir,location,manifest,primary,sensor,tokens,manifestFile,flush,
     close:()=>fs.rmSync(dir,{recursive:true,force:true})};
 }
 test('two GitLab servers may have identical project 113 but never share durable identity',()=>{
   const f=fixture();try{
     const config=loadMultiManifest(f.manifestFile);
     assert.equal(config.instances.length,2);
-    assert.equal(config.server.defaultInstance,'legacy');
+    assert.equal(Object.hasOwn(config.server,'defaultInstance'),false);
     assert.equal(config.instances[0].origin,'http://192.168.1.4');
     assert.equal(config.instances[1].origin,'http://192.168.2.50');
-    assert.ok(f.legacy.gitlab.projects.includes(113));
+    assert.ok(f.primary.gitlab.projects.includes(113));
     assert.ok(f.sensor.gitlab.projects.includes(113));
     assert.notEqual(config.instances[0].dataDir,config.instances[1].dataDir);
     assert.notEqual(config.instances[0].homeDir,config.instances[1].homeDir);
@@ -68,9 +68,9 @@ test('two GitLab servers may have identical project 113 but never share durable 
   }finally{f.close();}
 });
 
-test('legacy Config Schema 8 may omit either optional scope array without changing project identity',()=>{
+test('primary Config Schema 8 may omit either optional scope array without changing project identity',()=>{
   const f=fixture();try{
-    delete f.legacy.gitlab.groups;
+    delete f.primary.gitlab.groups;
     f.sensor.gitlab.projects=undefined;
     f.sensor.gitlab.groups=[{id:48,includeSubgroups:false}];
     f.flush();
@@ -101,7 +101,7 @@ test('worker environments retain only their own secret file paths and runtime ho
       GITLAB_WEBHOOK_SIGNING_TOKEN:'do-not-inherit',OPENAI_API_KEY:'do-not-inherit',
       CODEX_REVIEW_MULTI_CONFIG_FILE:f.manifestFile,CODEX_HOME:'/shared'};
     const old=buildWorkerEnv(c.instances[0],parent),sensor=buildWorkerEnv(c.instances[1],parent);
-    assert.equal(old.GITLAB_API_TOKEN_FILE,f.tokens.legacyApi);
+    assert.equal(old.GITLAB_API_TOKEN_FILE,f.tokens.primaryApi);
     assert.equal(sensor.GITLAB_API_TOKEN_FILE,f.tokens.sensorApi);
     assert.equal(old.CODEX_HOME,c.instances[0].homeDir);
     assert.equal(sensor.CODEX_HOME,c.instances[1].homeDir);
@@ -116,13 +116,13 @@ test('worker environments retain only their own secret file paths and runtime ho
 });
 test('manifest fail-closes duplicate routing identities, endpoints and SQLite homes',()=>{
   for(const mutate of [
-    f=>{f.manifest.instances[1].id='legacy';},
+    f=>{f.manifest.instances[1].id='primary';},
     f=>{f.manifest.server.defaultInstance='missing';},
     f=>{delete f.manifest.server.sharedProcessTrustAcknowledged;},
     f=>{f.manifest.server.sharedProcessTrustAcknowledged=false;},
-    f=>{f.sensor.gitlab.baseUrl=f.legacy.gitlab.baseUrl;f.sensor.webhook.expectedInstance=f.sensor.gitlab.baseUrl;},
-    f=>{f.sensor.server.dataDir=f.legacy.server.dataDir;},
-    f=>{f.sensor.server.dataDir=path.join(f.legacy.server.dataDir,'nested');},
+    f=>{f.sensor.gitlab.baseUrl=f.primary.gitlab.baseUrl;f.sensor.webhook.expectedInstance=f.sensor.gitlab.baseUrl;},
+    f=>{f.sensor.server.dataDir=f.primary.server.dataDir;},
+    f=>{f.sensor.server.dataDir=path.join(f.primary.server.dataDir,'nested');},
     f=>{f.manifest.instances[1].homeDir=f.manifest.instances[0].homeDir;},
     f=>{f.manifest.instances[1].configFile=f.manifest.instances[0].configFile;},
     f=>{f.sensor.webhook.expectedInstance='http://192.168.1.4';},
@@ -143,9 +143,9 @@ test('manifest fail-closes duplicate routing identities, endpoints and SQLite ho
 });
 test('invalid or reused GitLab API and webhook secrets fail closed',()=>{
   for(const mutate of [
-    f=>{f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=f.tokens.legacyApi;},
-    f=>{fs.writeFileSync(f.tokens.sensorApi,'legacy-api-credential');},
-    f=>{fs.writeFileSync(f.tokens.sensorWebhook,fs.readFileSync(f.tokens.legacyWebhook));},
+    f=>{f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=f.tokens.primaryApi;},
+    f=>{fs.writeFileSync(f.tokens.sensorApi,'primary-api-credential');},
+    f=>{fs.writeFileSync(f.tokens.sensorWebhook,fs.readFileSync(f.tokens.primaryWebhook));},
     f=>{f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE='relative-token';},
     f=>{delete f.manifest.instances[1].secretFiles.GITLAB_WEBHOOK_SIGNING_TOKEN_FILE;},
     f=>{f.manifest.instances[1].secretFiles.UNSAFE_INLINE_KEY='some-key';},
@@ -161,8 +161,8 @@ test('invalid or reused GitLab API and webhook secrets fail closed',()=>{
 test('explicit multi manifest prevents silent single-instance configuration fallback',()=>{
   const f=fixture();try{
     delete f.manifest.schemaVersion;f.flush();
-    assert.throws(()=>loadMultiManifest(f.manifestFile),/unsupported multi-instance manifest schema/);
-    f.manifest.schemaVersion=1;
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/Schema 2 is required/);
+    f.manifest.schemaVersion=2;
     f.sensor.schemaVersion=7;f.flush();
     assert.throws(()=>loadMultiManifest(f.manifestFile),/Config Schema 8/);
     f.sensor.schemaVersion=8;
@@ -174,8 +174,8 @@ test('explicit multi manifest prevents silent single-instance configuration fall
 (process.platform==='win32'?test.skip:test)('physical symlinks cannot alias tenant DB, Codex home or secret files',()=>{
   const cases=[
     f=>{
-      fs.mkdirSync(f.legacy.server.dataDir);
-      fs.symlinkSync(f.legacy.server.dataDir,f.location('sensor-db-alias'));
+      fs.mkdirSync(f.primary.server.dataDir);
+      fs.symlinkSync(f.primary.server.dataDir,f.location('sensor-db-alias'));
       f.sensor.server.dataDir=f.location('sensor-db-alias');
     },
     f=>{
@@ -188,8 +188,8 @@ test('explicit multi manifest prevents silent single-instance configuration fall
       f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=link;
     },
     f=>{
-      fs.mkdirSync(f.legacy.server.dataDir);
-      const token=path.join(f.legacy.server.dataDir,'sensor-api-secret');
+      fs.mkdirSync(f.primary.server.dataDir);
+      const token=path.join(f.primary.server.dataDir,'sensor-api-secret');
       fs.writeFileSync(token,'sensor-api-alternate-value',{mode:0o600});
       f.manifest.instances[1].secretFiles.GITLAB_API_TOKEN_FILE=token;
     }
@@ -211,11 +211,11 @@ test('explicit multi manifest prevents silent single-instance configuration fall
 });
 
 (process.platform==='win32'?test.skip:test)('hardened multi-GitLab configuration files reject group/world writable control inputs',()=>{
-  for(const target of ['manifest','legacy-config','sensor-config','sensor-secret']){
+  for(const target of ['manifest','primary-config','sensor-config','sensor-secret']){
     const f=fixture();
     try{
       const file=target==='manifest'?f.manifestFile:
-        target==='legacy-config'?f.manifest.instances[0].configFile:
+        target==='primary-config'?f.manifest.instances[0].configFile:
         target==='sensor-config'?f.manifest.instances[1].configFile:f.tokens.sensorApi;
       fs.chmodSync(file,0o666);
       assert.throws(()=>loadMultiManifest(f.manifestFile),/private|regular|file/i);
@@ -258,7 +258,7 @@ test('multi-GitLab admission rejects invalid UTF-8 instead of parsing replacemen
     const f=fixture();try{
       const file=target==='manifest'?f.manifestFile:f.manifest.instances[0].configFile;
       if(target==='manifest')f.manifest.server.host='utf8-probe';
-      else f.legacy.codex.path='utf8-probe';
+      else f.primary.codex.path='utf8-probe';
       f.flush();
       const bytes=fs.readFileSync(file),index=bytes.indexOf('utf8-probe');
       assert.ok(index>=0);
@@ -282,7 +282,7 @@ test('strict tenant schema validation uses the checked object without reopening 
       return originalRead(file,...args);
     });
     assert.equal(loadMultiManifest(f.manifestFile).instances.length,2);
-    f.legacy.gitlab.unsupported='must still be rejected';f.flush();
+    f.primary.gitlab.unsupported='must still be rejected';f.flush();
     assert.throws(()=>loadMultiManifest(f.manifestFile),/invalid standalone Config Schema/);
   }finally{f.close();}
 });
@@ -320,4 +320,15 @@ test('strict tenant schema validation uses the checked object without reopening 
     assert.ifError(result.error);
     assert.equal(result.status,0,'fixture failed under umask '+mask.toString(8)+': '+result.stderr);
   }
+});
+
+test('v8 manifest rejects previous schema and implicit default routing',()=>{
+  const f=fixture();
+  try{
+    f.manifest.schemaVersion=1;f.flush();
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/Schema 2|required/i);
+    f.manifest.schemaVersion=2;
+    f.manifest.server.defaultInstance='primary';f.flush();
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/unsupported field/i);
+  }finally{f.close();}
 });

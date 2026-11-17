@@ -169,9 +169,9 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
   const pathname = absolute(file, 'CODEX_REVIEW_MULTI_CONFIG_FILE');
   const root = fileJson(pathname, 'multi-instance manifest');
   exactKeys(root, ['schemaVersion','server','instances'], 'multi-instance manifest');
-  if (root.schemaVersion !== 1) fail('unsupported multi-instance manifest schema');
+  if (root.schemaVersion !== 2) fail('explicit-instance multi-GitLab manifest Schema 2 is required');
   const server = record(root.server, 'server');
-  exactKeys(server, ['host','port','defaultInstance','sharedProcessTrustAcknowledged'], 'server');
+  exactKeys(server, ['host','port','sharedProcessTrustAcknowledged'], 'server');
   if(server.sharedProcessTrustAcknowledged!==true)
     fail('server.sharedProcessTrustAcknowledged must explicitly acknowledge one OS process is not a hard security boundary');
   const host = server.host;
@@ -189,8 +189,6 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
     ids.add(instance.id);
     return instance;
   });
-  if (!ids.has(server.defaultInstance))
-    fail('server.defaultInstance must name an existing legacy-compatible instance');
   for (let i=0;i<instances.length;i++) for (let j=i+1;j<instances.length;j++) {
     const left = instances[i], right = instances[j];
     if (overlaps(physicalLocation(left.dataDir), physicalLocation(right.dataDir)))
@@ -209,7 +207,7 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
       fail('Configuration or secret file must not live inside a writable tenant state/home directory');
   }
   return Object.freeze({
-    server: Object.freeze({host,port,defaultInstance:server.defaultInstance,sharedProcessTrustAcknowledged:true}),
+    server: Object.freeze({host,port,sharedProcessTrustAcknowledged:true}),
     instances: Object.freeze(instances)
   });
 }

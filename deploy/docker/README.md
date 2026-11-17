@@ -17,7 +17,7 @@ cp deploy/docker/config.example.json deploy/docker/config.json
 The file already uses:
 
 ```text
-schemaVersion = 1
+schemaVersion = 8
 server.host = 0.0.0.0
 server.dataDir = /var/lib/codex-review
 ```
@@ -63,7 +63,7 @@ curl -fsS http://127.0.0.1:8787/version
 
 The image:
 
-- is based on Node 24.19.0 Bookworm slim pinned by multi-platform digest;
+- is based on Node 24.19.0 Debian 13 trixie-slim pinned by multi-platform digest;
 - pins the default `@openai/codex` version while still requiring Safe Contract capability probing at startup;
 - runs as non-root `codex-review`;
 - drops all Linux capabilities;
