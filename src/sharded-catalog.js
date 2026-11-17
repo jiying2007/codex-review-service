@@ -75,10 +75,29 @@ function validateShardedCatalog(catalog) {
   return trusted;
 }
 function readJson(file){
-  const stat=fs.lstatSync(file);
-  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>MAX_FILE_BYTES)
-    throw new TypeError('Catalog/config must be a bounded regular file');
-  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(fs.readFileSync(file)));
+  // Pin every check and byte to the SAME opened descriptor to prevent a
+  // check/use swap. O_NONBLOCK also prevents an injected FIFO from hanging.
+  const flags=fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW||0) |
+    (fs.constants.O_NONBLOCK||0);
+  const fd=fs.openSync(file,flags);
+  try{
+    const stat=fs.fstatSync(fd);
+    if(!stat.isFile()||stat.nlink!==1||stat.size<1||stat.size>MAX_FILE_BYTES)
+      throw new TypeError('Catalog/config must be a bounded singly-linked regular file');
+    const buf=Buffer.allocUnsafe(MAX_FILE_BYTES+1);
+    let size=0;
+    while(size<buf.length){
+      const count=fs.readSync(fd,buf,size,buf.length-size,null);
+      if(count===0)break;
+      size+=count;
+    }
+    if(size<1||size>MAX_FILE_BYTES)
+      throw new TypeError('Catalog/config content exceeded its bounded read');
+    const decoded=new TextDecoder('utf-8',{fatal:true}).decode(buf.subarray(0,size));
+    return JSON.parse(decoded);
+  }finally{
+    fs.closeSync(fd);
+  }
 }
 function main(args=process.argv.slice(2)){
   if(args.length!==2)throw new TypeError('Usage: node src/sharded-catalog.js legacy.json sensor.json');
