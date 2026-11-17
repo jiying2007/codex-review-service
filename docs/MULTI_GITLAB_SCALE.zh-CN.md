@@ -1,86 +1,28 @@
-# 多 GitLab 扩展：2–16 个独立实例与多服务器安全入口（7.8 候选）
+# 多 GitLab 扩容与统一运维（V8，显式实例制）
 
-**架构边界**：每个 GitLab 独立的 Review Service OS 进程、SQLite Writer、API Token、
-Webhook 签名密钥、Codex Home、资源配额和故障处理；不可让多个实例共享 SQLite 或以
-NFS/WAL 伪装 HA。Edge 只做固定路由与只读指标聚合，绝不接收 GitLab/模型凭据。
+支持 1–16 个明确命名的 GitLab 实例，每个实例可独立部署在不同服务器，服务自己的 Project/Group 白名单。统一 Edge 只做固定目标路由与管理读接口，所有实例身份来源于只读 Catalog Schema 2 / targets.json。**没有 Legacy 回退路由**、自动迁移或默认实例。
 
-## 非侵入兼容与实例目录
-旧的双文件命令仍可用：
-```bash
-node src/sharded-catalog.js legacy.json sensor.json > catalog.json
-```
-新增受控多实例构建（至少包含 legacy，名称限 32 个小写安全字符，最多 16 个实例）：
-```bash
-node src/sharded-catalog.js legacy=/etc/codex-review/legacy.json \
-  sensor=/etc/codex-review/sensor.json \
-  qa=/etc/codex-review/qa.json > /etc/codex-review/catalog.json
-```
-以上均为**不启动模型、无 GitLab API**的配置目录生成，明确保留每个配置的
-`configured_not_live_verified` 状态和 `instance:projectId` 标识，不会伪装远端已授权。
+## 部署模式
 
-Edge 加载**无凭据、静态、白名单限定**的本地映射文件：
-```json
-{
-  "legacy":{"host":"legacy","port":8787},
-  "sensor":{"host":"sensor","port":8787},
-  "qa":{"host":"qa","port":8787}
-}
-```
-```bash
-CODEX_REVIEW_SHARDED_CATALOG_FILE=/etc/codex-review/catalog.json \
-CODEX_REVIEW_SHARDED_TARGETS_FILE=/etc/codex-review/targets.json \
-node src/sharded-edge.js
-```
-Edge **仅允许 host 为准确实例 ID 或 127.0.0.1**，不允许输入任意 URL、域名或
-公网上游；映射必须与 Catalog 完全一致，增删实例需要受控重启 Edge。Docker 桥接中
-按实例名提供专用容器别名；跨物理主机请使用**单独维护的认证 HTTPS/mTLS 隧道或 VPN**
-将远端 Service 以同名本地代理服务接入可信私有网络，Edge 不负责 TLS 协商或证书管理。
-示例 Docker Sharded Compose 仍只有 Legacy/Sensor；新增实例需单独受控部署，不能声称
-Compose 模板已动态自动发放远端 Worker。
+单 GitLab 容器使用 deploy/docker/compose.instance.yaml；统一入口使用 deploy/docker/compose.sharded.yaml。每台主机保留独立 SQLite Writer、外部已核验数据卷、密钥和模型资源配额。Edge 专用私有网络只解析指定 ID 对应的受信 mTLS/VPN 隧道或本地 Docker 服务别名，不接收任意远端地址。
 
-## 只读统一管理视图
+~~~bash
+node src/sharded-catalog.js primary=/etc/codex-review/primary.json sensor=/etc/codex-review/sensor.json > /etc/codex-review/catalog.json
+node src/sharded-deploy-check.js /etc/codex-review/catalog.json /etc/codex-review/targets.json
+~~~
 
-- `GET /repositories`：仅目录声明，与过去相同。
-- `GET /repositories/status`：并行拉取每个实例 readiness + 本地 metrics，并返回
-  `local_job_history_observed_not_remote_verified`、`configured_no_local_job_history`、
-  `metrics_truncated`、`metrics_unavailable` 或 `metrics_incomplete`；
-  这不是 GitLab 远端成员资格或 MR 审查成功证明。
-- `GET /metrics`：按实例聚合，缺失上游指标不填 0。
-- `GET /health/ready`：全部就绪；`/health/ingress`：至少一个可接收流量。
+~~~json
+{"primary":{"host":"primary","port":8787},"sensor":{"host":"sensor","port":8787}}
+~~~
 
-**安全**：`/repositories*`、`/metrics`、`/instances/*` 只面向可信管理网络，
-公网反向代理只转发允许的原始 Webhook POST。独立 Service 仍以原始签名和项目白名单验证，
-不能把 Edge 路由当成授权。切换须备份、drain、唯一 Writer、真实 webhook/mr
-验证；生产验收不等于配置或 GitHub CI 成功。
+多实例共享进程模式如需使用，必须显式准备 Manifest Schema 2，且不具备跨进程硬隔离。推荐独立进程方案，不为每个仓库启动新 Service。
 
-## 告警
-`deploy/monitoring/codex-review.rules.yaml` 提供标准 Prometheus 规则。
-需要 Prometheus `job="codex-review-sharded-edge"` 的既有内部 scrape 目标，
-并按实际 SLO 调整阈值，避免把实例失联和真正没有任务混为一谈。不建立 ChatGPT 定时巡检。
+## 运维检查清单
 
-## 每台服务器的独立服务部署（只读检查优先）
+1. 每个 instanceId 都有独立受控 Config Schema 8、Token 和真实 GitLab Origin。仓库键 instanceId:projectId 不会跨实例冲突。
+2. Webhook 一律指向 POST /webhooks/gitlab/<instance-id>。裸 POST /webhooks/gitlab 必须返回 404。后端仍需要验证原始签名。
+3. GET /repositories/status 只说明配置/本地指标可见，不等于远端 Project 已授权。历史任务为零和指标缺失必须区分。
+4. 监控 Prometheus 实例 up、queue age、status uncertain、metrics completeness、retained Token Gauge，不把 missing metric 当 0。
+5. 模型消费以已知和未知用量共同衡量；质量—Token benchmark 不能替代真实 MR Head 绑定验收。
 
-新增 `deploy/docker/compose.instance.yaml` 是 profile-gated 的单实例容器模板。
-每个 GitLab 实例必须使用独立的 `docker compose -p <安全实例名>` 工程名、
-两份**已经确认身份**的持久化卷和不同的 API/Webhook 凭据文件。容器内目录统一为
-`/var/lib/codex-review/tenant` 和 `/home/codex-review/tenant`，
-避免把用户输入实例 ID 插值到卷挂载路径。单实例 Config Schema 8 的
-`server.dataDir` / `codex.home` 必须与上述路径精确一致，且
-`server.host=0.0.0.0` / `server.port=8787` 仅对 Docker 私有网开放。
-示例环境需设置 `CODEX_REVIEW_IMAGE_DIGEST`、
-`CODEX_REVIEW_INSTANCE_CONFIG_FILE`、
-`CODEX_REVIEW_INSTANCE_API_TOKEN_FILE`、
-`CODEX_REVIEW_INSTANCE_WEBHOOK_TOKEN_FILE`、
-`CODEX_REVIEW_INSTANCE_STATE_VOLUME`、
-`CODEX_REVIEW_INSTANCE_HOME_VOLUME`。
-
-```bash
-# 只做配置展开，不启动新 Worker：
-docker compose -p codex-review-qa -f deploy/docker/compose.instance.yaml config --quiet
-# 生产启用前另须完成当前版本 DB Schema、唯一 Writer、备份与 IAM 检查。
-# 正式维护窗口、确认配置与受保护独立网络后才允许启用 profile。
-```
-
-本模板不发布宿主机端口。远端服务需要由独立审核的 mTLS/VPN
-隧道 sidecar 连接到 Edge 的同名私有网络别名；不要把原始 GitLab API
-或无认证审查服务直接暴露在公共网络。
+切换前必须检查发行 OCI digest、唯一 Writer、未完成事务及回滚备份。没有现场网络/数据库访问时只能标记代码就绪，**不能宣称生产上线**。
