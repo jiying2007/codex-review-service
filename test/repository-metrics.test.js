@@ -47,3 +47,18 @@ test('capacity truncation is explicitly flagged, never silently shown as complet
    assert.throws(()=>renderRepositoryMetrics(x.store,{now:NaN}),/timestamp/);
  }finally{x.close();}
 });
+
+test('scoped metrics query never scans or reports out-of-scope historic tenants',()=>{
+ const x=temporary();
+ try{
+  enqueue(x.store,5,1);enqueue(x.store,113,1);enqueue(x.store,999,1);
+  const body=renderRepositoryMetrics(x.store,{projectIds:new Set([5,113])});
+  assert.match(body,/project_id="5"/);
+  assert.match(body,/project_id="113"/);
+  assert.doesNotMatch(body,/project_id="999"/);
+  assert.match(body,/codex_review_repository_metrics_complete 1/);
+  const limited=renderRepositoryMetrics(x.store,{projectIds:new Set([5,113]),maxProjects:1});
+  assert.match(limited,/codex_review_repository_metrics_complete 0/);
+  assert.throws(()=>renderRepositoryMetrics(x.store,{projectIds:[Number.MAX_SAFE_INTEGER+1]}),/Unsafe/);
+ }finally{x.close();}
+});
