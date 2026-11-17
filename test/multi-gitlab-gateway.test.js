@@ -57,15 +57,15 @@ function mockWorker(id,origin,key,records){
   });
   return {server,token};
 }
-test('ingress only routes bounded, explicit GitLab instance and legacy paths',()=>{
+test('ingress only routes explicitly named GitLab instances; no default route',()=>{
   const ids=new Set(['legacy','sensor']);
-  assert.deepEqual(targetFor('POST','/webhooks/gitlab',ids,'legacy'),{id:'legacy',path:'/webhooks/gitlab'});
-  assert.deepEqual(targetFor('POST','/webhooks/gitlab/sensor',ids,'legacy'),{id:'sensor',path:'/webhooks/gitlab'});
-  assert.deepEqual(targetFor('GET','/instances/sensor/health/ready',ids,'legacy'),{id:'sensor',path:'/health/ready'});
+  assert.equal(targetFor('POST','/webhooks/gitlab',ids),null,'implicit default route must not exist');
+  assert.deepEqual(targetFor('POST','/webhooks/gitlab/sensor',ids),{id:'sensor',path:'/webhooks/gitlab/legacy'});
+  assert.deepEqual(targetFor('GET','/instances/sensor/health/ready',ids),{id:'sensor',path:'/health/ready'});
   for(const pathname of ['/webhooks/gitlab/unknown','/webhooks/gitlab/sensor?other=true',
     '/webhooks/gitlab/../sensor','/webhooks/gitlab/%2e%2e','/webhooks/gitlab/SENSOR'])
-    assert.equal(targetFor('POST',pathname,ids,'legacy'),null,pathname);
-  assert.equal(targetFor('GET','/webhooks/gitlab/sensor',ids,'legacy'),null);
+    assert.equal(targetFor('POST',pathname,ids),null,pathname);
+  assert.equal(targetFor('GET','/webhooks/gitlab/sensor',ids),null);
 });
 test('one listening gateway isolates colliding project IDs, raw HMAC identity and delivery replay',async()=>{
   const oldEvents=[],newEvents=[];
@@ -73,7 +73,7 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
   const sensor=mockWorker('sensor','http://192.168.2.50',12,newEvents);
   const [oldPort,newPort]=await Promise.all([listen(legacy.server),listen(sensor.server)]);
   const manifest={
-    server:{defaultInstance:'legacy',sharedProcessTrustAcknowledged:true},
+    server:{sharedProcessTrustAcknowledged:true},
     instances:[{id:'legacy'},{id:'sensor'}]
   };
   const ports={legacy:oldPort,sensor:newPort};
@@ -83,14 +83,15 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
   try{
     const oldHeaders=signed(body,legacy.token,'old-113-v1','http://192.168.1.4');
     const sensorHeaders=signed(body,sensor.token,'sensor-113-v1','http://192.168.2.50');
-    const a=await call(port,'/webhooks/gitlab',{method:'POST',body,headers:oldHeaders});
+    const a=await call(port,'/webhooks/gitlab/legacy',{method:'POST',body,headers:oldHeaders});
     const b=await call(port,'/webhooks/gitlab/sensor',{method:'POST',body,headers:sensorHeaders});
     assert.equal(a.status,202);assert.equal(b.status,202);
+    assert.equal((await call(port,'/webhooks/gitlab',{method:'POST',body,headers:oldHeaders})).status,404);
     assert.equal(a.body.instance,'legacy');assert.equal(b.body.instance,'sensor');
     assert.deepEqual(oldEvents.map(e=>e.projectId),[113]);
     assert.deepEqual(newEvents.map(e=>e.projectId),[113]);
     const wrong=await call(port,'/webhooks/gitlab/sensor',{method:'POST',body,headers:oldHeaders});
-    const swapped=await call(port,'/webhooks/gitlab',{method:'POST',body,headers:sensorHeaders});
+    const swapped=await call(port,'/webhooks/gitlab/legacy',{method:'POST',body,headers:sensorHeaders});
     assert.equal(wrong.status,401);assert.equal(swapped.status,401);
     assert.equal(oldEvents.length,1);assert.equal(newEvents.length,1);
     const replay=await call(port,'/webhooks/gitlab/sensor',{method:'POST',body,headers:sensorHeaders});
@@ -114,7 +115,7 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
     assert.equal(ingress.body.readyInstances,1);
     assert.equal(ingress.body.totalInstances,2);
     assert.equal(ingress.body.instances.find(x=>x.id==='sensor').available,false);
-    const stillActive=await call(port,'/webhooks/gitlab',{method:'POST',
+    const stillActive=await call(port,'/webhooks/gitlab/legacy',{method:'POST',
       body,headers:signed(body,legacy.token,'old-113-v2','http://192.168.1.4')});
     assert.equal(stillActive.status,202,'sensor failure must not stop the legacy ingress');
     assert.equal(oldEvents.length,2);
@@ -153,7 +154,7 @@ test('chunked oversized HTTP body retains a complete 413 without an upfront leng
     // The request uses chunked encoding, exercising the STREAMING limit
     // rather than the upfront Content-Length fast path.
     const payload=Buffer.alloc(MAX_REQUEST_BYTES+1,'x');
-    const result=await call(port,'/webhooks/gitlab',{
+    const result=await call(port,'/webhooks/gitlab/legacy',{
       method:'POST',body:payload,headers:{'content-type':'application/octet-stream','transfer-encoding':'chunked'}
     });
     assert.equal(result.status,413);
