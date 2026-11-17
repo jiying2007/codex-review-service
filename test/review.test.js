@@ -2,7 +2,7 @@
 
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const{buildSnapshot,buildPrompt,outputSchema,validateChunkResult,consolidateReviews,parseChangedLines,metadataOnlyDiff,formatSummary}=require('../src/review');
+const{buildSnapshot,buildPrompt,outputSchema,validateChunkResult,consolidateReviews,parseChangedLines,metadataOnlyDiff,formatSummary,formatReviewPreview,conservativeClaimAudit}=require('../src/review');
 const policy={language:'en',maxDiffBytes:100,maxReviewChunks:2,maxFindings:10,maxPublishedFindings:10,minConfidence:0.7,severityThreshold:'info',blockingSeverity:'high',extraInstructions:'',skipGeneratedFiles:true,blockUnreviewableFiles:false};
 const mr={iid:1,project_id:7,source_project_id:7,target_project_id:7,source_branch:'feat',target_branch:'main',diff_refs:{base_sha:'b',start_sha:'s',head_sha:'h'}};
 
@@ -81,4 +81,56 @@ test('model finding line positions reject rounding and out-of-chunk end ranges',
    assert.equal(bad.findings.length,0,JSON.stringify(change));
    assert.equal(bad.rejected,1);
  }
+});
+
+
+test('Core semantic plan keeps linked implementation/header/tests together and previews without a model',()=>{
+ const changes=[
+  {old_path:'src/motor.c',new_path:'src/motor.c',diff:'@@ -1 +1 @@\n-old\n+#include "motor.h"'},
+  {old_path:'docs/readme.md',new_path:'docs/readme.md',diff:'@@ -1 +1 @@\n-old\n+new'},
+  {old_path:'include/motor.h',new_path:'include/motor.h',diff:'@@ -1 +1 @@\n-old\n+int motor_run(void);'},
+  {old_path:'tests/motor_test.c',new_path:'tests/motor_test.c',diff:'@@ -1 +1 @@\n-old\n+assert(motor_run()==0);'}
+ ];
+ const snapshot=buildSnapshot(mr,{complete:true,items:changes},{...policy,maxDiffBytes:4096,maxReviewChunks:8});
+ assert.equal(snapshot.coverageComplete,true,JSON.stringify(snapshot.coverageGaps));
+ assert.deepEqual(snapshot.semanticGroups[0].paths,['src/motor.c','include/motor.h','tests/motor_test.c']);
+ assert.equal(snapshot.preview.modelCalls,0);
+ assert.equal(snapshot.preview.unplannedFiles,0);
+ assert.equal(snapshot.preview.plannedFiles,4);
+ assert.equal(snapshot.preview.complete,true);
+ const prompt=buildPrompt(snapshot,snapshot.chunks[0],policy);
+ assert.match(prompt,/TRUSTED FILE-SCOPED CHECKS/);
+ assert.match(prompt,/motor-control/);
+ const presentation=JSON.parse(formatReviewPreview(snapshot));
+ assert.equal(presentation.modelCalls,0);
+ assert.equal(presentation.plannedFiles,4);
+ assert.equal(presentation.groups.length,2);
+});
+
+test('review preview reports exact nonreviewable and unplanned paths with no false complete',()=>{
+ const diff={complete:true,items:[
+  {old_path:'src/a.js',new_path:'src/a.js',diff:'@@ -1 +1 @@\n-a\n+b'},
+  {old_path:'firmware/large.c',new_path:'firmware/large.c',diff:'@@ -1 +1 @@\n-a\n+'+'z'.repeat(6000)},
+  {old_path:'public/asset.png',new_path:'public/asset.png',diff:''}
+ ]};
+ const snapshot=buildSnapshot(mr,diff,{...policy,maxDiffBytes:4096,maxReviewChunks:1});
+ assert.equal(snapshot.preview.complete,false);
+ assert.ok(snapshot.preview.coverageGaps.length>0);
+ assert.equal(snapshot.preview.modelCalls,0);
+ assert.equal(snapshot.preview.items.find(x=>x.path==='public/asset.png').state,'unreviewable');
+ assert.equal(JSON.parse(formatReviewPreview(snapshot)).complete,false);
+});
+
+test('claim fact audit reports literal conflicts without deleting even high risk review findings',()=>{
+ const diff={complete:true,items:[{old_path:'src/a.c',new_path:'src/a.c',
+   diff:'@@ -1 +1 @@\n-old\n+if (!ptr) return;'}]};
+ const snapshot=buildSnapshot(mr,diff,{...policy,maxDiffBytes:4096,maxReviewChunks:2});
+ const claims=[
+ {file:'src/a.c',category:'correctness',claimedAbsentLiteral:'if (!ptr)'},
+ {file:'src/a.c',category:'resource',claimedAbsentLiteral:'if (!ptr)'}
+ ];
+ const audit=conservativeClaimAudit(claims,snapshot);
+ assert.equal(audit.automaticallyRemoved,0);
+ assert.equal(audit.findings.length,2);
+ assert.deepEqual(audit.warnings.map(x=>x.index),[0]);
 });

@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.7.8
+
+- Exact-pin and consume formally released Safe Core 4.18.8 deterministic semantic file grouping, per-file engineering rules, review-plan Preview and conservative fact-conflict audit.
+- Group related changed source/header/tests by bounded deterministic references instead of extra LLM calls; keep all files in canonical changed-line/coverage planner and disclose omissions.
+- Apply fixed, trusted file-scoped checks to each review chunk; expose a zero-model offline MR preview CLI; preserve original findings and report only structured fact conflicts.
+- Include offline same-corpus/model/budget precision/recall/cost comparison tooling without claiming fresh model execution.
+- Retain database schema 12, config schema 8, GitLab provider/supply-chain gates and old production 7.6.1 isolation. No automatic model review or deployment.
+
 ## 7.7.7
 
 - Integrate the formally released Safe Core 4.18.7 bounded Review Evidence Hunk splitter via exact immutable commit pin and verified runtime/governance digests, after trusted Core release qualification.
