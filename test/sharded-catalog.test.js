@@ -1,6 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {buildShardedCatalog,validateShardedCatalog}=require('../src/sharded-catalog');
+const {buildShardedCatalog,validateShardedCatalog,readJson}=require('../src/sharded-catalog');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const legacy={schemaVersion:8,gitlab:{baseUrl:'http://192.168.1.4',projects:[113,23],groups:[{id:48,includeSubgroups:true}]},webhook:{expectedInstance:'http://192.168.1.4'},
   codex:{apiKey:'DO_NOT_EXPOSE'},notifications:{token:'private'}};
 const sensor={schemaVersion:8,gitlab:{baseUrl:'http://192.168.2.50',projects:[113],groups:[]},webhook:{expectedInstance:'http://192.168.2.50'}};
@@ -31,4 +32,27 @@ test('catalog rejects forged membership, extra fields, invalid IDs, same origins
  assert.throws(()=>buildShardedCatalog({legacy,sensor:{...sensor,gitlab:{...sensor.gitlab,baseUrl:legacy.gitlab.baseUrl}}}),/origin/);
  assert.throws(()=>buildShardedCatalog({legacy:{...legacy,gitlab:{...legacy.gitlab,projects:[1,1]}},sensor}),/Duplicate/);
  assert.throws(()=>buildShardedCatalog({legacy:{...legacy,gitlab:{...legacy.gitlab,projects:[2**53]}},sensor}),/Unsafe/);
+});
+
+
+test('catalog reader rejects symlink, multi-linked, oversized and malformed files via same descriptor',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sharded-catalog-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const valid=path.join(dir,'valid.json'),alias=path.join(dir,'alias.json');
+  fs.writeFileSync(valid,JSON.stringify({schemaVersion:1,kind:'fixture'}));
+  assert.equal(readJson(valid).kind,'fixture');
+  fs.linkSync(valid,alias);
+  assert.throws(()=>readJson(valid),/singly-linked/);
+  fs.unlinkSync(alias);
+  if(process.platform!=='win32'){
+    fs.symlinkSync(valid,alias);
+    assert.throws(()=>readJson(alias),/ELOOP|symbolic link|symlink/i);
+    fs.unlinkSync(alias);
+  }
+  fs.writeFileSync(valid,Buffer.alloc(1024*1024+1,65));
+  assert.throws(()=>readJson(valid),/bounded/);
+  fs.writeFileSync(valid,Buffer.from([0xff]));
+  assert.throws(()=>readJson(valid),/encoded|UTF-8|UTF/i);
+  fs.writeFileSync(valid,'{');
+  assert.throws(()=>readJson(valid),SyntaxError);
 });
