@@ -1,0 +1,51 @@
+# One container / one verified GitLab instance / one local SQLite writer.
+# Bare "docker compose up" starts NO model worker. Opt in after offline cutover.
+# Do not publish port 8787 publicly; connect via an authenticated VPN/mTLS
+# tunnel sidecar on this private Docker network.
+services:
+  review-instance:
+    profiles: ["cutover-standalone"]
+    image: ghcr.io/jiying2007/codex-review-service@sha256:${CODEX_REVIEW_IMAGE_DIGEST:?Use_verified_release_OCI_index_digest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    expose: ["8787"]
+    environment:
+      CODEX_REVIEW_CONFIG_FILE: /etc/codex-review/config.json
+      GITLAB_API_TOKEN_FILE: /run/secrets/gitlab_api
+      GITLAB_WEBHOOK_SIGNING_TOKEN_FILE: /run/secrets/gitlab_webhook
+    secrets: [gitlab_api, gitlab_webhook]
+    volumes:
+      - ${CODEX_REVIEW_INSTANCE_CONFIG_FILE:?Absolute_private_schema8_config_file}:/etc/codex-review/config.json:ro
+      - instance-state:/var/lib/codex-review/${CODEX_REVIEW_INSTANCE_ID:?Use_unique_instance_id}
+      - instance-home:/home/codex-review/${CODEX_REVIEW_INSTANCE_ID:?Use_unique_instance_id}
+    networks: [review-private]
+    healthcheck:
+      test: ["CMD","node","-e","fetch('http://127.0.0.1:8787/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    deploy:
+      resources:
+        limits: {cpus: "3", memory: 3G}
+
+secrets:
+  gitlab_api:
+    file: ${CODEX_REVIEW_INSTANCE_API_TOKEN_FILE:?Private_GitLab_API_file}
+  gitlab_webhook:
+    file: ${CODEX_REVIEW_INSTANCE_WEBHOOK_TOKEN_FILE:?Private_GitLab_Webhook_file}
+
+volumes:
+  instance-state:
+    external: true
+    name: ${CODEX_REVIEW_INSTANCE_STATE_VOLUME:?Existing_verified_state_volume}
+  instance-home:
+    external: true
+    name: ${CODEX_REVIEW_INSTANCE_HOME_VOLUME:?Existing_verified_home_volume}
+
+networks:
+  review-private:
+    driver: bridge
