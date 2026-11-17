@@ -12,7 +12,9 @@ const ALLOWED_METRICS=new Set([
  'queue_depth','oldest_queue_age_seconds','input_tokens_total',
  'cached_input_tokens_total','output_tokens_total','model_usage_unknown_calls',
  'model_usage_unknown_estimated_tokens','status_uncertain_targets',
- 'status_unknown_writes','repository_metrics_complete'
+ 'status_unknown_writes','repository_metrics_complete',
+ 'retained_input_tokens','retained_cached_input_tokens',
+ 'retained_output_tokens','retained_reasoning_output_tokens'
 ]);
 const REPO_METRICS=new Set([
  'jobs','oldest_queue_age_seconds','known_model_tokens_today',
@@ -150,6 +152,10 @@ async function scrapeMetrics(targets,catalog){
    codex_review_instance_input_tokens_total:'counter',
    codex_review_instance_cached_input_tokens_total:'counter',
    codex_review_instance_output_tokens_total:'counter',
+   codex_review_instance_retained_input_tokens:'gauge',
+   codex_review_instance_retained_cached_input_tokens:'gauge',
+   codex_review_instance_retained_output_tokens:'gauge',
+   codex_review_instance_retained_reasoning_output_tokens:'gauge',
    codex_review_instance_model_usage_unknown_calls:'gauge',
    codex_review_instance_model_usage_unknown_estimated_tokens:'gauge',
    codex_review_instance_status_uncertain_targets:'gauge',
