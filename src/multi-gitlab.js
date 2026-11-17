@@ -146,7 +146,7 @@ async function startMultiGitLab() {
   supervisor.start();
   audit('multi_gitlab_gateway_started',{
     host:manifest.server.host,port:manifest.server.port,
-    instanceCount:manifest.instances.length,defaultInstance:manifest.server.defaultInstance
+    instanceCount:manifest.instances.length
   });
   let closing=false;
   const close=async signal=>{
