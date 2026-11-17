@@ -305,6 +305,8 @@ jobs:
         env:
           AMD64_IMAGE: ${{ steps.scan_targets.outputs.amd64_image }}
           ARM64_IMAGE: ${{ steps.scan_targets.outputs.arm64_image }}
+          AMD64_CONFIG: ${{ steps.scan_targets.outputs.amd64_config }}
+          ARM64_CONFIG: ${{ steps.scan_targets.outputs.arm64_config }}
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
@@ -312,9 +314,8 @@ jobs:
           set -euo pipefail
           # An OCI manifest can resolve while a referenced GHCR blob returns BLOB_UNKNOWN.
           # Pull the EXACT per-platform manifest and all layers before scanning.
-          for spec in "linux/amd64|$AMD64_IMAGE" "linux/arm64|$ARM64_IMAGE"; do
-            platform="${spec%%|*}"
-            image="${spec#*|}"
+          for spec in "linux/amd64|$AMD64_IMAGE|$AMD64_CONFIG" "linux/arm64|$ARM64_IMAGE|$ARM64_CONFIG"; do
+            IFS='|' read -r platform image expected_config <<< "$spec"
             fetched=false
             for attempt in 1 2 3; do
               if timeout 180 docker pull --platform "$platform" "$image"; then
@@ -330,7 +331,8 @@ jobs:
             actual_sha="$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
             actual_version="$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")"
             actual_arch="$(docker image inspect -f '{{ .Architecture }}' "$image")"
-            if [[ "$actual_sha" != "$RELEASE_SHA" || "$actual_version" != "$RELEASE_VERSION" || "$actual_arch" != "${platform#linux/}" ]]; then
+            actual_config="$(docker image inspect -f '{{ .Id }}' "$image")"
+            if [[ "$actual_sha" != "$RELEASE_SHA" || "$actual_version" != "$RELEASE_VERSION" || "$actual_arch" != "${platform#linux/}" || "$actual_config" != "$expected_config" ]]; then
               echo "::error::Materialized image identity differs from the immutable release source for $platform." >&2
               exit 1
             fi
