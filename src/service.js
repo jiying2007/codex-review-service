@@ -8,7 +8,7 @@ const{runCodex}=require('./codex');
 const{getEffectivePolicy}=require('./policy');
 const{buildReviewContext}=require('./context');
 const{createJobScopedGitLab}=require('./source-cache');
-const{collectServiceQualityEvidence,qualityContextForChunk,anchorAnalyzerFindings}=require('./quality');
+const{collectServiceQualityEvidence,qualityContextForChunk,anchorAnalyzerFindings,unifiedDiffText}=require('./quality');
 const{resolveReviewProfilePack}=require('./codex-safe-core/review-profile-pack');
 const{fingerprint,REVIEW_PROMPT_CONTRACT_VERSION}=require('./codex-safe-core/safe-contract');
 const{computeReviewSubjectFingerprint,shouldPersistJudgmentReceipt}=require('./codex-safe-core/judgment-lifecycle');
@@ -20,6 +20,7 @@ const{createServiceModelRouter,executeRoleAwareReview}=require('./model-routing-
 const{buildModelEconomicsScorecard}=require('./codex-safe-core/model-economics');
 const{createTokenCalibrationStore}=require('./codex-safe-core/token-calibration-store');
 const{observedUsage}=require('./model-usage');
+const{verifyFindingEvidence}=require('./codex-safe-core/review-evidence-v2');
 
 const NON_RETRYABLE_ERRORS=new Set(['ECODEXVERSION','ECODEXOUTPUT','ECODEXNOTFOUND','ECODEXAUTH','EPROJECTPOLICY','EJOBTIMEOUT','EUNAUTHORIZED','ETOKENBUDGET','EMODELCALLUNCERTAIN']);
 function abortError(code,message){return Object.assign(new Error(message),{code});}
@@ -166,7 +167,7 @@ class ReviewService{
       review.summary=deterministicSummary(review.findings,policy);
       review.usage={inputTokens:0,cachedInputTokens:0,cacheWriteInputTokens:0,outputTokens:0,reasoningOutputTokens:0};
       review.usageKnown=true;review.reviewProfile=profile.name;fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,[],0);review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=fullSnapshot.coverageLedger;review.qualityEvidenceStatus=Object.freeze({degraded:qualityDegradations.length>0,reasons:qualityDegradations});review.contextCoverage={omittedSlices:0,omittedFiles:[],reasons:{}};review.saturatedChunks=[];review.modelInferenceCount=0;review.sourceCache=sourceCacheStats();
-      review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},chunks:[]});
+      review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),risk:fingerprint(qualityEvidence.risk||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},chunks:[]});
       review.reviewSubjectFingerprint=computeReviewSubjectFingerprint({subject:reviewSubject(fullSnapshot),diffFingerprint:fullSnapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',evidenceManifestDigest:review.evidenceManifestDigest,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,reviewProfile:profile.name,model:''});
       return{snapshot:fullSnapshot,review};
     }
@@ -208,6 +209,22 @@ class ReviewService{
     let review=consolidateReviews(reviewSnapshot,results,policy);
     const deterministicAnalyzerFindings=anchorAnalyzerFindings(fullSnapshot,qualityEvidence.analyzerFindings);
     review=mergeCurrentEvidenceFindings(review,deterministicAnalyzerFindings,policy);
+    // This is source/line verification only; it cannot prove a semantic defect.
+    const findingEvidence=verifyFindingEvidence({
+      diff:unifiedDiffText(fullDiffs),findings:review.findings,maxFindings:Math.max(128,policy.maxFindings)
+    });
+    review.findingEvidence=Object.freeze({
+      verifiedAnchorCount:findingEvidence.verifiedAnchorCount,
+      conflicts:findingEvidence.conflicts,incomplete:findingEvidence.incomplete,
+      automaticallyRemoved:0,semanticDefectVerified:false,
+      results:findingEvidence.results
+    });
+    if(!findingEvidence.complete||findingEvidence.conflicts||findingEvidence.incomplete){
+      fullSnapshot.coverageGaps.push('finding_evidence_unverified:'+
+        (findingEvidence.conflicts+findingEvidence.incomplete));
+      fullSnapshot.coverageComplete=false;
+      review.coverageComplete=false;review.verdict='incomplete';
+    }
     const claimAudit=conservativeClaimAudit(review.findings,fullSnapshot);
     review.claimAudit=Object.freeze({reviewedFindings:claimAudit.findings.length,
       automaticallyRemoved:claimAudit.automaticallyRemoved,warnings:claimAudit.warnings});
@@ -217,7 +234,7 @@ class ReviewService{
     }
     review.summary=deterministicSummary(review.findings,policy);review.codexVersion=version;review.codexModel=[...models].join(',');review.usage=usage;review.usageKnown=roleCalls.every(call=>call.usageKnown)&&optionalRoleErrors.length===0;review.estimatedTokenBudget=estimatedTotal;review.reviewProfile=profile.name;review.impactNodes=qualityEvidence.impact?.nodes?.length||0;review.impactBytes=qualityEvidence.impact?.bytes||0;review.analyzerFindingCount=qualityEvidence.analyzerFindings?.length||0;fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,reviewSnapshot.chunks,results.length);review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=fullSnapshot.coverageLedger;review.qualityEvidenceStatus=Object.freeze({degraded:qualityDegradations.length>0,reasons:qualityDegradations});review.contextCoverage=Object.freeze({omittedSlices:contextOmissions.length,omittedFiles:[...new Set(contextOmissions.map(item=>item.path))].slice(0,80),reasons:contextOmissions.reduce((out,item)=>(out[item.reason]=(out[item.reason]||0)+1,out),{})});review.saturatedChunks=Object.freeze(saturatedChunks);review.sourceCache=sourceCacheStats();review.modelInferenceCount=roleCalls.filter(x=>!x.shadow).length;review.shadowInferenceCount=roleCalls.filter(x=>x.shadow).length;review.modelRoutingContractVersion=1;review.modelRegistrySource=modelRouter.registrySource;review.modelRegistryRevision=modelRouter.registryRevision;review.modelEvidence=Object.freeze(modelEvidence);review.shadowModelEvidence=Object.freeze(shadowModelEvidence);review.shadowComparisons=Object.freeze(shadowComparisons);review.shadowErrors=Object.freeze(shadowErrors);review.optionalRoleErrors=Object.freeze(optionalRoleErrors);review.modelEconomics=review.usageKnown&&economicsComplete?buildModelEconomicsScorecard(economicsRecords):null;this.logger.info?.({event:'model_routing_evidence',jobId:job.id,registryRevision:modelRouter.registryRevision,productionCalls:review.modelInferenceCount,shadowCalls:review.shadowInferenceCount,scoutCalls:roleCalls.filter(x=>!x.shadow&&x.role==='scout').length,adjudicatorCalls:roleCalls.filter(x=>!x.shadow&&x.role==='adjudicator').length,shadowErrors:review.shadowErrors.length,optionalRoleErrors:review.optionalRoleErrors.length,usage:review.usage,usageKnown:review.usageKnown,economicsComplete,economics:review.modelEconomics});
     if(!fullSnapshot.coverageComplete){review.coverageComplete=false;review.verdict='incomplete';}
-    review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},modelRouting:{contractVersion:1,registryRevision:modelRouter.registryRevision,modelEvidence},chunks:evidenceEntries});
+    review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),risk:fingerprint(qualityEvidence.risk||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},modelRouting:{contractVersion:1,registryRevision:modelRouter.registryRevision,modelEvidence},chunks:evidenceEntries});
     review.reviewSubjectFingerprint=computeReviewSubjectFingerprint({subject:reviewSubject(fullSnapshot),diffFingerprint:fullSnapshot.diffFingerprint,policyFingerprint:policy.fingerprint||'<none>',evidenceManifestDigest:review.evidenceManifestDigest,promptContractVersion:REVIEW_PROMPT_CONTRACT_VERSION,reviewProfile:profile.name,model:review.codexModel});
     return{snapshot:fullSnapshot,review};
   }
