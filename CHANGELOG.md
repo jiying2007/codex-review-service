@@ -1,7 +1,8 @@
 # Changelog
 
-## 7.8.0
+## 8.0.0
 
+- **Breaking migration**: only explicitly named GitLab instances; no default Legacy webhook route, two-file catalog inference, Schema 1 catalog/manifest, or old Nginx proxy. Use per-host standalone Services plus credential-free Edge; migration is manual and fail-closed.
 - Generalize credential-free Sharded Edge/Catalog to 2–16 independent GitLab instances, with canonical instance-qualified repository IDs, fixed private-network upstream maps, uncertainty-safe repository observations and backward-compatible Legacy routing.
 - Ship opt-in per-host single-writer Compose deployment, with external verified volumes, isolated secrets and no direct host port exposure. Add content-bound private credential preflight across Legacy/Sensor.
 - Add Prometheus fleet alert rules, importable Grafana dashboard, per-instance and per-repository visibility without claiming remote permissions or treating missing observations as zero.
