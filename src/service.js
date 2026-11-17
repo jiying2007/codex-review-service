@@ -3,7 +3,7 @@
 const crypto=require('node:crypto');
 const path=require('node:path');
 const{genAiUsageAttributes}=require('./telemetry');
-const{buildSnapshot,buildPrompt,validateChunkResult,consolidateReviews,mergeCurrentEvidenceFindings,emptyReview,deterministicSummary,formatSummary,createServiceReviewReceipt}=require('./review');
+const{buildSnapshot,buildPrompt,validateChunkResult,consolidateReviews,mergeCurrentEvidenceFindings,emptyReview,deterministicSummary,formatSummary,conservativeClaimAudit,createServiceReviewReceipt}=require('./review');
 const{runCodex}=require('./codex');
 const{getEffectivePolicy}=require('./policy');
 const{buildReviewContext}=require('./context');
@@ -208,6 +208,13 @@ class ReviewService{
     let review=consolidateReviews(reviewSnapshot,results,policy);
     const deterministicAnalyzerFindings=anchorAnalyzerFindings(fullSnapshot,qualityEvidence.analyzerFindings);
     review=mergeCurrentEvidenceFindings(review,deterministicAnalyzerFindings,policy);
+    const claimAudit=conservativeClaimAudit(review.findings,fullSnapshot);
+    review.claimAudit=Object.freeze({reviewedFindings:claimAudit.findings.length,
+      automaticallyRemoved:claimAudit.automaticallyRemoved,warnings:claimAudit.warnings});
+    if(claimAudit.warnings.length){
+      fullSnapshot.advisories.push('conservative_claim_conflicts:'+claimAudit.warnings.length);
+      this.telemetry?.metrics.inc('codex_review_claim_fact_conflicts_total',claimAudit.warnings.length);
+    }
     review.summary=deterministicSummary(review.findings,policy);review.codexVersion=version;review.codexModel=[...models].join(',');review.usage=usage;review.usageKnown=roleCalls.every(call=>call.usageKnown)&&optionalRoleErrors.length===0;review.estimatedTokenBudget=estimatedTotal;review.reviewProfile=profile.name;review.impactNodes=qualityEvidence.impact?.nodes?.length||0;review.impactBytes=qualityEvidence.impact?.bytes||0;review.analyzerFindingCount=qualityEvidence.analyzerFindings?.length||0;fullSnapshot.coverageLedger=evidenceCoverageLedger(fullSnapshot,reviewSnapshot.chunks,results.length);review.coverageLedger=fullSnapshot.coverageLedger;review.modelCoverage=fullSnapshot.coverageLedger;review.qualityEvidenceStatus=Object.freeze({degraded:qualityDegradations.length>0,reasons:qualityDegradations});review.contextCoverage=Object.freeze({omittedSlices:contextOmissions.length,omittedFiles:[...new Set(contextOmissions.map(item=>item.path))].slice(0,80),reasons:contextOmissions.reduce((out,item)=>(out[item.reason]=(out[item.reason]||0)+1,out),{})});review.saturatedChunks=Object.freeze(saturatedChunks);review.sourceCache=sourceCacheStats();review.modelInferenceCount=roleCalls.filter(x=>!x.shadow).length;review.shadowInferenceCount=roleCalls.filter(x=>x.shadow).length;review.modelRoutingContractVersion=1;review.modelRegistrySource=modelRouter.registrySource;review.modelRegistryRevision=modelRouter.registryRevision;review.modelEvidence=Object.freeze(modelEvidence);review.shadowModelEvidence=Object.freeze(shadowModelEvidence);review.shadowComparisons=Object.freeze(shadowComparisons);review.shadowErrors=Object.freeze(shadowErrors);review.optionalRoleErrors=Object.freeze(optionalRoleErrors);review.modelEconomics=review.usageKnown&&economicsComplete?buildModelEconomicsScorecard(economicsRecords):null;this.logger.info?.({event:'model_routing_evidence',jobId:job.id,registryRevision:modelRouter.registryRevision,productionCalls:review.modelInferenceCount,shadowCalls:review.shadowInferenceCount,scoutCalls:roleCalls.filter(x=>!x.shadow&&x.role==='scout').length,adjudicatorCalls:roleCalls.filter(x=>!x.shadow&&x.role==='adjudicator').length,shadowErrors:review.shadowErrors.length,optionalRoleErrors:review.optionalRoleErrors.length,usage:review.usage,usageKnown:review.usageKnown,economicsComplete,economics:review.modelEconomics});
     if(!fullSnapshot.coverageComplete){review.coverageComplete=false;review.verdict='incomplete';}
     review.evidenceManifestDigest=fingerprint({version:1,diffFingerprint:fullSnapshot.diffFingerprint,coverageGaps:fullSnapshot.coverageGaps,advisories:fullSnapshot.advisories,coverageLedger:fullSnapshot.coverageLedger,fallbacks:fingerprint(fullSnapshot.rawDiffFallbacks),profile:profile.name,quality:{impact:fingerprint(qualityEvidence.impact||{}),analyzers:fingerprint(qualityEvidence.analyzerFindings||[]),degradationReasons:qualityDegradations},modelRouting:{contractVersion:1,registryRevision:modelRouter.registryRevision,modelEvidence},chunks:evidenceEntries});
