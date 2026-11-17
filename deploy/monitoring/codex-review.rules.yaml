@@ -1,0 +1,40 @@
+groups:
+  - name: codex-review-sharded
+    interval: 30s
+    rules:
+      - alert: CodexReviewEdgeUnavailable
+        expr: up{job="codex-review-sharded-edge"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Code review edge cannot be scraped"
+      - alert: CodexReviewInstanceNotReady
+        expr: codex_review_instance_ready == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Independent GitLab review instance not ready"
+      - alert: CodexReviewMetricsUnavailable
+        expr: codex_review_instance_metrics_scrape_ok == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Instance metrics missing; do not interpret as zero"
+      - alert: CodexReviewRepositoryMetricsIncomplete
+        expr: codex_review_instance_repository_metrics_complete == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Repository metric cardinality truncated"
+      - alert: CodexReviewOldestQueuedJob
+        expr: codex_review_instance_oldest_queue_age_seconds > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Code review queue has been waiting more than 15 minutes"
+      - alert: CodexReviewStatusWriteUncertain
+        expr: codex_review_instance_status_uncertain_targets > 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "GitLab status writes require reconciliation"
