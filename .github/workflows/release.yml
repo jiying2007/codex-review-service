@@ -332,8 +332,22 @@ jobs:
             actual_version="$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image")"
             actual_arch="$(docker image inspect -f '{{ .Architecture }}' "$image")"
             actual_config="$(docker image inspect -f '{{ .Id }}' "$image")"
-            if [[ "$actual_sha" != "$RELEASE_SHA" || "$actual_version" != "$RELEASE_VERSION" || "$actual_arch" != "${platform#linux/}" || "$actual_config" != "$expected_config" ]]; then
-              echo "::error::Materialized image identity differs from the immutable release source for $platform." >&2
+            # Report each independent public identity field before refusing an
+            # immutable release. Never report credentials or silently downgrade.
+            if [[ "$actual_sha" != "$RELEASE_SHA" ]]; then
+              echo "::error::OCI source revision mismatch for $platform (actual=$actual_sha expected=$RELEASE_SHA)" >&2
+              exit 1
+            fi
+            if [[ "$actual_version" != "$RELEASE_VERSION" ]]; then
+              echo "::error::OCI image version mismatch for $platform (actual=$actual_version expected=$RELEASE_VERSION)" >&2
+              exit 1
+            fi
+            if [[ "$actual_arch" != "${platform#linux/}" ]]; then
+              echo "::error::OCI architecture mismatch for $platform (actual=$actual_arch expected=${platform#linux/})" >&2
+              exit 1
+            fi
+            if [[ "$actual_config" != "$expected_config" ]]; then
+              echo "::error::OCI config digest mismatch for $platform (actual=$actual_config expected=$expected_config)" >&2
               exit 1
             fi
           done
