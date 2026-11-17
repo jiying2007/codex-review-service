@@ -105,5 +105,5 @@ function main(){
  const credentials=verifyDistinctSecretFiles(process.env);
  process.stdout.write(JSON.stringify({...result,...credentials},null,2)+'\n');
 }
-if(require.main===module){try{main();}catch(e){console.error('ESHARDEDPREFLIGHT: '+String(e.message||e));process.exitCode=2;}}
+if(require.main===module){try{main();}catch(e){console.error('ESHARDEDPREFLIGHT: '+String(e?.code||'INVALID_DEPLOYMENT_CONFIGURATION'));process.exitCode=2;}}
 module.exports={checkShardedConfig,verifyDistinctSecretFiles,main};
