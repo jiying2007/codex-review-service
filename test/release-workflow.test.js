@@ -67,3 +67,23 @@ test('reusable Family and Release Integrity workflows pin the exact Product Cont
  assert.equal(expected[1],sha);
  assert.equal(releaseCore[1],sha);
 });
+
+
+test('GHCR blob materialization is required before Trivy and never weakens release evidence',()=>{
+ const resolve=release.indexOf('Resolve digest-bound platform scan identities');
+ const pull=release.indexOf('Verify both immutable OCI platform layers are retrievable');
+ const scan=release.indexOf('Scan exact amd64 manifest without filtering findings');
+ assert.ok(resolve>=0 && pull>resolve && scan>pull,'exact layer pull must precede Trivy scanning');
+ assert.match(release,/docker pull --platform "\$platform" "\$image"/);
+ assert.match(release,/timeout 180 docker pull/);
+ assert.match(release,/for attempt in 1 2 3/);
+ assert.match(release,/org\.opencontainers\.image\.revision/);
+ assert.match(release,/org\.opencontainers\.image\.version/);
+ assert.match(release,/BLOB_UNKNOWN/);
+ assert.match(release,/BUILDX_NO_DEFAULT_OCI_ARTIFACT: '1'/);
+ assert.match(release,/--provenance=mode=max/);
+ assert.match(release,/--sbom=true/);
+ assert.match(release,/node scripts\/trivy-findings-gate\.js --report TRIVY-linux-amd64\.json/);
+ assert.match(release,/node scripts\/trivy-findings-gate\.js --report TRIVY-linux-arm64\.json/);
+ assert.doesNotMatch(release,/--provenance=false|--sbom=false|TRIVY_IGNORE_UNFIXED: 'true'/);
+});
