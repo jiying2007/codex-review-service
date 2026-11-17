@@ -162,7 +162,7 @@ test('explicit multi manifest prevents silent single-instance configuration fall
   const f=fixture();try{
     delete f.manifest.schemaVersion;f.flush();
     assert.throws(()=>loadMultiManifest(f.manifestFile),/Schema 2 is required/);
-    f.manifest.schemaVersion=1;
+    f.manifest.schemaVersion=2;
     f.sensor.schemaVersion=7;f.flush();
     assert.throws(()=>loadMultiManifest(f.manifestFile),/Config Schema 8/);
     f.sensor.schemaVersion=8;
