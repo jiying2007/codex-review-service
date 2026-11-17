@@ -346,8 +346,18 @@ jobs:
               echo "::error::OCI architecture mismatch for $platform (actual=$actual_arch expected=${platform#linux/})" >&2
               exit 1
             fi
-            if [[ "$actual_config" != "$expected_config" ]]; then
-              echo "::error::OCI config digest mismatch for $platform (actual=$actual_config expected=$expected_config)" >&2
+            # Docker's classic image store reports the config digest as .Id;
+            # containerd-backed stores may report the selected child manifest
+            # digest instead. Both identities are pinned to the same verified
+            # raw OCI manifest by scripts/oci-scan-targets.js, and the entire
+            # immutable per-platform image was successfully pulled above.
+            expected_manifest="${image##*@}"
+            if [[ ! "$expected_manifest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Missing verified per-platform OCI manifest identity for $platform." >&2
+              exit 1
+            fi
+            if [[ "$actual_config" != "$expected_config" && "$actual_config" != "$expected_manifest" ]]; then
+              echo "::error::OCI local image identity mismatch for $platform (actual=$actual_config expected_config=$expected_config expected_manifest=$expected_manifest)" >&2
               exit 1
             fi
           done

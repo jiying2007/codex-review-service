@@ -91,3 +91,15 @@ test('GHCR blob materialization is required before Trivy and never weakens relea
  assert.match(release,/node scripts\/trivy-findings-gate\.js --report TRIVY-linux-arm64\.json/);
  assert.doesNotMatch(release,/--provenance=false|--sbom=false|TRIVY_IGNORE_UNFIXED: 'true'/);
 });
+
+test('release accepts only digest-bound config or child-manifest Docker image identity',()=>{
+ const required=[
+   'expected_manifest="${image##*@}"',
+   'if [[ ! "$expected_manifest" =~ ^sha256:[0-9a-f]{64}$ ]]',
+   'if [[ "$actual_config" != "$expected_config" && "$actual_config" != "$expected_manifest" ]]',
+   'Missing verified per-platform OCI manifest identity',
+   'scripts/oci-scan-targets.js',
+   'docker pull --platform "$platform" "$image"'
+ ];
+ for(const clause of required)assert.ok(release.includes(clause),clause);
+});
