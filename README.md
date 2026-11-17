@@ -32,6 +32,8 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 <!-- END GENERATED PRODUCT CONTRACT -->
 
+**Multi-GitLab v8 breaking ingress:** a shared gateway only accepts `POST /webhooks/gitlab/<instance-id>`. The unqualified `POST /webhooks/gitlab` is intentionally rejected (404); the standalone worker still receives that internal path after fixed routing and verifies the original signature. Catalog and multi-instance manifest are both Schema 2, with explicit named targets and no Legacy fallback. See [Independent multi-GitLab deployment](docs/MULTI_GITLAB_SHARDED.zh-CN.md).
+
 GitLab compatibility is capability-driven rather than a pile of scattered version branches:
 
 - **Classic profile** (`14.6.1` through `<15.7`): uses `GET .../merge_requests/:iid/changes` and proceeds only when GitLab explicitly returns `overflow: false`.
