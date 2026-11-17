@@ -1,5 +1,12 @@
 # Codex Review 覆盖率与低成本深度审查
 
+## v7.7.10：不可信 Diff 拒绝错误行锚
+
+- 精确固定已发布的 Safe Core 4.18.10：任一 Unified Diff Hunk 长度、坐标或顺序出现矛盾，则整个 MR Diff 不产生 `anchor_verified`；高风险 Finding 保留并标记证据不完整，不自动抑制或删除。
+- 函数影响中的候选调用仅来自源码文件，不把 Markdown 等自然语言误当作实际调用；仍不声称词法匹配等于编译器解析。
+- 离线 Benchmark 输出使用真实数据集摘要；真实召回率、误报率和 Token 改善必须通过额外受控 Holdout 评测，不以静态测试冒充。
+
+
 ## 五种不同的覆盖证据
 
 1. Provider completeness：验证 GitLab Classic overflow=false 或 Modern 分页与 versions.real_size，证明从 GitLab 枚举完整，不等同于模型审查完整。
