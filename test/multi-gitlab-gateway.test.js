@@ -147,7 +147,7 @@ test('chunked oversized HTTP body retains a complete 413 without an upfront leng
     req.on('aborted',()=>{});
   });
   const backendPort=await listen(backend);
-  const manifest={server:{defaultInstance:'legacy'},instances:[{id:'legacy'}]};
+  const manifest={server:{},instances:[{id:'legacy'}]};
   const gateway=createMultiGateway({manifest,lookupPort:()=>backendPort});
   const port=await listen(gateway);
   try{
