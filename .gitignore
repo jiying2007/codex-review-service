@@ -12,4 +12,8 @@ deploy/docker/multi-instance.json
 deploy/docker/legacy.json
 deploy/docker/sensor.json
 deploy/docker/catalog.json
+# All operator-generated per-instance catalogs, targets and private configs
+# are excluded; only intentionally authored *.example.json templates are addable.
+deploy/docker/*.json
+!deploy/docker/*.example.json
 .DS_Store
