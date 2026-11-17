@@ -110,6 +110,7 @@ test('edge rejects untrusted arbitrary proxy targets and malformed metric labels
  assert.throws(()=>targetMap({legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787},other:{host:'other',port:8787}}),/dynamic/);
  const filtered=selectMetrics([
   'codex_review_queue_depth 3',
+  'codex_review_retained_input_tokens 120',
   'codex_review_repository_jobs{project_id="113",status="queued"} 2',
   'codex_review_repository_jobs{project_id="113",status="evil"} 7',
   'codex_review_repository_jobs{project_id="9999999999999999999999999999",status="queued"} 8',
@@ -118,6 +119,7 @@ test('edge rejects untrusted arbitrary proxy targets and malformed metric labels
   'password{secret="x"} 1'
  ].join('\n'),'legacy').join('\n');
  assert.match(filtered,/codex_review_instance_queue_depth\{instance="legacy"\} 3/);
+ assert.match(filtered,/codex_review_instance_retained_input_tokens\{instance="legacy"\} 120/);
  assert.match(filtered,/codex_review_repository_known_model_tokens_today\{instance="legacy",project_id="113"\} 90/);
  assert.doesNotMatch(filtered,/password|evil|999999999999999999999/);
 });

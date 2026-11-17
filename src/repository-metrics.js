@@ -18,15 +18,16 @@ function renderRepositoryMetrics(store,{maxProjects=MAX_PROJECTS,now=Date.now()}
  const since=new Date(now);
  if(!Number.isFinite(since.getTime()))throw new TypeError('Invalid metrics timestamp');
  since.setUTCHours(0,0,0,0);
- const tokens=store.db.prepare(
+ // Reuse the bounded list of project IDs rather than re-grouping all historic jobs.
+ const placeholders=projects.map(()=>'?').join(',');
+ const tokens=projects.length?store.db.prepare(
    "SELECT j.project_id,"+
    "SUM(CASE WHEN c.usage_known=1 THEN COALESCE(c.input_tokens,0)+COALESCE(c.output_tokens,0) ELSE 0 END) known,"+
    "SUM(CASE WHEN c.usage_known=0 THEN 1 ELSE 0 END) unknown "+
    "FROM model_calls c JOIN review_jobs j ON j.id=c.job_id "+
-   "WHERE c.started_at>=? AND j.project_id IN "+
-   "(SELECT project_id FROM review_jobs GROUP BY project_id ORDER BY project_id LIMIT ?) "+
+   "WHERE c.started_at>=? AND j.project_id IN ("+placeholders+") "+
    "GROUP BY j.project_id"
- ).all(since.toISOString(),maxProjects);
+ ).all(since.toISOString(),...projects.map(p=>p.project_id)):[];
  const usage=new Map(tokens.map(x=>[x.project_id,x]));
  const lines=[
    '# TYPE codex_review_repository_metrics_complete gauge',
