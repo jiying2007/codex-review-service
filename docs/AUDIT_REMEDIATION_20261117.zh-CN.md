@@ -22,3 +22,13 @@ V8.0.0 的不可变发行和独立 Release Integrity 已实际完成，精确源
 公网代理仅开放 POST /webhooks/gitlab/<instance-id>；裸入口必须 404。管理读接口只允许受认证的管理网络。跨主机连接必须验证 TLS 对端身份或受控 VPN，不能因目标是私有别名就跳过验证。每个实例必须有独立凭据、数据库与唯一 Writer；切换前 drain、备份、验证恢复和原镜像回滚。不要在没有现场执行通道时关闭 Issue #115。
 
 保持 Advisory，直到 Issue #114 的最终服务端 Ref 约束得到真实验证。不将 CI、不可变发行或本地 receipt 当成强制合并授权。没有明确允许的独立模型后端时，不运行真实质量 A/B、不消耗 Codex/ChatGPT Work 额度，也不伪造质量提升或 Token 节省。
+
+## 已提供的入口与采集配置
+
+`deploy/nginx/fleet-ingress.conf.example` 是运维 Nginx `http {}` 内的配置片段：公网 TLS 仅允许具名 Webhook POST，不转发管理路径；另一个 loopback 管理端口要求 `ssl_verify_client on`。必须独立部署真实证书和信任根，不允许 `insecure_skip_verify`。代理不自动重放 Webhook 请求。该片段不替代 Edge 到各主机的双向 TLS/VPN 验收。
+
+`deploy/monitoring/prometheus-scrape.example.yaml` 使用客户端证书和显式服务端名称，启用 `honor_labels: true` 保留 exporter 的 GitLab `instance` 标签，用独立 `edge_id` 区分采集入口。否则 Prometheus 默认目标标签冲突会将实例重命名为 `exported_instance`，破坏现有按实例看板。新增无目标、缺少完整性证据的告警，不用零填补缺失观测。
+
+## 发布准备
+
+只有仓库 Owner 可明确请求 `/prepare-release 8.0.1 <exact-main-sha>`；脚本要求该主线 SHA 已通过完整 CI，只允许下一补丁版和主线内已审查的发行说明。生成新分支时只允许修改版本元数据、Changelog 与现有生成文档，不更新 main/已有分支/Tag/Release，不自动批准、合并或发布。后续仍通过正常 PR、主线资格与独立发行完整性验证。

@@ -38,3 +38,15 @@ groups:
         labels: {severity: critical}
         annotations:
           summary: "GitLab status writes require reconciliation"
+      - alert: CodexReviewEdgeTargetMissing
+        expr: absent(up{job="codex-review-sharded-edge"})
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "No fleet scrape target exists; missing data is not healthy"
+      - alert: CodexReviewRepositoryMetricMissing
+        expr: (codex_review_instance_metrics_scrape_ok == 1) unless on(job, edge_id, instance) codex_review_instance_repository_metrics_complete
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Readable endpoint omitted repository completeness evidence"
