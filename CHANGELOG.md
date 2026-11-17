@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.8.0
+
+- Generalize credential-free Sharded Edge/Catalog to 2–16 independent GitLab instances, with canonical instance-qualified repository IDs, fixed private-network upstream maps, uncertainty-safe repository observations and backward-compatible Legacy routing.
+- Ship opt-in per-host single-writer Compose deployment, with external verified volumes, isolated secrets and no direct host port exposure. Add content-bound private credential preflight across Legacy/Sensor.
+- Add Prometheus fleet alert rules, importable Grafana dashboard, per-instance and per-repository visibility without claiming remote permissions or treating missing observations as zero.
+- Correct retained Token metrics as Gauges, preserve genuine process counters, cache synchronous scrape snapshots, and bound historical project aggregation by the current authorized project scope.
+- Add offline source-bound quality/Token comparison with high-severity recall, precision, coverage and unknown-usage non-regression gates. It is research-only, not production qualification.
+- Keep Safe Core 4.18.10, DB Schema 12, Config Schema 8 and existing Legacy/Sensor behavior; no backend/database migration, model invocation or on-prem deployment is implied.
+
 ## 7.7.12
 
 - Add a stateless, credential-free Node sharded Edge using the same verified Service OCI image. The edge forwards only fixed Legacy/Sensor Webhook and per-instance read endpoints, retains old Legacy routes, and does not execute Codex or open any SQLite database.
