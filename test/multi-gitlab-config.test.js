@@ -161,7 +161,7 @@ test('invalid or reused GitLab API and webhook secrets fail closed',()=>{
 test('explicit multi manifest prevents silent single-instance configuration fallback',()=>{
   const f=fixture();try{
     delete f.manifest.schemaVersion;f.flush();
-    assert.throws(()=>loadMultiManifest(f.manifestFile),/unsupported multi-instance manifest schema/);
+    assert.throws(()=>loadMultiManifest(f.manifestFile),/Schema 2 is required/);
     f.manifest.schemaVersion=1;
     f.sensor.schemaVersion=7;f.flush();
     assert.throws(()=>loadMultiManifest(f.manifestFile),/Config Schema 8/);
