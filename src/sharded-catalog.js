@@ -3,7 +3,19 @@
 // An explicitly configured project is not evidence of remote membership.
 const fs=require('node:fs');
 const crypto=require('node:crypto');
-const INSTANCE_IDS=['legacy','sensor'];
+const DEFAULT_INSTANCES=['legacy','sensor'];
+const INSTANCE_ID=/^[a-z][a-z0-9-]{0,31}$/;
+const MAX_INSTANCES=16;
+function orderedIds(configs){
+ if(!configs||typeof configs!=='object'||Array.isArray(configs))throw new TypeError('Standalone instance configs are required');
+ const ids=Object.keys(configs);
+ if(ids.length<2||ids.length>MAX_INSTANCES||!ids.includes('legacy')||ids.some(id=>!INSTANCE_ID.test(id)))
+   throw new TypeError('Catalog requires legacy and 1-15 bounded independent GitLab IDs');
+ return ids.sort((a,b)=>{
+   const priority=id=>DEFAULT_INSTANCES.indexOf(id)>=0?DEFAULT_INSTANCES.indexOf(id):2;
+   return priority(a)-priority(b)||a.localeCompare(b);
+ });
+}
 const MAX_PROJECTS=256,MAX_GROUPS=64,MAX_FILE_BYTES=1024*1024;
 function requireId(value,label) {
   if(!Number.isSafeInteger(value)||value<1)throw new TypeError('Unsafe '+label+' GitLab ID');
@@ -21,12 +33,15 @@ function canonicalOrigin(value) {
   return url.origin.toLowerCase()+pathname;
 }
 function buildShardedCatalog(configs) {
-  if(!configs||typeof configs!=='object')throw new TypeError('Two standalone configs are required');
-  const instances=INSTANCE_IDS.map(id=>{
+  const ids=orderedIds(configs);
+  const origins=new Set();
+  const instances=ids.map(id=>{
     const cfg=configs[id];
     if(cfg?.schemaVersion!==8||!cfg.gitlab||!cfg.webhook)throw new TypeError(id+' requires Config Schema 8');
     const origin=canonicalOrigin(cfg.gitlab.baseUrl);
     if(canonicalOrigin(cfg.webhook.expectedInstance)!==origin)throw new TypeError(id+' webhook origin mismatch');
+    if(origins.has(origin))throw new TypeError('Different instances must have different GitLab origins');
+    origins.add(origin);
     const rawProjects=cfg.gitlab.projects,rawGroups=cfg.gitlab.groups;
     if(!Array.isArray(rawProjects)||rawProjects.length>MAX_PROJECTS||
        !Array.isArray(rawGroups)||rawGroups.length>MAX_GROUPS ||
@@ -46,7 +61,6 @@ function buildShardedCatalog(configs) {
       groupSelectors:groupIds,
       groupEnumeration:'requires_live_authenticated_preflight'};
   });
-  if(instances[0].gitlabOrigin===instances[1].gitlabOrigin)throw new TypeError('Different instances must have different GitLab origins');
   const sourceDigest=crypto.createHash('sha256').update(JSON.stringify(instances)).digest('hex');
   return Object.freeze({schemaVersion:1,kind:'sharded_repository_catalog',
     sourceDigest,modelCalls:0,freshApiQuery:false,instances,
@@ -54,12 +68,16 @@ function buildShardedCatalog(configs) {
 }
 function validateShardedCatalog(catalog) {
   if(!catalog||catalog.schemaVersion!==1||catalog.kind!=='sharded_repository_catalog'||
-     !Array.isArray(catalog.instances)||catalog.instances.length!==2)
+     !Array.isArray(catalog.instances)||catalog.instances.length<2||catalog.instances.length>MAX_INSTANCES)
     throw new TypeError('Sharded repository catalog has an invalid schema');
-  const configs={};
-  for(let i=0;i<INSTANCE_IDS.length;i++){
-    const id=INSTANCE_IDS[i],entry=catalog.instances[i];
-    if(entry?.id!==id||!Array.isArray(entry.explicitProjects)||!Array.isArray(entry.groupSelectors))
+  const configs=Object.create(null);
+  const ids=catalog.instances.map(item=>item?.id);
+  if(ids.some(id=>typeof id!=='string'||!INSTANCE_ID.test(id))||
+     ids.length!==new Set(ids).size||!ids.includes('legacy'))
+    throw new TypeError('Sharded catalog has invalid or duplicate instance identities');
+  for(let i=0;i<ids.length;i++){
+    const id=ids[i],entry=catalog.instances[i];
+    if(!Array.isArray(entry.explicitProjects)||!Array.isArray(entry.groupSelectors))
       throw new TypeError('Sharded catalog has ambiguous instance identities');
     configs[id]={schemaVersion:8,gitlab:{
       baseUrl:entry.gitlabOrigin,projects:entry.explicitProjects.map(p=>{
@@ -100,9 +118,23 @@ function readJson(file){
   }
 }
 function main(args=process.argv.slice(2)){
-  if(args.length!==2)throw new TypeError('Usage: node src/sharded-catalog.js legacy.json sensor.json');
-  const catalog=buildShardedCatalog({legacy:readJson(args[0]),sensor:readJson(args[1])});
+  // Backward compatible two-file CLI, or an explicit id=/absolute/config.json
+  // list for >2 instances. Nothing is retrieved from GitLab or printed from secrets.
+  const configs=Object.create(null);
+  if(args.length===2&&!args.some(arg=>arg.includes('='))){
+    configs.legacy=readJson(args[0]);configs.sensor=readJson(args[1]);
+  }else{
+    if(args.length<2||args.length>MAX_INSTANCES)
+      throw new TypeError('Usage: sharded-catalog.js legacy.json sensor.json | legacy=/path sensor=/path [id=/path ...]');
+    for(const item of args){
+      const pos=item.indexOf('='),id=item.slice(0,pos),file=item.slice(pos+1);
+      if(pos<1||!INSTANCE_ID.test(id)||!file||Object.hasOwn(configs,id))
+        throw new TypeError('Invalid or duplicate instance=configuration mapping');
+      configs[id]=readJson(file);
+    }
+  }
+  const catalog=buildShardedCatalog(configs);
   process.stdout.write(JSON.stringify(catalog,null,2)+'\n');
 }
 if(require.main===module){try{main();}catch(e){console.error('ECATALOG: '+String(e.message||e));process.exitCode=2;}}
-module.exports={buildShardedCatalog,validateShardedCatalog,readJson,main};
+module.exports={buildShardedCatalog,validateShardedCatalog,readJson,main,orderedIds,INSTANCE_ID,MAX_INSTANCES};
