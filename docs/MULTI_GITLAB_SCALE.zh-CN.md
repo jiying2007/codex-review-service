@@ -57,3 +57,30 @@ Compose 模板已动态自动发放远端 Worker。
 `deploy/monitoring/codex-review.rules.yaml` 提供标准 Prometheus 规则。
 需要 Prometheus `job="codex-review-sharded-edge"` 的既有内部 scrape 目标，
 并按实际 SLO 调整阈值，避免把实例失联和真正没有任务混为一谈。不建立 ChatGPT 定时巡检。
+
+## 每台服务器的独立服务部署（只读检查优先）
+
+新增 `deploy/docker/compose.instance.yaml` 是 profile-gated 的单实例容器模板。
+每个 GitLab 实例必须使用独立的 `docker compose -p <安全实例名>` 工程名、
+两份**已经确认身份**的持久化卷和不同的 API/Webhook 凭据文件。容器内目录统一为
+`/var/lib/codex-review/tenant` 和 `/home/codex-review/tenant`，
+避免把用户输入实例 ID 插值到卷挂载路径。单实例 Config Schema 8 的
+`server.dataDir` / `codex.home` 必须与上述路径精确一致，且
+`server.host=0.0.0.0` / `server.port=8787` 仅对 Docker 私有网开放。
+示例环境需设置 `CODEX_REVIEW_IMAGE_DIGEST`、
+`CODEX_REVIEW_INSTANCE_CONFIG_FILE`、
+`CODEX_REVIEW_INSTANCE_API_TOKEN_FILE`、
+`CODEX_REVIEW_INSTANCE_WEBHOOK_TOKEN_FILE`、
+`CODEX_REVIEW_INSTANCE_STATE_VOLUME`、
+`CODEX_REVIEW_INSTANCE_HOME_VOLUME`。
+
+```bash
+# 只做配置展开，不启动新 Worker：
+docker compose -p codex-review-qa -f deploy/docker/compose.instance.yaml config --quiet
+# 生产启用前另须完成当前版本 DB Schema、唯一 Writer、备份与 IAM 检查。
+# 正式维护窗口、确认配置与受保护独立网络后才允许启用 profile。
+```
+
+本模板不发布宿主机端口。远端服务需要由独立审核的 mTLS/VPN
+隧道 sidecar 连接到 Edge 的同名私有网络别名；不要把原始 GitLab API
+或无认证审查服务直接暴露在公共网络。
