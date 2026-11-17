@@ -40,4 +40,4 @@ GET /repositories*、/instances/*、/metrics 必须仅允许可信管理内网�
 
 正式切换前先只读验证当前唯一 Writer 和数据库 Schema 12；等待队列清空，核验 Model Call started/unknown 与所有 Publication/Notification Outbox 和 status uncertainty，再做一致性备份、停止原 Writer、验证新旧版本回滚备份。任何阶段不能让两个 Writer 同时访问同一个 SQLite 卷。
 
-模型执行需要独立资源授权，notifications.enabled=false 不代表模型不会调用。这里的检查**不启动模型、不发送真实 Webhook**，也不是生产可用性证明。正式验收必须包含一个实例断线时另一个继续处理、跨仓库公平调度、真实 GitLab Webhook 签名拒绝和状态恢复。
+模型执行需要独立资源授权，notifications.enabled=false 不代表模型不会调用。这里的检查**不启动模型、不发送真实 Webhook**，也不是生产可用性证明；**不能宣称生产部署已完成**。正式验收必须包含一个实例断线时另一个继续处理、跨仓库公平调度、真实 GitLab Webhook 签名拒绝和状态恢复。
