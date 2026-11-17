@@ -4,7 +4,7 @@
 // identities come from fixed trusted instance names, never from webhook data.
 const http=require('node:http');
 const {targetFor}=require('./multi-gitlab-gateway');
-const {readJson,validateShardedCatalog}=require('./sharded-catalog');
+const {readJson,validateShardedCatalog,INSTANCE_ID,MAX_INSTANCES}=require('./sharded-catalog');
 const {contract}=require('./product-contract');
 const MAX_BODY=10*1024*1024,MAX_GET_BYTES=256*1024,UPSTREAM_TIMEOUT=2000;
 const INSTANCES=['legacy','sensor'];
@@ -29,16 +29,21 @@ function sendJson(res,code,body){
   'Content-Length':bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
  res.end(bytes);
 }
-function targetMap(targets){
+function targetMap(targets,instanceIds=INSTANCES){
+ if(!Array.isArray(instanceIds)||instanceIds.length<2||instanceIds.length>MAX_INSTANCES||
+    instanceIds.some(id=>!INSTANCE_ID.test(id))||new Set(instanceIds).size!==instanceIds.length)
+   throw new TypeError('Invalid configured upstream instance IDs');
+ if(!targets||typeof targets!=='object'||Array.isArray(targets))
+   throw new TypeError('Sharded edge requires a trusted fixed target map');
  const result={};
- for(const id of INSTANCES){
+ for(const id of instanceIds){
    const target=targets?.[id];
    if(!target||!['127.0.0.1',id].includes(target.host) ||
       !Number.isSafeInteger(target.port)||target.port<1||target.port>65535)
      throw new TypeError('Sharded edge requires a fixed trusted per-instance upstream');
    result[id]=Object.freeze({host:target.host,port:target.port});
  }
- if(Object.keys(targets).length!==INSTANCES.length)
+ if(Object.keys(targets).length!==instanceIds.length)
    throw new TypeError('Sharded edge refuses additional dynamic upstream hosts');
  return Object.freeze(result);
 }
@@ -108,13 +113,13 @@ function readUpstream(target,path,timeoutMs=UPSTREAM_TIMEOUT){
    req.on('error',()=>finish(0));
  });
 }
-async function readStatus(targets,path){
- const results=await Promise.all(INSTANCES.map(async id=>{
+async function readStatus(targets,path,instanceIds=INSTANCES){
+ const results=await Promise.all(instanceIds.map(async id=>{
    const r=await readUpstream(targets[id],path);
    return {id,ready:r.status===200,reachable:r.status>0};
  }));
  const ready=results.filter(item=>item.ready).length;
- return {ready,total:INSTANCES.length,instances:results};
+ return {ready,total:instanceIds.length,instances:results};
 }
 function scalar(value){return /^\d+(?:\.\d+)?$/.test(value)&&Number.isFinite(Number(value))?value:null;}
 function selectMetrics(body,id){
@@ -135,7 +140,8 @@ function selectMetrics(body,id){
  return lines;
 }
 async function scrapeMetrics(targets,catalog){
- const result=await Promise.all(INSTANCES.map(async id=>{
+ const result=await Promise.all(catalog.instances.map(async item=>{
+   const id=item.id;
    const [health,metrics]=await Promise.all([
      readUpstream(targets[id],'/health/ready'),
      readUpstream(targets[id],'/metrics')
@@ -177,23 +183,65 @@ async function scrapeMetrics(targets,catalog){
  }
  return lines.join('\n')+'\n';
 }
+
+// Read-only, non-authoritative observed metrics attached to the exact configured
+// repository scope. Missing evidence is NEVER converted to a zero/healthy claim.
+async function repositoryStatus(targets,catalog){
+ const instances=await Promise.all(catalog.instances.map(async item=>{
+   const id=item.id;
+   const [health,metrics]=await Promise.all([
+     readUpstream(targets[id],'/health/ready'),
+     readUpstream(targets[id],'/metrics')
+   ]);
+   const lines=metrics.status===200?selectMetrics(metrics.body,id):[];
+   let complete=null;
+   const observations=new Map();
+   for(const line of lines){
+     if(line==='codex_review_instance_repository_metrics_complete{instance="'+id+'"} 1')complete=true;
+     if(line==='codex_review_instance_repository_metrics_complete{instance="'+id+'"} 0')complete=false;
+     const m=/^codex_review_repository_jobs\{instance="([a-z][a-z0-9-]{0,31})",project_id="([1-9][0-9]*)",status="(total|queued|running)"\} (\d+)$/.exec(line);
+     if(!m||m[1]!==id)continue;
+     const key=Number(m[2]);
+     if(!observations.has(key))observations.set(key,{total:null,queued:null,running:null});
+     observations.get(key)[m[3]]=Number(m[4]);
+   }
+   return {id,ready:health.status===200,metricsReadable:metrics.status===200,
+     metricsComplete:complete,
+     explicitProjects:item.explicitProjects.map(project=>{
+       const jobs=observations.get(project.projectId);
+       const state=metrics.status!==200?'metrics_unavailable':
+         jobs?'local_job_history_observed_not_remote_verified':
+         complete===false?'metrics_truncated':
+         complete===true?'configured_no_local_job_history':'metrics_incomplete';
+       return {...project,observationStatus:state,queue:jobs||null};
+     }),
+     groupEnumeration:item.groupEnumeration};
+ }));
+ return {schemaVersion:1,kind:'sharded_repository_observations',
+   observedAt:new Date().toISOString(),catalogDigest:catalog.sourceDigest,
+   remoteAuthorizationVerified:false,instances};
+}
+
 function createShardedEdge({catalog,targets={
  legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787}
  }}={}){
- const source=validateShardedCatalog(catalog),upstreams=targetMap(targets);
- const ids=new Set(INSTANCES);
+ const source=validateShardedCatalog(catalog),instanceIds=source.instances.map(x=>x.id),upstreams=targetMap(targets,instanceIds);
+ const ids=new Set(instanceIds);
  const server=http.createServer({maxHeaderSize:16*1024},async(req,res)=>{
    try{
      const route=targetFor(req.method,req.url,ids,'legacy');
      if(route){proxy(req,res,upstreams[route.id],route.path);return;}
      if(req.method!=='GET'||!new Set(['/health/live','/health/ready',
-       '/health/dependencies','/health/ingress','/version','/metrics','/repositories']).has(req.url)){
+       '/health/dependencies','/health/ingress','/version','/metrics','/repositories','/repositories/status']).has(req.url)){
        req.resume();sendJson(res,404,{error:'not_found'});return;
      }
      if(req.url==='/health/live'){sendJson(res,200,{status:'ok'});return;}
      if(req.url==='/version'){sendJson(res,200,{serviceVersion:contract.serviceVersion,
-       mode:'sharded-edge',instances:INSTANCES});return;}
+       mode:'sharded-edge',instances:instanceIds});return;}
      if(req.url==='/repositories'){sendJson(res,200,source);return;}
+     if(req.url==='/repositories/status'){
+       sendJson(res,200,await repositoryStatus(upstreams,source));return;
+     }
      if(req.url==='/metrics'){
        const body=await scrapeMetrics(upstreams,source);
        res.writeHead(200,{'Content-Type':'text/plain; version=0.0.4; charset=utf-8',
@@ -202,7 +250,7 @@ function createShardedEdge({catalog,targets={
      }
      const dependencies=req.url==='/health/dependencies';
      const ingress=req.url==='/health/ingress';
-     const checks=await readStatus(upstreams,dependencies?'/health/dependencies':'/health/ready');
+     const checks=await readStatus(upstreams,dependencies?'/health/dependencies':'/health/ready',instanceIds);
      const healthy=ingress?checks.ready>0:checks.ready===checks.total;
      sendJson(res,healthy?200:503,{
        status:ingress?(healthy?'routable':'unavailable'):healthy?(dependencies?'healthy':'ready'):'degraded',
@@ -220,10 +268,13 @@ function createShardedEdge({catalog,targets={
 function main(){
  const file=process.env.CODEX_REVIEW_SHARDED_CATALOG_FILE||'/etc/codex-review/catalog.json';
  const catalog=validateShardedCatalog(readJson(file));
- const server=createShardedEdge({catalog});
+ const defaults={legacy:{host:'legacy',port:8787},sensor:{host:'sensor',port:8787}};
+ const targets=process.env.CODEX_REVIEW_SHARDED_TARGETS_FILE?
+   readJson(process.env.CODEX_REVIEW_SHARDED_TARGETS_FILE):defaults;
+ const server=createShardedEdge({catalog,targets});
  server.listen(8787,'0.0.0.0',()=>process.stdout.write(JSON.stringify({event:'sharded_edge_ready',port:8787})+'\n'));
  process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
  process.on('SIGINT',()=>server.close(()=>process.exit(0)));
 }
 if(require.main===module){try{main();}catch(error){console.error('ESHARDEDEDGE: '+String(error.message||error));process.exitCode=2;}}
-module.exports={createShardedEdge,readStatus,scrapeMetrics,selectMetrics,targetMap,readUpstream};
+module.exports={createShardedEdge,readStatus,scrapeMetrics,selectMetrics,targetMap,readUpstream,repositoryStatus};
