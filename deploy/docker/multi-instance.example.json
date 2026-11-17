@@ -1,19 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "server": {
     "host": "0.0.0.0",
     "port": 8787,
-    "defaultInstance": "legacy",
     "sharedProcessTrustAcknowledged": true
   },
   "instances": [
     {
-      "id": "legacy",
-      "configFile": "/etc/codex-review/legacy.json",
-      "homeDir": "/home/codex-review/legacy",
+      "id": "primary",
+      "configFile": "/etc/codex-review/primary.json",
+      "homeDir": "/home/codex-review/primary",
       "secretFiles": {
-        "GITLAB_API_TOKEN_FILE": "/run/secrets/gitlab_legacy_api",
-        "GITLAB_WEBHOOK_SIGNING_TOKEN_FILE": "/run/secrets/gitlab_legacy_webhook"
+        "GITLAB_API_TOKEN_FILE": "/run/secrets/gitlab_primary_api",
+        "GITLAB_WEBHOOK_SIGNING_TOKEN_FILE": "/run/secrets/gitlab_primary_webhook"
       }
     },
     {
