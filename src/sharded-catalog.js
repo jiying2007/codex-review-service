@@ -33,9 +33,9 @@ function buildShardedCatalog(configs) {
        rawProjects.length+rawGroups.length===0)throw new TypeError(id+' project/group scope is invalid or over limit');
     const projectIds=rawProjects.map(p=>requireId(p,'project')).sort((a,b)=>a-b);
     const groupIds=rawGroups.map(g=>{
-      if(!g||typeof g!=='object'||typeof g.includeSubgroups!=='boolean')
+      if(!g||typeof g!=='object'||(g.includeSubgroups!==undefined&&typeof g.includeSubgroups!=='boolean'))
         throw new TypeError('Invalid GitLab group selector');
-      return {id:requireId(g.id,'group'),includeSubgroups:g.includeSubgroups};
+      return {id:requireId(g.id,'group'),includeSubgroups:g.includeSubgroups===true};
     }).sort((a,b)=>a.id-b.id);
     if(new Set(projectIds).size!==projectIds.length ||
        new Set(groupIds.map(g=>g.id)).size!==groupIds.length)throw new TypeError('Duplicate scope ID');
