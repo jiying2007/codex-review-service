@@ -72,7 +72,9 @@
     "docs/MULTI_GITLAB_SHARDED.zh-CN.md",
     "docs/MULTI_GITLAB_SCALE.zh-CN.md",
     "docs/METRICS_CORRECTNESS.zh-CN.md",
-    "docs/QUALITY_TOKEN_BENCHMARK.zh-CN.md"
+    "docs/QUALITY_TOKEN_BENCHMARK.zh-CN.md",
+    "deploy/nginx/*.example",
+    "docs/AUDIT_REMEDIATION_20261117.zh-CN.md"
   ],
   "scripts": {
     "core:init": "git submodule update --init --recursive",

@@ -1,4 +1,4 @@
-# 审查质量—Token 成本离线门禁（7.8 候选）
+# 审查质量—Token 成本离线门禁（V8）
 
 `node src/review-quality-benchmark.js baseline.json candidate.json [minimumSavingsPercent]`
 

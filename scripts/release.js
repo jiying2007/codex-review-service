@@ -33,7 +33,7 @@ function expectedNodeEngine(contract){return `>=${contract.minimumNodeVersion} <
 function verifyStatic() {
   const pkg = readJson(pkgPath),lock = readJson(lockPath),contract=readJson(contractPath);
   if (!validVersion(pkg.version)) fail(`package version must be MAJOR.MINOR.PATCH: ${pkg.version}`);
-  if (pkg.version!==contract.serviceVersion) fail('package version must match product-contract.json serviceVersion.');
+  if (pkg.version!==contract.serviceVersion || pkg.version!==contract.productVersion) fail('package version must match product-contract.json serviceVersion and productVersion.');
   if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) fail('package-lock version metadata must match package.json.');
   if(pkg.engines?.node!==expectedNodeEngine(contract))fail('package Node engine must match product contract.');
   if(lock.packages?.['']?.engines?.node!==expectedNodeEngine(contract))fail('package-lock Node engine must match product contract.');
@@ -59,6 +59,7 @@ function prepare(version) {
   lock.version = version;
   if (lock.packages?.['']) lock.packages[''].version = version;
   contract.serviceVersion=version;
+  contract.productVersion=version;
   writeJson(pkgPath,pkg);writeJson(lockPath,lock);writeJson(contractPath,contract);
   let changelog = fs.readFileSync(changelogPath, 'utf8');
   if (!hasChangelogVersion(changelog, version)) changelog = changelog.replace('# Changelog\n', `# Changelog\n\n## ${version}\n\n- Release prepared. Replace this line with final release notes before merge.\n`);

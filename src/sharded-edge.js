@@ -4,9 +4,10 @@
 // identities come from fixed trusted instance names, never from webhook data.
 const http=require('node:http');
 const {targetFor}=require('./multi-gitlab-gateway');
-const {readJson,validateShardedCatalog,INSTANCE_ID,MAX_INSTANCES}=require('./sharded-catalog');
+const {readJson,validateShardedCatalog}=require('./sharded-catalog');
+const {targetMap,readUpstream,createUpstreamReader}=require('./edge-transport');
 const {contract}=require('./product-contract');
-const MAX_BODY=10*1024*1024,MAX_GET_BYTES=256*1024,UPSTREAM_TIMEOUT=2000;
+const MAX_BODY=10*1024*1024;
 const ALLOWED_METRICS=new Set([
  'queue_depth','oldest_queue_age_seconds','input_tokens_total',
  'cached_input_tokens_total','output_tokens_total','model_usage_unknown_calls',
@@ -20,7 +21,7 @@ const REPO_METRICS=new Set([
  'unknown_model_calls_today'
 ]);
 const SAFE_HOP_HEADERS=new Set(['host','connection','proxy-authorization','proxy-connection',
- 'keep-alive','te','trailer','transfer-encoding','upgrade',
+ 'keep-alive','te','trailer','transfer-encoding','upgrade','forwarded',
  'x-forwarded-for','x-forwarded-host','x-forwarded-proto']);
 function sendJson(res,code,body){
  const bytes=Buffer.from(JSON.stringify(body));
@@ -28,28 +29,11 @@ function sendJson(res,code,body){
   'Content-Length':bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
  res.end(bytes);
 }
-function targetMap(targets,instanceIds){
- if(!Array.isArray(instanceIds)||instanceIds.length<1||instanceIds.length>MAX_INSTANCES||
-    instanceIds.some(id=>!INSTANCE_ID.test(id))||new Set(instanceIds).size!==instanceIds.length)
-   throw new TypeError('Invalid configured upstream instance IDs');
- if(!targets||typeof targets!=='object'||Array.isArray(targets))
-   throw new TypeError('Sharded edge requires a trusted fixed target map');
- const result={};
- for(const id of instanceIds){
-   const target=targets?.[id];
-   if(!target||!['127.0.0.1',id].includes(target.host) ||
-      !Number.isSafeInteger(target.port)||target.port<1||target.port>65535)
-     throw new TypeError('Sharded edge requires a fixed trusted per-instance upstream');
-   result[id]=Object.freeze({host:target.host,port:target.port});
- }
- if(Object.keys(targets).length!==instanceIds.length)
-   throw new TypeError('Sharded edge refuses additional dynamic upstream hosts');
- return Object.freeze(result);
-}
 function cleanHeaders(headers,target){
  const selected={host:target.host+':'+target.port};
+ const blocked=new Set([...SAFE_HOP_HEADERS,...String(headers.connection||'').split(',').map(name=>name.trim().toLowerCase())]);
  for(const [name,value] of Object.entries(headers))
-   if(!SAFE_HOP_HEADERS.has(name))selected[name]=value;
+   if(!blocked.has(name))selected[name]=value;
  return selected;
 }
 function proxy(req,res,target,path){
@@ -58,30 +42,42 @@ function proxy(req,res,target,path){
  if(!Number.isSafeInteger(announced)||announced<0||announced>MAX_BODY){
    req.resume();sendJson(res,413,{error:'payload_too_large'});return;
  }
- let settled=false,bytes=0;
+ let settled=false,bytes=0,incomingResponse=null;
  const upstream=http.request({
    hostname:target.host,port:target.port,method:req.method,path,
    headers:cleanHeaders(req.headers,target)
  },incoming=>{
    if(settled){incoming.resume();return;}
+   incomingResponse=incoming;
+   incoming.on('aborted',fail);
+   incoming.on('error',fail);
    const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
    for(const key of ['content-type','content-length'])
      if(incoming.headers[key]!==undefined)headers[key]=incoming.headers[key];
    res.writeHead(incoming.statusCode||502,headers);
    incoming.pipe(res);
  });
- upstream.setTimeout(30000,()=>upstream.destroy(new Error('upstream_timeout')));
- upstream.on('error',()=>{
+ const deadline=setTimeout(()=>upstream.destroy(new Error('upstream_timeout')),30000);
+ deadline.unref?.();
+ function fail(){
    if(settled)return;
-   settled=true;
+   settled=true;clearTimeout(deadline);
    if(!res.headersSent)sendJson(res,503,{error:'instance_unavailable'});
    else res.destroy();
+ }
+ upstream.setTimeout(30000,()=>upstream.destroy(new Error('upstream_timeout')));
+ upstream.on('error',fail);
+ res.once('finish',()=>{settled=true;clearTimeout(deadline);});
+ res.once('close',()=>{
+   clearTimeout(deadline);
+   if(!res.writableFinished){settled=true;req.unpipe(upstream);incomingResponse?.destroy();upstream.destroy();req.resume();}
  });
  req.on('data',chunk=>{
    bytes+=chunk.length;
    if(bytes>MAX_BODY&&!settled){
-     settled=true;req.unpipe(upstream);upstream.destroy();
+     settled=true;clearTimeout(deadline);req.unpipe(upstream);upstream.destroy();
      if(!res.headersSent)sendJson(res,413,{error:'payload_too_large'});
+     else res.destroy();
      req.resume();
    }
  });
@@ -89,32 +85,9 @@ function proxy(req,res,target,path){
  req.on('error',()=>upstream.destroy());
  req.pipe(upstream);
 }
-function readUpstream(target,path,timeoutMs=UPSTREAM_TIMEOUT){
- return new Promise(resolve=>{
-   let done=false;
-   const finish=(status,body='')=>{if(done)return;done=true;resolve({status,body});};
-   const req=http.get({hostname:target.host,port:target.port,path,timeout:timeoutMs},res=>{
-     let bytes=0;const chunks=[];
-     res.on('data',chunk=>{
-       bytes+=chunk.length;
-       if(bytes>MAX_GET_BYTES){req.destroy();finish(0);return;}
-       chunks.push(chunk);
-     });
-     res.on('end',()=>{
-       try{finish(res.statusCode||0,new TextDecoder('utf-8',{fatal:true})
-         .decode(Buffer.concat(chunks)));}
-       catch{finish(0);}
-     });
-     res.on('aborted',()=>finish(0));
-     res.on('error',()=>finish(0));
-   });
-   req.on('timeout',()=>req.destroy());
-   req.on('error',()=>finish(0));
- });
-}
-async function readStatus(targets,path,instanceIds){
+async function readStatus(targets,path,instanceIds,read=readUpstream){
  const results=await Promise.all(instanceIds.map(async id=>{
-   const r=await readUpstream(targets[id],path);
+   const r=await read(targets[id],path);
    return {id,ready:r.status===200,reachable:r.status>0};
  }));
  const ready=results.filter(item=>item.ready).length;
@@ -138,12 +111,12 @@ function selectMetrics(body,id){
  }
  return lines;
 }
-async function scrapeMetrics(targets,catalog){
+async function scrapeMetrics(targets,catalog,read=readUpstream){
  const result=await Promise.all(catalog.instances.map(async item=>{
    const id=item.id;
    const [health,metrics]=await Promise.all([
-     readUpstream(targets[id],'/health/ready'),
-     readUpstream(targets[id],'/metrics')
+     read(targets[id],'/health/ready'),
+     read(targets[id],'/metrics')
    ]);
    return {id,ready:health.status===200,metrics:metrics.status===200,
      samples:metrics.status===200?selectMetrics(metrics.body,id):[]};
@@ -185,12 +158,12 @@ async function scrapeMetrics(targets,catalog){
 
 // Read-only, non-authoritative observed metrics attached to the exact configured
 // repository scope. Missing evidence is NEVER converted to a zero/healthy claim.
-async function repositoryStatus(targets,catalog){
+async function repositoryStatus(targets,catalog,read=readUpstream){
  const instances=await Promise.all(catalog.instances.map(async item=>{
    const id=item.id;
    const [health,metrics]=await Promise.all([
-     readUpstream(targets[id],'/health/ready'),
-     readUpstream(targets[id],'/metrics')
+     read(targets[id],'/health/ready'),
+     read(targets[id],'/metrics')
    ]);
    const lines=metrics.status===200?selectMetrics(metrics.body,id):[];
    let complete=null;
@@ -224,6 +197,9 @@ async function repositoryStatus(targets,catalog){
 function createShardedEdge({catalog,targets}={}){
  const source=validateShardedCatalog(catalog),instanceIds=source.instances.map(x=>x.id),upstreams=targetMap(targets,instanceIds);
  const ids=new Set(instanceIds);
+ // Coalesce concurrent management reads without retaining a stale success
+ // across successive requests. Workers retain their own bounded 3s snapshot.
+ const read=createUpstreamReader(upstreams,{ttlMs:0});
  const server=http.createServer({maxHeaderSize:16*1024},async(req,res)=>{
    try{
      const route=targetFor(req.method,req.url,ids);
@@ -237,17 +213,17 @@ function createShardedEdge({catalog,targets}={}){
        mode:'sharded-edge',instances:instanceIds});return;}
      if(req.url==='/repositories'){sendJson(res,200,source);return;}
      if(req.url==='/repositories/status'){
-       sendJson(res,200,await repositoryStatus(upstreams,source));return;
+       sendJson(res,200,await repositoryStatus(upstreams,source,read));return;
      }
      if(req.url==='/metrics'){
-       const body=await scrapeMetrics(upstreams,source);
+       const body=await scrapeMetrics(upstreams,source,read);
        res.writeHead(200,{'Content-Type':'text/plain; version=0.0.4; charset=utf-8',
          'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
        res.end(body);return;
      }
      const dependencies=req.url==='/health/dependencies';
      const ingress=req.url==='/health/ingress';
-     const checks=await readStatus(upstreams,dependencies?'/health/dependencies':'/health/ready',instanceIds);
+     const checks=await readStatus(upstreams,dependencies?'/health/dependencies':'/health/ready',instanceIds,read);
      const healthy=ingress?checks.ready>0:checks.ready===checks.total;
      sendJson(res,healthy?200:503,{
        status:ingress?(healthy?'routable':'unavailable'):healthy?(dependencies?'healthy':'ready'):'degraded',
