@@ -256,6 +256,9 @@ jobs:
       - id: image
         name: Build or recover canonical OCI image
         env:
+          # Prefer registry-compatible attestation manifest encoding, while retaining both
+          # explicit --provenance=mode=max and --sbom=true build contracts.
+          BUILDX_NO_DEFAULT_OCI_ARTIFACT: '1'
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_SHA: ${{ needs.prepare.outputs.release_sha }}
         shell: bash
