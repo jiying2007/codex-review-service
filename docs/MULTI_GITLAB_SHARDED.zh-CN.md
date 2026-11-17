@@ -16,6 +16,8 @@
 
 在部署目录中准备 `legacy.json`、`sensor.json`，两份皆为**独立单实例 Config Schema 8**，不是多实例清单。Legacy 必须从实际原配置迁移有效规则，不能用示例覆盖；其 `server.dataDir` 应为 `/var/lib/codex-review/legacy`，`codex.home` 为 `/home/codex-review/legacy`；Sensor 对应 `.../sensor`。各实例 `gitlab.projects` / `gitlab.groups` 含明确授权范围，`webhook.expectedInstance` 与各自真实 `gitlab.baseUrl` 对应。
 
+两个单实例配置的 `server.host` 必须是容器内 `0.0.0.0`，`server.port=8787`，否则服务只监听容器自身的回环地址，独立 Nginx 容器无法访问。该绑定仅用于 Docker 私有网络，宿主机仍不能直接公开后端端口。
+
 两个实例须独立 API Token、Webhook Token、数据卷和 Home。绝不在 Git、Shell 历史、日志或 PR 写入 Secret。四个 `*_FILE` 宿主路径应指向权限受限的常规文件。Legacy 已有真实命名卷必须用 `external: true` 指向，不会自动创建同名空卷冒充旧数据。
 
 ## 只读验证（禁止启动应用）
