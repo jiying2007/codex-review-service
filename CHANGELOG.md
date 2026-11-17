@@ -6,6 +6,7 @@
 - Add a deterministic source-bound repository catalog from each GitLab's explicit Project/Group configuration. Reject stale, forged or noncanonical catalog data; configured Group selectors are not treated as remotely enumerated repositories.
 - Aggregate exact per-instance readiness, scrape status, bounded per-project queue age/count and known/unknown model usage. One tenant failure never conceals the other; unknown use is never reported as zero.
 - Use strict partial-readiness semantics: /health/ready requires both tenants; /health/ingress accepts at least one ready tenant; no external health endpoint authorizes a Merge.
+- Correct exact Trivy 0.70 OCI identity validation: `Metadata.ImageID` and `Metadata.Reference` identify the immutable platform child manifest, while the separately verified pulled Docker image ID identifies its OCI config digest. Require both identities and preserve unfiltered vulnerability inventories, Critical / fixable-High gates and provenance.
 - Keep independent Legacy/Sensor processes, standalone DB Schema 12, Config Schema 8 and Core 4.18.10. No new model calls, scheduling tasks, shared secrets or production deployment.
 
 
