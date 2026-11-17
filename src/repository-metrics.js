@@ -2,18 +2,29 @@
 // Local, low-cardinality, read-only per-repository operational metrics.
 // Unknown model-call usage is never silently substituted with zero tokens.
 const MAX_PROJECTS=256;
-function renderRepositoryMetrics(store,{maxProjects=MAX_PROJECTS,now=Date.now()}={}){
+function renderRepositoryMetrics(store,{maxProjects=MAX_PROJECTS,now=Date.now(),projectIds=null}={}){
  if(!store?.db?.prepare)throw new TypeError('Repository metrics require a real SQLite Store');
  if(!Number.isSafeInteger(maxProjects)||maxProjects<1||maxProjects>MAX_PROJECTS)
    throw new RangeError('Invalid repository metrics bound');
- const rows=store.db.prepare(
+ // The Worker already owns an authenticated, explicit project allowlist.
+ // Restrict the expensive historical GROUP BY to that scope when available;
+ // never let a removed/foreign project leak into current fleet dashboards.
+ if(projectIds!==null&&!Array.isArray(projectIds)&&!(projectIds instanceof Set))
+   throw new TypeError('Project metric scope must be a Set or array');
+ const scope=projectIds===null?null:[...new Set([...projectIds].map(Number))].sort((a,b)=>a-b);
+ if(scope&&scope.some(id=>!Number.isSafeInteger(id)||id<1))
+   throw new TypeError('Unsafe repository metric scope identity');
+ const selected=scope?scope.slice(0,maxProjects):null;
+ const clause=selected?' WHERE project_id IN ('+selected.map(()=>'?').join(',')+')':'';
+ const rows=selected&&!selected.length?[]:store.db.prepare(
    "SELECT project_id,COUNT(*) total, "+
    "SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) queued, "+
    "SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) running, "+
    "MIN(CASE WHEN status='queued' THEN created_at END) oldest "+
-   "FROM review_jobs GROUP BY project_id ORDER BY project_id LIMIT ?"
- ).all(maxProjects+1);
- const complete=rows.length<=maxProjects;
+   "FROM review_jobs"+clause+" GROUP BY project_id ORDER BY project_id"+
+   (selected?'':' LIMIT ?')
+ ).all(...(selected||[maxProjects+1]));
+ const complete=selected?scope.length<=maxProjects:rows.length<=maxProjects;
  const projects=rows.slice(0,maxProjects).filter(x=>Number.isSafeInteger(x.project_id)&&x.project_id>0);
  const since=new Date(now);
  if(!Number.isFinite(since.getTime()))throw new TypeError('Invalid metrics timestamp');
