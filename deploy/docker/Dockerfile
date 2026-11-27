@@ -9,7 +9,7 @@ LABEL org.opencontainers.image.title="Codex Review Service" \
       org.opencontainers.image.licenses="MIT"
 # Disable retries before upgrading the vulnerable package manager itself.
 RUN apt-get -o Acquire::Retries=0 update \
-    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends --only-upgrade apt libapt-pkg7.0 libpcre2-8-0 zlib1g gzip libsqlite3-0 libssl3t64 openssl-provider-legacy perl-base \
+    && apt-get -o Acquire::Retries=0 install -y --no-install-recommends --only-upgrade apt libapt-pkg7.0 libpcre2-8-0 zlib1g gzip libsqlite3-0 libssl3t64 openssl-provider-legacy perl-base libzstd1 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' apt)" ge 3.0.4 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg7.0)" ge 3.0.4 \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libpcre2-8-0)" ge '10.46-1~deb13u3' \
@@ -19,6 +19,7 @@ RUN apt-get -o Acquire::Retries=0 update \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libssl3t64)" ge '3.5.7-1~deb13u3' \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' openssl-provider-legacy)" ge '3.5.7-1~deb13u3' \
     && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' perl-base)" ge '5.40.1-6+deb13u1' \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libzstd1)" ge '1.5.7+dfsg-1+deb13u1' \
     && apt-get -o Acquire::Retries=0 install -y --no-install-recommends git ca-certificates tini \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \

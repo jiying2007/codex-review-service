@@ -2,6 +2,7 @@
 
 ## 8.0.2
 
+- Upgrade the runtime `libzstd1` package to Debian's `1.5.7+dfsg-1+deb13u1` security floor for [CVE-2026-124851 / DSA-6657-1](https://security-tracker.debian.org/tracker/DSA-6657-1), and require the patched inventory in both architecture scan gates.
 - Repin to Codex Safe Core 4.18.13 because the shipped Core runtime digest changed to `997b7415d10df0c0b79b551fb41f91b46d5c24babcd9942a3f7208c947a998c6`; publish a new immutable product release and required distribution evidence.
 - Refresh Product Contract v2 and generated/current-state Family identity for the exact Core pin.
 

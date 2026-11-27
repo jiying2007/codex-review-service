@@ -32,7 +32,8 @@ function report() {
         { Name: 'libsqlite3-0', Version: '3.46.1', Release: '7+deb13u2', Arch: 'amd64' },
         { Name: 'libssl3t64', Version: '3.5.7', Release: '1~deb13u3', Arch: 'amd64' },
         { Name: 'openssl-provider-legacy', Version: '3.5.7', Release: '1~deb13u3', Arch: 'amd64' },
-        { Name: 'perl-base', Version: '5.40.1', Release: '6+deb13u1', Arch: 'amd64' }] }] };
+        { Name: 'perl-base', Version: '5.40.1', Release: '6+deb13u1', Arch: 'amd64' },
+        { Name: 'libzstd1', Version: '1.5.7+dfsg', Release: '1+deb13u1', Arch: 'amd64' }] }] };
 }
 function finding(Severity, FixedVersion, extra = {}) {
   return { VulnerabilityID: 'CVE-2026-1234', PkgName: 'example', InstalledVersion: '1.0', Severity,
@@ -106,7 +107,8 @@ test('Debian 13 requires its own patched package baselines and rejects the old d
   const changes = [{ index: 0, Version: '3.0.3' }, { index: 1, Version: '3.0.3' },
     { index: 2, Release: '1~deb13u2' }, { index: 3, Release: '1' }, { index: 4, Release: '1' },
     { index: 5, Release: '7+deb13u1' }, { index: 6, Version: '3.5.6', Release: '1~deb13u2' },
-    { index: 7, Version: '3.5.6', Release: '1~deb13u2' }, { index: 8, Release: '6' }];
+    { index: 7, Version: '3.5.6', Release: '1~deb13u2' }, { index: 8, Release: '6' },
+    { index: 9, Release: '1' }];
   for (const { index, ...fields } of changes) {
     const value = report(); Object.assign(value.Results[0].Packages[index], fields);
     assert.throws(() => assess(value, options), /Required Debian security fix is absent|version comparison could not/);

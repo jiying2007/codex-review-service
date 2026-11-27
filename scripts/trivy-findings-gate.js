@@ -9,7 +9,8 @@ const contract = require('../product-contract.json');
 const FIXED_PACKAGES = Object.freeze({ apt: '3.0.4', 'libapt-pkg7.0': '3.0.4',
   'libpcre2-8-0': '10.46-1~deb13u3', zlib1g: '1:1.3.dfsg+really1.3.1-1+deb13u1',
   gzip: '1.13-1+deb13u1', 'libsqlite3-0': '3.46.1-7+deb13u2', 'libssl3t64': '3.5.7-1~deb13u3',
-  'openssl-provider-legacy': '3.5.7-1~deb13u3', 'perl-base': '5.40.1-6+deb13u1' });
+  'openssl-provider-legacy': '3.5.7-1~deb13u3', 'perl-base': '5.40.1-6+deb13u1',
+  libzstd1: '1.5.7+dfsg-1+deb13u1' });
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const SEVERITIES = ['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 function fail(message) { throw Object.assign(new Error(message), { code: 'ETRIVYREPORT' }); }
