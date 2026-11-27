@@ -107,7 +107,7 @@ function validateInstance(raw, allFiles, identities) {
   const webhook = record(config.webhook, id + '.webhook');
   const codex = config.codex === undefined ? {} : record(config.codex, id + '.codex');
   const dataDir = absolute(server.dataDir, id + '.server.dataDir');
-  if (overlaps(homeDir, dataDir)) fail(id + ' homeDir must not overlap SQLite state');
+  if (overlaps(physicalLocation(homeDir), physicalLocation(dataDir))) fail(id + ' homeDir must not overlap SQLite state');
   if (codex.home && path.resolve(codex.home) !== homeDir)
     fail(id + ' codex.home must match the dedicated homeDir');
   // Validate the *same* numeric scope semantics as the existing Service
@@ -201,8 +201,11 @@ function loadMultiManifest(file = process.env.CODEX_REVIEW_MULTI_CONFIG_FILE) {
     if (left.origin === right.origin) fail('duplicate GitLab origin across instances');
   }
   const reserved=instances.flatMap(instance=>[physicalLocation(instance.dataDir),physicalLocation(instance.homeDir)]);
+  const physicalFiles=new Set();
   for(const file of allFiles){
     const physical=physicalLocation(file);
+    if(physicalFiles.has(physical))fail('Configuration or secret files share a physical identity');
+    physicalFiles.add(physical);
     if(reserved.some(dir=>overlaps(physical,dir)))
       fail('Configuration or secret file must not live inside a writable tenant state/home directory');
   }
