@@ -63,9 +63,14 @@ test('ingress only routes explicitly named GitLab instances; no default route',(
   assert.deepEqual(targetFor('POST','/webhooks/gitlab/sensor',ids),{id:'sensor',path:'/webhooks/gitlab'});
   assert.deepEqual(targetFor('GET','/instances/sensor/health/ready',ids),{id:'sensor',path:'/health/ready'});
   for(const pathname of ['/webhooks/gitlab/unknown','/webhooks/gitlab/sensor?other=true',
-    '/webhooks/gitlab/../sensor','/webhooks/gitlab/%2e%2e','/webhooks/gitlab/SENSOR'])
+    '/webhooks/gitlab/../sensor','/webhooks/gitlab/%2e%2e','/webhooks/gitlab/SENSOR',
+    '/webhooks/gitlab/legacy/../sensor','/webhooks/gitlab/legacy/%2e%2e/sensor',
+    '/webhooks/gitlab/./sensor','/webhooks/gitlab/sensor/','http://example.invalid/webhooks/gitlab/sensor',
+    '//example.invalid/webhooks/gitlab/sensor'])
     assert.equal(targetFor('POST',pathname,ids),null,pathname);
   assert.equal(targetFor('GET','/webhooks/gitlab/sensor',ids),null);
+  for(const alias of ['/instances/legacy/../sensor/health/ready','/instances/legacy/%2e%2e/sensor/metrics','http://example.invalid/instances/sensor/version'])
+    assert.equal(targetFor('GET',alias,ids),null,alias);
 });
 test('one listening gateway isolates colliding project IDs, raw HMAC identity and delivery replay',async()=>{
   const oldEvents=[],newEvents=[];
@@ -86,6 +91,10 @@ test('one listening gateway isolates colliding project IDs, raw HMAC identity an
     const a=await call(port,'/webhooks/gitlab/legacy',{method:'POST',body,headers:oldHeaders});
     const b=await call(port,'/webhooks/gitlab/sensor',{method:'POST',body,headers:sensorHeaders});
     assert.equal(a.status,202);assert.equal(b.status,202);
+    for(const alias of ['/webhooks/gitlab/legacy/../sensor','/webhooks/gitlab/legacy/%2e%2e/sensor']){
+      const invalid=await call(port,alias,{method:'POST',body,headers:signed(body,sensor.token,'alias-rejected','http://192.168.2.50')});
+      assert.equal(invalid.status,404);
+    }
     assert.equal((await call(port,'/webhooks/gitlab',{method:'POST',body,headers:oldHeaders})).status,404);
     assert.equal(a.body.instance,'legacy');assert.equal(b.body.instance,'sensor');
     assert.deepEqual(oldEvents.map(e=>e.projectId),[113]);

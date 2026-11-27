@@ -21,15 +21,16 @@ function response(res, code, body) {
   res.end(data);
 }
 function targetFor(method, rawUrl, ids) {
-  let url;
-  try { url = new URL(rawUrl, 'http://localhost'); } catch { return null; }
-  if (url.search || url.hash) return null;
+  // Routing identity is the literal HTTP request target. URL parsing would
+  // normalize dot segments, absolute-form targets and some encoded aliases
+  // before selecting a tenant. Accept only the exact origin-form route.
+  if (typeof rawUrl !== 'string' || /[\r\n\0]/.test(rawUrl)) return null;
   if (method === 'POST') {
-    const match = /^\/webhooks\/gitlab\/([a-z][a-z0-9-]{0,31})$/.exec(url.pathname);
+    const match = /^\/webhooks\/gitlab\/([a-z][a-z0-9-]{0,31})$/.exec(rawUrl);
     if (match && ids.has(match[1])) return {id:match[1], path:'/webhooks/gitlab'};
   }
   if (method === 'GET') {
-    const match = /^\/instances\/([a-z][a-z0-9-]{0,31})(\/health\/(?:live|ready|dependencies)|\/metrics|\/version)$/.exec(url.pathname);
+    const match = /^\/instances\/([a-z][a-z0-9-]{0,31})(\/health\/(?:live|ready|dependencies)|\/metrics|\/version)$/.exec(rawUrl);
     if (match && ids.has(match[1])) return {id:match[1], path:match[2]};
   }
   return null;

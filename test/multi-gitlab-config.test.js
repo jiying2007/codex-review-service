@@ -332,3 +332,24 @@ test('v8 manifest rejects previous schema and implicit default routing',()=>{
     assert.throws(()=>loadMultiManifest(f.manifestFile),/unsupported field/i);
   }finally{f.close();}
 });
+
+(process.platform==='win32'?test.skip:test)('physical aliases cannot overlap one tenant home and state or reuse a secret under a different role',()=>{
+  for(const mutate of [
+    f=>{
+      fs.mkdirSync(f.manifest.instances[0].homeDir);
+      fs.symlinkSync(f.manifest.instances[0].homeDir,f.location('primary-db-alias'));
+      f.primary.server.dataDir=f.location('primary-db-alias');
+    },
+    f=>{
+      fs.symlinkSync(f.dir,f.location('directory-alias'),'dir');
+      f.manifest.instances[1].secretFiles.OPENAI_API_KEY_FILE=path.join(f.location('directory-alias'),'primary-api');
+    }
+  ]){
+    const f=fixture();
+    try{
+      assert.equal(loadMultiManifest(f.manifestFile).instances.length,2);
+      mutate(f);f.flush();
+      assert.throws(()=>loadMultiManifest(f.manifestFile),error=>error.code==='EMULTIGITLABCONFIG'&&/overlap|physical identity/.test(error.message));
+    }finally{f.close();}
+  }
+});

@@ -91,3 +91,38 @@ test('notification outbox survives a crash boundary without duplicating the dura
   store.close();
   cleanup(dir);
 });
+
+test('two durable stores isolate colliding repository and outbox identities across one tenant restart',()=>{
+  const dir=tempDir(),leftPath=path.join(dir,'left.sqlite'),rightPath=path.join(dir,'right.sqlite');
+  let left,right;
+  function enqueue(store,tenant){
+    const jobId=store.enqueue({projectId:113,mrIid:1,headSha:'same-head',trigger:'open',dedupeKey:'same-webhook-key',maxQueueDepth:10});
+    assert.ok(jobId);
+    return store.saveRunWithOutbox(jobId,
+      {verdict:'pass',summary:tenant,coverageComplete:true,findings:[],usage:{}},
+      1,{source:'fault-test',fingerprint:'policy'},
+      [{projectId:113,mrIid:1,type:'summary',dedupeKey:'same-outbox-key',payload:{tenant}}]);
+  }
+  try{
+    left=new Store(leftPath);right=new Store(rightPath);
+    const leftRun=enqueue(left,'left'),rightRun=enqueue(right,'right');
+    const claimed=left.claimPublication();
+    assert.equal(claimed.run_id,leftRun);assert.equal(claimed.payload.tenant,'left');
+    assert.equal(right.publicationDepth(),1);
+    left.close();left=null;
+    left=new Store(leftPath);
+    assert.equal(left.recoverPublications(),1);
+    assert.equal(right.publicationDepth(),1);
+    const recovered=left.claimPublication(),independent=right.claimPublication();
+    assert.equal(recovered.id,claimed.id);
+    assert.equal(recovered.payload.tenant,'left');
+    assert.equal(independent.run_id,rightRun);assert.equal(independent.payload.tenant,'right');
+    left.finishPublication(recovered.id,'remote-left');
+    assert.equal(left.claimPublication(),null);
+    right.finishPublication(independent.id,'remote-right');
+    assert.equal(right.claimPublication(),null);
+    assert.equal(left.publicationDepth(),0);assert.equal(right.publicationDepth(),0);
+  }finally{
+    if(left)left.close();if(right)right.close();cleanup(dir);
+  }
+});
