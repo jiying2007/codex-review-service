@@ -10,13 +10,13 @@ Production-grade, self-hosted Codex review enforcement for **GitLab Self-Managed
 
 `product-contract.json` is the single machine-checked source for the current product identity:
 
-- Service: **8.0.1**
+- Service: **8.0.2**
 - Database Schema: **12**
 - Config Schema: **8**
 - Policy Schema: **4**
 - Review Receipt: **5**
 - Safe Contract: **2**
-- Safe Core: exact commit `bf7f1cfe093f9b9c552eb532fcc2ddc4a0d28fea`
+- Safe Core: exact commit `d517dccf1e636f22fd7f9d938a5dd552a91420d3`
 - Quality Platform: **3**
 - Review Profile: **1**
 - Profile Pack: **1**
@@ -53,7 +53,7 @@ Use the isolated Runner only when GitLab credentials and Codex/OpenAI credential
 
 ## 5-minute deployment path
 
-Install the verified `codex-review-service-8.0.1.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
+Install the verified `codex-review-service-8.0.2.tgz` release artifact under `/opt/codex-review-service`, or check out the exact release tag only for development/audit. Then:
 
 ```bash
 sudo useradd --system --create-home --home-dir /home/codex-review --shell /usr/sbin/nologin codex-review
