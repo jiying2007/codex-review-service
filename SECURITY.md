@@ -4,7 +4,7 @@
 
 Codex Review Service **8.0.4** owns production operations while shared safety, review-profile, Test Impact, diagnosis, Judgment Lifecycle, Codex Runtime and Provider primitives remain in exact-pinned Safe Core Family v4.
 
-Machine-checked security identity lives in `product-contract.json`: Database Schema 12, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `950d08ff7a8e685cdbea53a66d1bdf2aac5c584a`.
+Machine-checked security identity lives in `product-contract.json`: Database Schema 12, Config Schema 8, Policy Schema 4, Review Receipt 5, Safe Contract 2, Runtime/Provider Contract v3, Model Routing Contract v1, Node 22.22.2+/24.19.0+ LTS support, GitLab compatibility floor 14.6.1, and exact Safe Core commit `779afbd6982d6271942301e6f59656b50ff7e3cb`.
 
 Service-only GitLab compatibility, CI artifact acquisition, IM, Docker, Admin/DR and deployment semantics must not leak into Safe Core.
 

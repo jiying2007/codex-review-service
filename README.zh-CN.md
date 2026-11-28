@@ -16,7 +16,7 @@
 - Policy Schema：**4**
 - Review Receipt：**5**
 - Safe Contract：**2**
-- Safe Core：精确提交 `950d08ff7a8e685cdbea53a66d1bdf2aac5c584a`
+- Safe Core：精确提交 `779afbd6982d6271942301e6f59656b50ff7e3cb`
 - Quality Platform：**3**
 - Review Profile：**1**
 - Profile Pack：**1**

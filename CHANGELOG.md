@@ -2,9 +2,9 @@
 
 ## 8.0.4
 
-- Replace local risk, seed and caller scope filters with the released Safe Core 4.18.14 exact-delivered-chunk selector. Preserve optional evidence bounds; inconsistent identities make review coverage incomplete.
+- Replace local risk, seed and caller scope filters with the released Safe Core 4.18.15 exact-delivered-chunk selector. Preserve optional evidence bounds; inconsistent identities make review coverage incomplete.
 - Use real provider-patch shape in regressions and test separate hunks in one file, exact changed content and stale hints.
-- Repin immutable Core runtime and governance digests, shared workflows and current operational contracts. No database or configuration schema change.
+- Repin immutable Core runtime and governance digests, shared workflows and current operational contracts. Core 4.18.15 fixes legitimate multi-file separator framing. No database or configuration schema change.
 
 ## 8.0.3
 

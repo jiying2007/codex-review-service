@@ -9,7 +9,7 @@ Codex Review Service **8.0.4** is the current production-operations baseline. Ma
 - Model Routing Contract 1
 - Policy Schema 4
 - Review Receipt 5
-- Safe Contract 2 / Safe Core Family v4 exact commit `950d08ff7a8e685cdbea53a66d1bdf2aac5c584a`
+- Safe Contract 2 / Safe Core Family v4 exact commit `779afbd6982d6271942301e6f59656b50ff7e3cb`
 - Profile Pack 1 / Test Impact 1 / Analyzer Adapter 1
 - Native/systemd Node.js: 22 LTS >=22.22.2 or 24 LTS >=24.19.0; Node 23 unsupported
 - Canonical Docker Node.js: 24.19.0

@@ -84,3 +84,23 @@ test('shared chunk selector isolates same-file hunk hints and exposes inconsiste
  assert.ok(stale.structuralEvidenceGaps.includes('risk_text_digest_mismatch'));
  assert.doesNotMatch(stale.blocks.join('\n'),/DETERMINISTIC RISK HINTS/);
 });
+
+test('canonical multi-file provider chunks retain risk hints after Core framing correction',()=>{
+ const {buildReviewEvidenceChunks}=require('../src/codex-safe-core/context-builder');
+ const raw=[
+  toUnifiedReviewBlock({old_path:'src/irq.c',new_path:'src/irq.c',diff:'@@ -1 +1 @@\n-old_irq();\n+mutex_lock(&lock);\n'}),
+  toUnifiedReviewBlock({old_path:'src/second.c',new_path:'src/second.c',diff:'@@ -1 +1 @@\n-old();\n+new_call();\n'})
+ ].map(s=>s.endsWith('\n')?s:s+'\n').join('');
+ const evidence={risk:buildReviewRiskEvidence({diff:raw}),impact:{functionImpact:buildFunctionImpactEvidence({diff:raw})}};
+ const plan=buildReviewEvidenceChunks({diff:raw,maxBytes:4096,maxChunks:2});
+ assert.equal(plan.chunks.length,1);
+ const c=plan.chunks[0];
+ assert.match(c.text,/\n\ndiff --git/);
+ const chunk={index:0,files:c.paths.map(path=>({path})),diffText:c.text};
+ const result=qualityContextForChunk(evidence,chunk);
+ assert.deepEqual(result.structuralEvidenceGaps,[]);
+ assert.match(result.blocks.join('\n'),/irq-blocking/);
+ const invalid=qualityContextForChunk(evidence,{...chunk,diffText:c.text.replace('+new_call();','+new_call();\n+extra();')});
+ assert.ok(invalid.structuralEvidenceGaps.length>0);
+ assert.doesNotMatch(invalid.blocks.join('\n'),/DETERMINISTIC RISK HINTS/);
+});
