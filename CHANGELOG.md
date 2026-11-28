@@ -1,5 +1,12 @@
 # Changelog
 
+## 8.0.3
+
+- Route named GitLab ingress and management requests using literal canonical paths; reject path normalization aliases and absolute-form targets.
+- Reject physical overlap between tenant home and SQLite state and duplicate physical secret/configuration paths, including symlink-parent aliases.
+- Exercise two independent durable SQLite stores with colliding project, merge request, job and outbox identities; verify restart and recovery isolation.
+- Retain exact Core 4.18.13 and existing security, provider, migration and release gates. No DB or configuration schema change.
+
 ## 8.0.2
 
 - Upgrade the runtime `libzstd1` package to Debian's `1.5.7+dfsg-1+deb13u1` security floor for [CVE-2026-124851 / DSA-6657-1](https://security-tracker.debian.org/tracker/DSA-6657-1), and require the patched inventory in both architecture scan gates.
