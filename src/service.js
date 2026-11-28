@@ -177,6 +177,10 @@ class ReviewService{
       if(controller.signal.aborted)throw controller.signal.reason;
       const contextConfig=adaptiveContextConfig(this.config,policy,chunk),perChunkFindings=findingCapacities[chunk.index],profileContextConfig={...contextConfig,maxContextBytes:Math.floor(contextConfig.maxContextBytes*profile.contextFactor),maxContextFiles:Math.max(contextConfig.maxContextFiles?1:0,Math.floor(contextConfig.maxContextFiles*profile.contextFactor)),contextLines:Math.max(contextConfig.contextLines?1:0,Math.floor(contextConfig.contextLines*profile.contextFactor))},context=await this.contextFn(sourceScope.gitlab,mr,chunk,profileContextConfig);
       const chunkQuality=qualityContextForChunk(qualityEvidence,chunk);
+      if(chunkQuality.structuralEvidenceGaps.length){
+        fullSnapshot.coverageGaps.push('structural_evidence:chunk='+chunk.index+':'+chunkQuality.structuralEvidenceGaps.join(','));
+        fullSnapshot.coverageComplete=false;
+      }
       context.blocks=[...(context.blocks||[]),...chunkQuality.blocks];context.bytes=(context.bytes||0)+chunkQuality.bytes;
       if(chunkQuality.truncated){fullSnapshot.advisories.push('quality_context_clipped:chunk='+chunk.index);this.telemetry?.metrics.inc('codex_review_quality_context_clipped_chunks_total',1);}
       if(context.omitted?.length){contextOmissions.push(...context.omitted.map(item=>({...item,chunkIndex:chunk.index})));this.telemetry?.metrics.inc('codex_review_context_omitted_slices_total',context.omitted.length);}

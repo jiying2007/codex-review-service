@@ -9,7 +9,7 @@ const {
   formatAnalyzerEvidence
 } = require('./codex-safe-core/quality-platform');
 const { resolveReviewProfilePack, formatProfilePackEvidence } = require('./codex-safe-core/review-profile-pack');
-const { buildFunctionImpactEvidence, buildReviewRiskEvidence } = require('./codex-safe-core/review-evidence-v2');
+const { buildFunctionImpactEvidence, buildReviewRiskEvidence, selectChunkStructuralEvidence } = require('./codex-safe-core/review-evidence-v2');
 const { buildTestImpactMap, formatTestImpactEvidence } = require('./codex-safe-core/test-impact');
 const { parseAnalyzerArtifact, mergeAnalyzerArtifacts } = require('./analyzer-adapters');
 
@@ -211,26 +211,18 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
    }
    append('--- END CHUNK-RELATED IMPACT EVIDENCE ---');
  }
- const functionImpact=evidence?.impact?.functionImpact;
- const scopedSeeds=(functionImpact?.seeds||[]).filter(seed=>paths.has(seed.path)&&
-   (chunk.files||[]).some(file=>file.path===seed.path&&
-      (file.changedLines?.new||[]).includes(seed.line))).slice(0,8);
- const seedIds=new Set(scopedSeeds.map(seed=>seed.identity));
- const scopedCalls=(functionImpact?.edges||[]).filter(edge=>seedIds.has(edge.to?.identity)).slice(0,12);
- if(scopedSeeds.length){
+ const structural=selectChunkStructuralEvidence({diff:String(chunk?.diffText||''),risk:evidence?.risk,functionImpact:evidence?.impact?.functionImpact});
+ const structuralEvidenceGaps=structural.reasons.filter(reason=>!['chunk_risk_limit','chunk_seed_limit','chunk_edge_limit'].includes(reason));
+ if(structural.truncated)truncated=true;
+ if(structural.seeds.length){
    append('--- FUNCTION CALL CANDIDATES (UNTRUSTED LEXICAL EVIDENCE) ---\n'+
      JSON.stringify({headSha:evidence?.impact?.sourceHeadSha||'',
-       verifiedResolution:false,seeds:scopedSeeds,edges:scopedCalls})+
+       verifiedResolution:false,seeds:structural.seeds,edges:structural.edges})+
      '\n--- END FUNCTION CALL CANDIDATES ---');
-   if((functionImpact?.edges||[]).filter(edge=>seedIds.has(edge.to?.identity)).length>scopedCalls.length)truncated=true;
  }
- const relevantRisk=(evidence?.risk?.signals||[]).filter(signal=>paths.has(signal.path)&&
-   (chunk.files||[]).some(file=>file.path===signal.path&&
-      (file.changedLines?.new||[]).includes(signal.line)));
- if(relevantRisk.length){
+ if(structural.risk.length){
    append('--- DETERMINISTIC RISK HINTS (NOT CERTIFIED DEFECTS) ---\n'+
-     JSON.stringify(relevantRisk.slice(0,12))+'\n--- END RISK HINTS ---');
-   if(relevantRisk.length>12)truncated=true;
+     JSON.stringify(structural.risk)+'\n--- END RISK HINTS ---');
  }
  const analyzers=(evidence?.analyzerFindings||[]).filter(item=>paths.has(item.file));
  const analyzerBlock=formatAnalyzerEvidence(analyzers,{maxFindings:12,maxBytes:8192});
@@ -241,7 +233,7 @@ function qualityContextForChunk(evidence,chunk,{maxBytes=32768}={}){
    '- '+String(item.path||item.id||'').slice(0,160)+' score='+Number(item.score||0)
  ).join('\n')+'\n--- END TEST IMPACT CANDIDATES ---');
  if(chunk?.index===0)append(formatAnalyzerMetadata(evidence?.analyzerMetadata||[]));
- return Object.freeze({blocks:Object.freeze(blocks),bytes,truncated,
+ return Object.freeze({blocks:Object.freeze(blocks),bytes,truncated,structuralEvidenceGaps:Object.freeze(structuralEvidenceGaps),
    relatedImpactNodes:related.length,relatedAnalyzerFindings:analyzers.length});
 }
 
