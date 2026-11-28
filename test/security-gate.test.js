@@ -45,3 +45,11 @@ test('the actual CI Gate cannot accept a skipped or failed security workflow on 
     assert.notEqual(run().status, 0, `Security ${result} must block CI Gate`);
   }
 });
+
+test('all CodeQL action components in the Security workflow share one exact version and commit pin',()=>{
+  const security=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+  const uses=[...security.matchAll(/^\s+uses:\s+github\/codeql-action\/(?:init|analyze|upload-sarif)@([0-9a-f]{40})\s+#\s+(v\d+\.\d+\.\d+)\s*$/gm)];
+  assert.equal(uses.length,3,'Security must pin init, analyze and upload-sarif exactly once');
+  assert.equal(new Set(uses.map(match=>match[1])).size,1,'all CodeQL action steps in the same job must use one exact commit');
+  assert.equal(new Set(uses.map(match=>match[2])).size,1,'all CodeQL action steps must use one release version');
+});
