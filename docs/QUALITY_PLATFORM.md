@@ -1,6 +1,6 @@
 # Quality Platform
 
-Codex Review Service 8.0.3 consumes exact-pinned Safe Core 4.18.13: Quality Platform v3, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
+Codex Review Service 8.0.4 consumes exact-pinned Safe Core 4.18.14: Quality Platform v3, Review Profile Pack v1, Impact Evidence v2, Test Impact v1 and Analyzer Finding v1. All quality inputs are bound to the immutable MR head SHA. Repository content, CI reports and analyzer messages are untrusted evidence and never executable instructions.
 
 ## Review Profile Packs
 
